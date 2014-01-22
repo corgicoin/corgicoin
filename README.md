@@ -17,7 +17,7 @@ for more information.
 Just a couple guys having fun.
 
 ### What's the max CORG that will exist?
-Only 10 billion. Wait, what.
+Only 100 billion. Wait, what.
 
 ### Coin type?
 CorgiCoin is a Scrypt-based Proof of Work coin.
