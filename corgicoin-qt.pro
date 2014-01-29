@@ -311,7 +311,8 @@ isEmpty(BOOST_THREAD_LIB_SUFFIX) {
 
 isEmpty(BDB_LIB_PATH) {
     #macx:BDB_LIB_PATH = /opt/local/lib/db48
-    macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/lib/
+    #macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/lib/
+    macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db/5.3.21/lib/
 }
 
 isEmpty(BDB_LIB_SUFFIX) {
@@ -320,7 +321,8 @@ isEmpty(BDB_LIB_SUFFIX) {
 
 isEmpty(BDB_INCLUDE_PATH) {
     #macx:BDB_INCLUDE_PATH = /opt/local/include/db48
-    macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/include/
+    #macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/include/
+    macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db/5.3.21/include/
 }
 
 isEmpty(BOOST_LIB_PATH) {
