@@ -311,7 +311,7 @@ isEmpty(BOOST_THREAD_LIB_SUFFIX) {
 
 isEmpty(BDB_LIB_PATH) {
     #macx:BDB_LIB_PATH = /opt/local/lib/db48
-    macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/lib/
+    macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db4/5.3.21/lib/
 }
 
 isEmpty(BDB_LIB_SUFFIX) {
@@ -320,7 +320,7 @@ isEmpty(BDB_LIB_SUFFIX) {
 
 isEmpty(BDB_INCLUDE_PATH) {
     #macx:BDB_INCLUDE_PATH = /opt/local/include/db48
-    macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/include/
+    macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db4/5.3.21/include/
 }
 
 isEmpty(BOOST_LIB_PATH) {
@@ -334,11 +334,11 @@ isEmpty(BOOST_INCLUDE_PATH) {
 }
 
 isEmpty(OPENSSL_INCLUDE_PATH) {
-    macx:OPENSSL_INCLUDE_PATH = /usr/local/Cellar/openssl/1.0.1e/include/
+    macx:OPENSSL_INCLUDE_PATH = /usr/local/Cellar/openssl/1.0.1f/include/
 }
 
 isEmpty(OPENSSL_LIB_PATH) {
-    macx:OPENSSL_LIB_PATH = /usr/local/Cellar/openssl/1.0.1e/lib/
+    macx:OPENSSL_LIB_PATH = /usr/local/Cellar/openssl/1.0.1f/lib/
 }
 
 windows:LIBS += -lws2_32 -lshlwapi -lmswsock
