@@ -1,4 +1,4 @@
-TEMPLATE = app
+QMAKE_CXXFLAGS_WARN_ONTEMPLATE = app
 TARGET =
 VERSION = 0.6.3
 INCLUDEPATH += src src/json src/qt
@@ -103,8 +103,9 @@ contains(BITCOIN_NEED_QT_PLUGINS, 1) {
     DEFINES += HAVE_BUILD_INFO
 }
 
-QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter
-
+#QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter
+QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wno-format -Wno-format-security -Wno-unused-parameter -Wstack-protector
+ 
 # Input
 DEPENDPATH += src src/json src/qt
 HEADERS += src/qt/bitcoingui.h \
