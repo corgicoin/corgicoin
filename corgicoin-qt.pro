@@ -1,4 +1,4 @@
-QMAKE_CXXFLAGS_WARN_ONTEMPLATE = app
+TEMPLATE = app
 TARGET =
 VERSION = 0.6.3
 INCLUDEPATH += src src/json src/qt
@@ -9,8 +9,8 @@ windows:LIBS += -lshlwapi
 LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,)
 LIBS += -lssl -lcrypto -ldb_cxx$$BDB_LIB_SUFFIX
 windows:LIBS += -lws2_32 -lole32 -loleaut32 -luuid -lgdi32
-#LIBS += -lboost_system-mgw46-mt-1_54 -lboost_filesystem-mgw46-mt-1_54 -lboost_program_options-mgw46-mt-1_54 -lboost_thread-mgw46-mt-1_54
-#BOOST_LIB_SUFFIX=-mgw46-mt-1_54
+#LIBS += -lboost_system-mgw46-mt-sd-1_53 -lboost_filesystem-mgw46-mt-sd-1_53 -lboost_program_options-mgw46-mt-sd-1_53 -lboost_thread-mgw46-mt-sd-1_53
+#BOOST_LIB_SUFFIX=-mgw46-mt-sd-1_53
 LIBS += -lboost_system -lboost_filesystem -lboost_program_options -lboost_thread
 BOOST_LIB_SUFFIX=
 BOOST_INCLUDE_PATH=C:/deps/boost
@@ -41,6 +41,12 @@ contains(RELEASE, 1) {
         # Linux: static link
         LIBS += -Wl,-Bstatic
     }
+}
+
+macx: {
+    QMAKE_CFLAGS += -stdlib=libstdc++
+    QMAKE_CXXFLAGS += -stdlib=libstdc++
+    QMAKE_LFLAGS += -stdlib=libstdc++
 }
 
 # use: qmake "USE_UPNP=1" ( enabled by default; default)
@@ -103,9 +109,8 @@ contains(BITCOIN_NEED_QT_PLUGINS, 1) {
     DEFINES += HAVE_BUILD_INFO
 }
 
-#QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter
-QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wno-format -Wno-format-security -Wno-unused-parameter -Wstack-protector
- 
+QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter
+
 # Input
 DEPENDPATH += src src/json src/qt
 HEADERS += src/qt/bitcoingui.h \
@@ -370,5 +375,4 @@ contains(RELEASE, 1) {
 }
 
 system($$QMAKE_LRELEASE -silent $$_PRO_FILE_)
-
 
