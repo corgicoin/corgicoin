@@ -381,6 +381,6 @@ void MiningPage::debugToggled(bool checked)
 
 void MiningPage::resetMiningButton()
 {
-    ui->startButton->setText(minerActive ? "Stop Dig" : "Start Dig");
+    ui->startButton->setText(minerActive ? "Stop Mining" : "Start Mining");
     enableMiningControls(!minerActive);
 }
