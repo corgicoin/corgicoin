@@ -211,7 +211,7 @@ void BitcoinGUI::createActions()
     tabGroup->addAction(overviewAction);
 
     miningAction = new QAction(QIcon(":/icons/mining"), tr("&Mine"), this);
-    miningAction->setToolTip(tr("dig config"));
+    miningAction->setToolTip(tr("Mining configuration"));
     miningAction->setCheckable(true);
     tabGroup->addAction(miningAction);
 
