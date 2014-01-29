@@ -212,16 +212,16 @@ void MiningPage::minerError(QProcess::ProcessError error)
 {
     if (error == QProcess::FailedToStart)
     {
-        reportToList("No dig such fail", ERROR, NULL);
+        reportToList("Mining error", ERROR, NULL);
     }
 }
 
 void MiningPage::minerFinished()
 {
     if (getMiningType() == ClientModel::SoloMining)
-        reportToList("Solo dig stop", ERROR, NULL);
+        reportToList("Solo mining stop", ERROR, NULL);
     else
-        reportToList("Dig exit", ERROR, NULL);
+        reportToList("Mining exit", ERROR, NULL);
     ui->list->addItem("");
     minerActive = false;
     resetMiningButton();
@@ -232,9 +232,9 @@ void MiningPage::minerStarted()
 {
     if (!minerActive)
         if (getMiningType() == ClientModel::SoloMining)
-            reportToList("Solo dig start", ERROR, NULL);
+            reportToList("Solo mining start", ERROR, NULL);
         else
-            reportToList("Dig start", STARTED, NULL);
+            reportToList("Mining start", STARTED, NULL);
     minerActive = true;
     resetMiningButton();
     model->setMining(getMiningType(), true, initThreads, 0);
