@@ -1,4 +1,6 @@
 // Copyright (c) 2012 Pieter Wuille
+// Copyright (c) 2013 Dogecoin Developers
+// Copyright (c) 2014 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 

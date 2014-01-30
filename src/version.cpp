@@ -1,9 +1,11 @@
 // Copyright (c) 2012 The Bitcoin developers
 // Copyright (c) 2012 Litecoin Developers
+// Copyright (c) 2013 Dogecoin Developers
+// Copyright (c) 2014 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include <string>
 
+#include <string>
 #include "version.h"
 
 // Name of client reported in the 'version' message. Report the same name

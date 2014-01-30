@@ -1,7 +1,8 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Copyright (c) 2011-2012 Litecoin Developers
-// Copyright (c) 2013 CorgiCoin Developers
+// Copyright (c) 2013 Dogecoin Developers
+// Copyright (c) 2014 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -16,9 +17,6 @@ using namespace boost;
 int nGotIRCAddresses = 0;
 
 void ThreadIRCSeed2(void* parg);
-
-
-
 
 #pragma pack(push, 1)
 struct ircaddr
@@ -55,11 +53,6 @@ bool DecodeAddress(string str, CService& addr)
     addr = CService(tmp.ip, ntohs(tmp.port));
     return true;
 }
-
-
-
-
-
 
 static bool Send(SOCKET hSocket, const char* pszSend)
 {
@@ -370,15 +363,6 @@ void ThreadIRCSeed2(void* parg)
             return;
     }
 }
-
-
-
-
-
-
-
-
-
 
 #ifdef TEST
 int main(int argc, char *argv[])

@@ -1,8 +1,11 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Copyright (c) 2011-2012 Litecoin Developers
+// Copyright (c) 2013 Dogecoin Developers
+// Copyright (c) 2014 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #ifndef BITCOIN_SYNC_H
 #define BITCOIN_SYNC_H
 
@@ -10,8 +13,6 @@
 #include <boost/thread/recursive_mutex.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/condition_variable.hpp>
-
-
 
 
 /** Wrapped boost mutex: supports recursive locking, but no waiting  */
