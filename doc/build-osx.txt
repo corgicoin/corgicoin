@@ -10,6 +10,41 @@ cryptographic software written by Eric Young (eay@cryptsoft.com) and UPnP
 software written by Thomas Bernard.
 
 
+-----------------------------------------------------------------------------------------------------
+Mavericks build instructions
+-----------------------------------------------------------------------------------------------------
+
+The latest version of the corgicoin-qt.pro file is geared more towards building on Mavericks using
+brew for dependencies.
+
+1) Install Homebrew - http://brew.sh/
+
+2) Make sure you have the following brewed:
+
+brew install boost
+brew install berkeley-db
+brew install libtool
+brew install miniupnpc
+brew install openssl
+brew install qt
+
+3) Make sure you have the Xcode developer command line tools installed (brew will instruct you to install them as well)
+
+4) You can now try to build the QT file. From the corgicoin folder in a command prompt, try:
+qmake "USE_UPNP=1" corgicoin-qt.pro
+
+(You may generate some warnings, messages)
+
+5) You can now try to build!
+make -f Makefile
+
+6) Fire up your corgicoin-qt and hash away!
+
+
+
+
+
+
 Mac OS X litecoind build instructions
 Laszlo Hanyecz <solar@heliacal.net>
 Douglas Huff <dhuff@jrbobdobbs.org>
