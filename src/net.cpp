@@ -1145,7 +1145,7 @@ void MapPort()
 static const char *strDNSSeed[][2] = {
        // default hypernode dns seed , change later when network grows
        {"seed.corgicoin.com", "seed.corgicoin.com"},
-       {"blockchain.corgicoin.com", "blockchain.corgicoin.com"},
+       {"seed.vannatter.com", "seed.vannatter.com"},
 };
 
 void ThreadDNSAddressSeed(void* parg)
