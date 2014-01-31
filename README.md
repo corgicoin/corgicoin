@@ -1,11 +1,10 @@
 # CorgiCoin [CORG, Ç]
 http://corgicoin.com/
 
-![CorgiCoin](http://corgicoin.com/images/corgi_coin.png)
+![CorgiCoin](http://i.imgur.com/jx5vexy.png)
 
 ## What is CorgiCoin?
 CorgiCoin is like Bitcoin, but based on Litecoin, and very short.
-
 
 ## License
 CorgiCoin is released under the MIT license. See [COPYING](COPYING)
