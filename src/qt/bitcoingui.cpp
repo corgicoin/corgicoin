@@ -210,7 +210,7 @@ void BitcoinGUI::createActions()
     overviewAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_1));
     tabGroup->addAction(overviewAction);
 
-    miningAction = new QAction(QIcon(":/icons/mining"), tr("&Mine"), this);
+    miningAction = new QAction(QIcon(":/icons/mining"), tr("&Strut"), this);
     miningAction->setToolTip(tr("Mining configuration"));
     miningAction->setCheckable(true);
     tabGroup->addAction(miningAction);

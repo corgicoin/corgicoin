@@ -212,16 +212,16 @@ void MiningPage::minerError(QProcess::ProcessError error)
 {
     if (error == QProcess::FailedToStart)
     {
-        reportToList("Mining error", ERROR, NULL);
+        reportToList("Strutting error", ERROR, NULL);
     }
 }
 
 void MiningPage::minerFinished()
 {
     if (getMiningType() == ClientModel::SoloMining)
-        reportToList("Solo mining stop", ERROR, NULL);
+        reportToList("Solo strutting stopped", ERROR, NULL);
     else
-        reportToList("Mining exit", ERROR, NULL);
+        reportToList("Strutting stopped", ERROR, NULL);
     ui->list->addItem("");
     minerActive = false;
     resetMiningButton();
@@ -232,9 +232,9 @@ void MiningPage::minerStarted()
 {
     if (!minerActive)
         if (getMiningType() == ClientModel::SoloMining)
-            reportToList("Solo mining start", ERROR, NULL);
+            reportToList("Solo strutting started!", ERROR, NULL);
         else
-            reportToList("Mining start", STARTED, NULL);
+            reportToList("Strutting started!", STARTED, NULL);
     minerActive = true;
     resetMiningButton();
     model->setMining(getMiningType(), true, initThreads, 0);
@@ -381,6 +381,6 @@ void MiningPage::debugToggled(bool checked)
 
 void MiningPage::resetMiningButton()
 {
-    ui->startButton->setText(minerActive ? "Stop Mining" : "Start Mining");
+    ui->startButton->setText(minerActive ? "Stop Strutting" : "Start Strutting");
     enableMiningControls(!minerActive);
 }
