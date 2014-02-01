@@ -14,13 +14,19 @@
    <string>About CorgiCoin</string>
   </property>
   <layout class="QHBoxLayout" name="horizontalLayout_2">
-   <item>
+   <item alignment="Qt::AlignTop">
     <widget class="QLabel" name="label_4">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Preferred" vsizetype="Ignored">
        <horstretch>0</horstretch>
        <verstretch>0</verstretch>
       </sizepolicy>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>96</height>
+      </size>
      </property>
      <property name="pixmap">
       <pixmap resource="../bitcoin.qrc">:/images/about</pixmap>
@@ -90,12 +96,16 @@
      </item>
      <item>
       <widget class="QLabel" name="label_2">
+       <property name="font">
+        <font>
+         <pointsize>11</pointsize>
+        </font>
+       </property>
        <property name="cursor">
         <cursorShape>IBeamCursor</cursorShape>
        </property>
        <property name="text">
-        <string>
-          Copyright © 2009-2012 Bitcoin Developers
+        <string>          Copyright © 2009-2012 Bitcoin Developers
           Copyright © 2011-2012 Litecoin Developers
           Copyright © 2013 Dogecoin Developers
           Copyright © 2014 Corgicoin Developers
