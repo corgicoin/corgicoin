@@ -6,22 +6,36 @@ DEFINES += QT_GUI BOOST_THREAD_USE_LIB BOOST_SPIRIT_THREADSAFE BOOST_THREAD_PROV
 CONFIG += no_include_pwd
 
 win32 {
-LIBS += -lshlwapi
-LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,)
-LIBS += -lssl -lcrypto -ldb_cxx$$BDB_LIB_SUFFIX
-LIBS += -lws2_32 -lole32 -loleaut32 -luuid -lgdi32
+
+ LIBS += -lshlwapi
+ LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,)
+ LIBS += -lssl -lcrypto -ldb_cxx$$BDB_LIB_SUFFIX
+ LIBS += -lws2_32 -lole32 -loleaut32 -luuid -lgdi32
+ LIBS += -lboost_system-mgw46-mt-sd-1_53 -lboost_filesystem-mgw46-mt-sd-1_53 -lboost_program_options-mgw46-mt-sd-1_53 -lboost_thread-mgw46-mt-sd-1_53
+ BOOST_LIB_SUFFIX=-mgw46-mt-sd-1_53
+ BOOST_INCLUDE_PATH=C:/deps/boost
+ BOOST_LIB_PATH=C:/deps/boost/stage/lib
+ BDB_INCLUDE_PATH=C:/deps/db/build_unix
+ BDB_LIB_PATH=C:/deps/db/build_unix
+ OPENSSL_INCLUDE_PATH=C:/deps/ssl/include
+ OPENSSL_LIB_PATH=C:/deps/ssl
+
+#LIBS += -lshlwapi
+#LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,)
+#LIBS += -lssl -lcrypto -ldb_cxx$$BDB_LIB_SUFFIX
+#LIBS += -lws2_32 -lole32 -loleaut32 -luuid -lgdi32
 #LIBS += -lboost_system-mgw46-mt-sd-1_53 -lboost_filesystem-mgw46-mt-sd-1_53 -lboost_program_options-mgw46-mt-sd-1_53 -lboost_thread-mgw46-mt-sd-1_53
 #BOOST_LIB_SUFFIX=-mgw46-mt-sd-1_53
-LIBS += -lboost_system -lboost_filesystem -lboost_program_options -lboost_thread
-BOOST_LIB_SUFFIX=
-BOOST_INCLUDE_PATH=C:/deps/boost
-BOOST_LIB_PATH=C:/deps/boost/stage/lib
-BDB_INCLUDE_PATH=c:/deps/db/build_unix
-BDB_LIB_PATH=c:/deps/db/build_unix
-OPENSSL_INCLUDE_PATH=c:/deps/ssl/include
-OPENSSL_LIB_PATH=c:/deps/ssl
-MINIUPNPC_LIB_PATH=c:/deps/miniupnpc
-MINIUPNPC_INCLUDE_PATH=c:/deps
+#LIBS += -lboost_system -lboost_filesystem -lboost_program_options -lboost_thread
+#BOOST_LIB_SUFFIX=
+#BOOST_INCLUDE_PATH=C:/deps/boost
+#BOOST_LIB_PATH=C:/deps/boost/stage/lib
+#BDB_INCLUDE_PATH=c:/deps/db/build_unix
+#BDB_LIB_PATH=c:/deps/db/build_unix
+#OPENSSL_INCLUDE_PATH=c:/deps/ssl/include
+#OPENSSL_LIB_PATH=c:/deps/ssl
+#MINIUPNPC_LIB_PATH=c:/deps/miniupnpc
+#MINIUPNPC_INCLUDE_PATH=c:/deps
 }
 
 
@@ -302,7 +316,7 @@ OTHER_FILES += \
 # platform specific defaults, if not overridden on command line
 isEmpty(BOOST_LIB_SUFFIX) {
     macx:BOOST_LIB_SUFFIX = -mt
-    windows:BOOST_LIB_SUFFIX = -mgw44-mt-s-1_49
+#    windows:BOOST_LIB_SUFFIX = -mgw44-mt-s-1_49
 }
 
 isEmpty(BOOST_THREAD_LIB_SUFFIX) {
@@ -387,4 +401,3 @@ contains(RELEASE, 1) {
 }
 
 system($$QMAKE_LRELEASE -silent $$_PRO_FILE_)
-
