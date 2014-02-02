@@ -18,6 +18,7 @@ To Build
 --------
 
 cd src/
+mkdir obj/
 make -f makefile.unix            # Headless corgicoind
 
 See readme-qt.rst for instructions on building Corgicoin-Qt,
