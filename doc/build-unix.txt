@@ -19,7 +19,7 @@ To Build
 
 cd src/
 mkdir obj/
-make -f makefile.unix            # Headless corgicoind
+make -f makefile.unix USE_UPNP=-           # Headless corgicoind
 
 See readme-qt.rst for instructions on building Corgicoin-Qt,
 the graphical user interface.
