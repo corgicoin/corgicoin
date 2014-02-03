@@ -46,8 +46,13 @@ Special reward system: Random block rewards
 ### Conf Settings
 
 rpcuser=corgicoin
+
 rpcpassword=barkbark
+
 rpcport=62555
+
 addnode=162.243.41.34
+
 addnode=192.241.169.209
+
 addnode=162.243.222.29
