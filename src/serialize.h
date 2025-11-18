@@ -26,8 +26,9 @@
 #include "allocators.h"
 #include "version.h"
 
-typedef long long  int64;
-typedef unsigned long long  uint64;
+// Modern C++11 type aliases
+using int64 = long long;
+using uint64 = unsigned long long;
 
 class CScript;
 class CDataStream;

@@ -99,13 +99,13 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [ ] Berkeley DB 5.3.28+ or 6.x
 - [ ] Investigate Qt 5 migration
 
-### Phase 3: Code Modernization (Medium Priority)
-- [ ] Enable C++11/14 features
-- [ ] Replace raw pointers with smart pointers
-- [ ] Use nullptr instead of NULL
-- [ ] Add override/final keywords
-- [ ] Use auto for complex types
-- [ ] Replace typedef with using
+### Phase 3: Code Modernization (Medium Priority) ✅ PARTIALLY COMPLETE
+- [x] Replace typedef with using (v1.4.1.4) - All core headers modernized
+- [x] Use nullptr instead of NULL (v1.4.1.4) - Critical headers updated
+- [x] Enable C++11/14 features (v1.4.1.3) - Compiler flags set
+- [ ] Replace raw pointers with smart pointers (requires more extensive testing)
+- [ ] Add override/final keywords to virtual functions
+- [ ] Use auto for complex iterator types
 
 ### Phase 4: Protocol Updates (Low Priority)
 - [ ] Remove/disable IRC peer discovery
@@ -174,6 +174,33 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.4 (2025-11-18) - Code Modernization Release
+
+**C++11 Code Improvements:**
+- ✅ Replaced all `typedef` with modern `using` declarations (20+ occurrences)
+  - serialize.h: int64, uint64 type aliases
+  - uint256.h: base_uint160, base_uint256
+  - sync.h: CCriticalSection, CWaitableCriticalSection, CCriticalBlock
+  - key.h: CPrivKey, CSecret
+  - script.h: CTxDestination
+  - allocators.h: SecureString
+  - main.h: MapPrevTx
+  - crypter.h: CKeyingMaterial
+  - keystore.h: KeyMap, ScriptMap, CryptedKeyMap
+  - compat.h: SOCKET, socklen_t
+
+- ✅ Replaced `NULL` with `nullptr` in critical headers (25+ occurrences)
+  - util.h: DecodeBase64, DecodeBase32 function signatures
+  - main.h: SyncWithWallets, CInPoint, ReadFromDisk, AcceptToMemoryPool, SetMerkleBranch, CBlockIndex initialization
+  - net.h: ConnectNode, GetLocal, GetLocalAddress, CRequestTracker
+
+**Benefits:**
+- Improved type safety (nullptr is type-safe vs NULL)
+- More readable type aliases (using vs typedef)
+- Modern C++ style consistent with C++11/14/17
+- Better template error messages
+- Foundation for further C++11 modernization
 
 ### Version 1.4.1.3 (2025-11-18) - Modernization Release
 

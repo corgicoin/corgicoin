@@ -62,7 +62,8 @@ public:
     }
 };
 
-typedef std::vector<unsigned char, secure_allocator<unsigned char> > CKeyingMaterial;
+// Modern C++11 type alias for secure keying material
+using CKeyingMaterial = std::vector<unsigned char, secure_allocator<unsigned char>>;
 
 /** Encryption/decryption context with key information */
 class CCrypter
