@@ -1124,7 +1124,7 @@ public:
         LOCK(cs_sigcache);
 
         sigdata_type k(hash, vchSig, pubKey);
-        std::set<sigdata_type>::iterator mi = setValid.find(k);
+        auto mi = setValid.find(k);
         if (mi != setValid.end())
             return true;
         return false;
@@ -1150,7 +1150,7 @@ public:
             // than our cache size.
             uint256 randomHash = GetRandHash();
             std::vector<unsigned char> unused;
-            std::set<sigdata_type>::iterator it =
+            auto it =
                 setValid.lower_bound(sigdata_type(randomHash, unused, unused));
             if (it == setValid.end())
                 it = setValid.begin();

@@ -21,7 +21,7 @@ protected:
     mutable CCriticalSection cs_KeyStore;
 
 public:
-    virtual ~CKeyStore() {}
+    virtual ~CKeyStore() = default;
 
     // Add a key to the store.
     virtual bool AddKey(const CKey& key) =0;
