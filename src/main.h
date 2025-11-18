@@ -83,7 +83,7 @@ class CTxIndex;
 
 void RegisterWallet(CWallet* pwalletIn);
 void UnregisterWallet(CWallet* pwalletIn);
-void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = NULL, bool fUpdate = false);
+void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = nullptr, bool fUpdate = false);
 bool ProcessBlock(CNode* pfrom, CBlock* pblock);
 bool CheckDiskSpace(uint64 nAdditionalBytes=0);
 FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
@@ -167,8 +167,8 @@ public:
 
     CInPoint() { SetNull(); }
     CInPoint(CTransaction* ptxIn, unsigned int nIn) { ptx = ptxIn; n = nIn; }
-    void SetNull() { ptx = NULL; n = (unsigned int) -1; }
-    bool IsNull() const { return (ptx == NULL && n == (unsigned int) -1); }
+    void SetNull() { ptx = nullptr; n = (unsigned int) -1; }
+    bool IsNull() const { return (ptx == nullptr && n == (unsigned int) -1); }
 };
 
 
@@ -369,7 +369,8 @@ enum GetMinFee_mode
     GMF_SEND,
 };
 
-typedef std::map<uint256, std::pair<CTxIndex, CTransaction> > MapPrevTx;
+// Modern C++11 type alias for previous transaction map
+using MapPrevTx = std::map<uint256, std::pair<CTxIndex, CTransaction>>;
 
 /** The basic transaction that is broadcasted on the network and contained in
  * blocks.  A transaction can contain multiple inputs and outputs.
@@ -574,7 +575,7 @@ public:
     }
 
 
-    bool ReadFromDisk(CDiskTxPos pos, FILE** pfileRet=NULL)
+    bool ReadFromDisk(CDiskTxPos pos, FILE** pfileRet=nullptr)
     {
         CAutoFile filein = CAutoFile(OpenBlockFile(pos.nFile, 0, pfileRet ? "rb+" : "rb"), SER_DISK, CLIENT_VERSION);
         if (!filein)
@@ -672,7 +673,7 @@ public:
                        const CBlockIndex* pindexBlock, bool fBlock, bool fMiner, bool fStrictPayToScriptHash=true);
     bool ClientConnectInputs();
     bool CheckTransaction() const;
-    bool AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs=true, bool* pfMissingInputs=NULL);
+    bool AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs=true, bool* pfMissingInputs=nullptr);
 
 protected:
     const CTxOut& GetOutputFor(const CTxIn& input, const MapPrevTx& inputs) const;
@@ -722,7 +723,7 @@ public:
     )
 
 
-    int SetMerkleBranch(const CBlock* pblock=NULL);
+    int SetMerkleBranch(const CBlock* pblock=nullptr);
     int GetDepthInMainChain(CBlockIndex* &pindexRet) const;
     int GetDepthInMainChain() const { CBlockIndex *pindexRet; return GetDepthInMainChain(pindexRet); }
     bool IsInMainChain() const { return GetDepthInMainChain() > 0; }
@@ -1056,9 +1057,9 @@ public:
 
     CBlockIndex()
     {
-        phashBlock = NULL;
-        pprev = NULL;
-        pnext = NULL;
+        phashBlock = nullptr;
+        pprev = nullptr;
+        pnext = nullptr;
         nFile = 0;
         nBlockPos = 0;
         nHeight = 0;
@@ -1073,9 +1074,9 @@ public:
 
     CBlockIndex(unsigned int nFileIn, unsigned int nBlockPosIn, CBlock& block)
     {
-        phashBlock = NULL;
-        pprev = NULL;
-        pnext = NULL;
+        phashBlock = nullptr;
+        pprev = nullptr;
+        pnext = nullptr;
         nFile = nFileIn;
         nBlockPos = nBlockPosIn;
         nHeight = 0;

@@ -121,6 +121,7 @@ struct zero_after_free_allocator : public std::allocator<T>
 };
 
 // This is exactly like std::string, but with a custom allocator.
-typedef std::basic_string<char, std::char_traits<char>, secure_allocator<char> > SecureString;
+// Modern C++11 type alias for secure string
+using SecureString = std::basic_string<char, std::char_traits<char>, secure_allocator<char>>;
 
 #endif

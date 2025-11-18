@@ -15,8 +15,9 @@
 #include <string>
 #include <vector>
 
-typedef long long  int64;
-typedef unsigned long long  uint64;
+// Modern C++11 type aliases
+using int64 = long long;
+using uint64 = unsigned long long;
 
 
 inline int Testuint256AdHoc(std::vector<std::string> vArg);
@@ -384,8 +385,9 @@ public:
     friend inline int Testuint256AdHoc(std::vector<std::string> vArg);
 };
 
-typedef base_uint<160> base_uint160;
-typedef base_uint<256> base_uint256;
+// Modern C++11 type aliases
+using base_uint160 = base_uint<160>;
+using base_uint256 = base_uint<256>;
 
 
 

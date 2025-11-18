@@ -29,11 +29,12 @@
 #include <ifaddrs.h>
 #endif
 
-typedef u_int SOCKET;
+// Modern C++11 type alias for socket type
+using SOCKET = u_int;
 #ifdef WIN32
 #define MSG_NOSIGNAL        0
 #define MSG_DONTWAIT        0
-typedef int socklen_t;
+using socklen_t = int;
 #else
 #include "errno.h"
 #define WSAGetLastError()   errno
