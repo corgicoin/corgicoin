@@ -768,9 +768,9 @@ Value getreceivedbyaddress(const Array& params, bool fHelp)
 
     // Tally
     int64 nAmount = 0;
-    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         if (wtx.IsCoinBase() || !wtx.IsFinal())
             continue;
 
@@ -814,9 +814,9 @@ Value getreceivedbyaccount(const Array& params, bool fHelp)
 
     // Tally
     int64 nAmount = 0;
-    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         if (wtx.IsCoinBase() || !wtx.IsFinal())
             continue;
 
@@ -838,9 +838,9 @@ int64 GetAccountBalance(CWalletDB& walletdb, const string& strAccount, int nMinD
     int64 nBalance = 0;
 
     // Tally wallet transactions
-    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         if (!wtx.IsFinal())
             continue;
 
@@ -1165,9 +1165,9 @@ Value ListReceived(const Array& params, bool fByAccounts)
 
     // Tally
     map<CBitcoinAddress, tallyitem> mapTally;
-    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
 
         if (wtx.IsCoinBase() || !wtx.IsFinal())
             continue;
@@ -1452,9 +1452,9 @@ Value listaccounts(const Array& params, bool fHelp)
             mapAccountBalances[entry.second] = 0;
     }
 
-    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         int64 nGeneratedImmature, nGeneratedMature, nFee;
         string strSentAccount;
         list<pair<CTxDestination, int64> > listReceived;

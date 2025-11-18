@@ -666,8 +666,8 @@ void CTxMemPool::queryHashes(std::vector<uint256>& vtxid)
 
     LOCK(cs);
     vtxid.reserve(mapTx.size());
-    for (map<uint256, CTransaction>::iterator mi = mapTx.begin(); mi != mapTx.end(); ++mi)
-        vtxid.push_back((*mi).first);
+    for (const auto& entry : mapTx)
+        vtxid.push_back(entry.first);
 }
 
 
@@ -2169,9 +2169,9 @@ void PrintBlockTree()
 {
     // precompute tree structure
     map<CBlockIndex*, vector<CBlockIndex*> > mapNext;
-    for (map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi)
+    for (const auto& entry : mapBlockIndex)
     {
-        CBlockIndex* pindex = (*mi).second;
+        CBlockIndex* pindex = entry.second;
         mapNext[pindex->pprev].push_back(pindex);
         // test
         //while (rand() % 3 == 0)
