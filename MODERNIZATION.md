@@ -175,6 +175,50 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.11 (2025-11-18) - nullptr Conversions in Main Code
+
+**C++11 nullptr Updates (23 occurrences in main.cpp):**
+- ✅ Global variable initialization (2 occurrences):
+  - pindexGenesisBlock, pindexBest block index pointers
+
+- ✅ Pointer checks and comparisons (7 occurrences):
+  - pblock validity check in SetMerkleBranch()
+  - pindexLast check in GetNextWorkRequired()
+  - pindexBest check in IsInitialBlockDownload()
+  - pindexGenesisBlock check in SetBestChain()
+  - pindex loop condition in version checking
+
+- ✅ Local variable initialization (4 occurrences):
+  - ptxOld in AcceptToMemoryPool()
+  - pindex in message handler
+  - porphan in block creation
+
+- ✅ Pointer assignments (1 occurrence):
+  - pnext pointer unlinking in blockchain reorganization
+
+- ✅ Return statements (6 occurrences):
+  - OpenBlockFile() error returns (3 occurrences)
+  - AppendBlockFile() error returns (2 occurrences)
+  - CreateNewBlock() allocation failure
+
+- ✅ Function parameters (4 occurrences):
+  - ProcessBlock() called with nullptr node parameter (2 occurrences)
+  - SyncWithWallets() called with nullptr block parameter (2 occurrences)
+  - PrintException() and PrintExceptionContinue() error handlers (2 occurrences)
+
+**Files Modified:**
+- src/main.cpp: Core blockchain and transaction code (23 nullptr conversions)
+- src/version.h: Version updated to 1.4.1.11
+- corgicoin-qt.pro: Version updated to 1.4.1.11
+
+**Benefits:**
+- Consistent nullptr usage across blockchain core
+- Better type safety in block management
+- Modernized error handling patterns
+- Foundation for blockchain refactoring
+
+**Progress:** 90 nullptr conversions in .cpp files (key.cpp: 37, net.cpp: 30, main.cpp: 23), ~93 remaining
+
 ### Version 1.4.1.10 (2025-11-18) - nullptr Conversions in Network Code
 
 **C++11 nullptr Updates (30 occurrences in net.cpp):**
