@@ -331,7 +331,7 @@ public:
 
         // Each retry is 2 minutes after the last
         nRequestTime = std::max(nRequestTime + 2 * 60 * 1000000, nNow);
-        mapAskFor.insert(std::make_pair(nRequestTime, inv));
+        mapAskFor.insert({nRequestTime, inv});
     }
 
 
@@ -683,8 +683,8 @@ inline void RelayMessage<>(const CInv& inv, const CDataStream& ss)
         }
 
         // Save original serialized message so newer versions are preserved
-        mapRelay.insert(std::make_pair(inv, ss));
-        vRelayExpiration.push_back(std::make_pair(GetTime() + 15 * 60, inv));
+        mapRelay.insert({inv, ss});
+        vRelayExpiration.push_back({GetTime() + 15 * 60, inv});
     }
 
     RelayInventory(inv);
