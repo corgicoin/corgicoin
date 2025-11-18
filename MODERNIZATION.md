@@ -90,7 +90,7 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [x] Update build configs for modern dependencies (v1.4.1.3)
 - [x] Add version checking and warnings (v1.4.1.3)
 - [x] IRC disabled by default with deprecation warnings (v1.4.1.3)
-- [ ] Add CMake build system alongside qmake
+- [x] Add CMake build system alongside qmake (v1.4.1.29)
 - [x] Update compiler warning flags (v1.4.1.3)
 
 ### Phase 2: Dependency Updates (High Priority)
@@ -174,6 +174,36 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.29 (2025-11-18) - CMake Build System Implementation
+
+**Modern Build System:**
+- ✅ Added comprehensive CMake build system alongside existing qmake/make builds
+- ✅ Supports both daemon (corgicoind) and Qt GUI (corgicoin-qt) builds
+- ✅ Automatic dependency detection for OpenSSL, Boost, Berkeley DB, and Qt
+- ✅ Cross-platform support (Linux, macOS, Windows)
+- ✅ Configurable build options (UPnP, QR codes, D-Bus, hardening)
+- ✅ IDE integration (Visual Studio, CLion, Qt Creator, VS Code)
+- ✅ Security hardening flags enabled by default
+- ✅ Out-of-source builds for cleaner project structure
+
+**Files Added:**
+- CMakeLists.txt: Root build configuration with comprehensive options
+- cmake/Modules/FindBerkeleyDB.cmake: Custom module to find Berkeley DB
+- BUILD.cmake.md: Detailed CMake build instructions and troubleshooting
+
+**Files Modified:**
+- README.md: Added CMake as recommended build method
+- MODERNIZATION.md: Marked Phase 1 CMake task as complete
+
+**Benefits:**
+- Modern standard build system expected by developers
+- Better cross-platform and IDE support
+- Automatic dependency management
+- More maintainable than traditional makefiles
+- Completes Phase 1 of modernization roadmap
+
+**Status:** Phase 1: Build System Updates now 100% COMPLETE! ✅
 
 ### Version 1.4.1.18 (2025-11-18) - nullptr Conversions in Qt GUI Code (Part 2 - Complete)
 

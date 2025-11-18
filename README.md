@@ -102,7 +102,23 @@ addnode=162.243.123.79
 
 ### Build Instructions
 
-#### Linux/Unix
+CorgiCoin supports two build systems:
+- **CMake** (recommended for modern systems) - See [BUILD.cmake.md](BUILD.cmake.md)
+- **qmake/make** (traditional approach)
+
+#### CMake (Modern, Cross-Platform)
+
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=ON
+make -j$(nproc)
+```
+
+See [BUILD.cmake.md](BUILD.cmake.md) for detailed CMake instructions, dependency setup, and IDE integration.
+
+#### Traditional Build (qmake/make)
+
+##### Linux/Unix
 
 ```bash
 cd src/
@@ -111,7 +127,7 @@ make -f makefile.unix            # For daemon
 qmake && make                     # For Qt GUI
 ```
 
-#### macOS
+##### macOS
 
 ```bash
 ./build_mac.sh
@@ -119,7 +135,7 @@ qmake && make                     # For Qt GUI
 qmake && make
 ```
 
-#### Windows
+##### Windows
 
 Use Qt Creator or MinGW-w64 with updated dependency paths.
 
