@@ -3,7 +3,7 @@ TARGET =
 VERSION = 1.4.1
 INCLUDEPATH += src src/json src/qt
 DEFINES += QT_GUI BOOST_THREAD_USE_LIB BOOST_SPIRIT_THREADSAFE BOOST_THREAD_PROVIDES_GENERIC_SHARED_MUTEX_ON_WIN __NO_SYSTEM_INCLUDES
-CONFIG += no_include_pwd
+CONFIG += no_include_pwd c++11
 
 win32 {
 
@@ -105,8 +105,10 @@ contains(BITCOIN_NEED_QT_PLUGINS, 1) {
 
 !windows {
     # for extra security against potential buffer overflows
-    QMAKE_CXXFLAGS += -fstack-protector
-    QMAKE_LFLAGS += -fstack-protector
+    QMAKE_CXXFLAGS += -fstack-protector-all -Wstack-protector
+    QMAKE_LFLAGS += -fstack-protector-all
+    # Enable additional hardening flags
+    QMAKE_CXXFLAGS += -D_GLIBCXX_ASSERTIONS
     # do not enable this on windows, as it will result in a non-working executable!
 }
 
