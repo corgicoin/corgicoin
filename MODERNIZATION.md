@@ -175,6 +175,55 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.14 (2025-11-18) - nullptr Conversions in Wallet, IRC, and Checkpoint Code
+
+**C++11 nullptr Updates (11 occurrences across 3 files):**
+
+**wallet.cpp (5 occurrences):**
+- ✅ Encryption pointer cleanup (2 occurrences):
+  - pwalletdbEncryption deletion and nullification after encryption
+
+- ✅ Transaction handling (1 occurrence):
+  - AddToWalletIfInvolvingMe() parameter
+
+- ✅ Coin selection algorithm (2 occurrences):
+  - coinLowestLarger pointer initialization and validity check
+
+- ✅ Database allocation (1 occurrence):
+  - Conditional CWalletDB allocation
+
+**irc.cpp (3 occurrences):**
+- ✅ Function default parameters (3 occurrences):
+  - RecvUntil() optional string parameters (psz2, psz3, psz4)
+
+- ✅ Error handling (1 occurrence):
+  - PrintExceptionContinue() in catch block
+
+- ✅ Thread function call (1 occurrence):
+  - ThreadIRCSeed() test main function
+
+**checkpoints.cpp (3 occurrences):**
+- ✅ Return statements (2 occurrences):
+  - GetLastCheckpoint() testnet early return
+  - GetLastCheckpoint() not found return
+
+- ✅ Code comments (1 occurrence):
+  - Commented nullptr in GetLastCheckpoint()
+
+**Files Modified:**
+- src/wallet.cpp: Wallet encryption and coin selection (5 nullptr)
+- src/irc.cpp: Deprecated IRC peer discovery (3 nullptr)
+- src/checkpoints.cpp: Blockchain checkpoint validation (3 nullptr)
+- src/version.h: Version updated to 1.4.1.14
+- corgicoin-qt.pro: Version updated to 1.4.1.14
+
+**Benefits:**
+- Consistent nullptr usage in critical wallet operations
+- Improved type safety in transaction and encryption handling
+- Modernized deprecated IRC code for future removal
+
+**Progress:** 166 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 30, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7, wallet.cpp: 5, irc.cpp: 3, checkpoints.cpp: 3), ~17 remaining
+
 ### Version 1.4.1.13 (2025-11-18) - nullptr Conversions in Utility and Network Code
 
 **C++11 nullptr Updates (30 occurrences across 3 files):**
