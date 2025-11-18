@@ -498,7 +498,7 @@ Value sendrawtransaction(const Array& params, bool fHelp)
         if (!tx.AcceptToMemoryPool(txdb))
             throw JSONRPCError(-22, "TX rejected");
 
-        SyncWithWallets(tx, NULL, true);
+        SyncWithWallets(tx, nullptr, true);
     }
     RelayMessage(CInv(MSG_TX, hashTx), tx);
 

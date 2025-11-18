@@ -175,6 +175,49 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.16 (2025-11-18) - nullptr Conversions in Cryptography, Script, and RPC Code
+
+**C++11 nullptr Updates (7 occurrences across 4 files):**
+
+**crypter.cpp (2 occurrences):**
+- ✅ OpenSSL function parameters (2 occurrences):
+  - EVP_EncryptInit_ex() engine parameter in Encrypt() method
+  - EVP_DecryptInit_ex() engine parameter in Decrypt() method
+
+**script.cpp (2 occurrences):**
+- ✅ Return statement (1 occurrence):
+  - GetTxnOutputType() returning nullptr for unknown transaction type
+
+- ✅ OpenSSL BigNum operation (1 occurrence):
+  - BN_div() remainder parameter in OP_DIV operation
+
+**rpcdump.cpp (2 occurrences):**
+- ✅ Constructor default parameter (1 occurrence):
+  - CTxDump() ptx parameter default value
+
+- ✅ Member initialization (1 occurrence):
+  - pindex pointer initialization in CTxDump constructor
+
+**rpcrawtransaction.cpp (1 occurrence):**
+- ✅ Function call (1 occurrence):
+  - SyncWithWallets() block parameter when broadcasting raw transaction
+
+**Files Modified:**
+- src/crypter.cpp: Wallet encryption/decryption (2 nullptr)
+- src/script.cpp: Script validation and operations (2 nullptr)
+- src/rpcdump.cpp: Wallet dump RPC commands (2 nullptr)
+- src/rpcrawtransaction.cpp: Raw transaction RPC (1 nullptr)
+- src/version.h: Version updated to 1.4.1.16
+- corgicoin-qt.pro: Version updated to 1.4.1.16
+
+**Benefits:**
+- Complete nullptr modernization of cryptographic operations
+- Improved type safety in script execution
+- Consistent nullptr usage in RPC layer
+- Better OpenSSL API compatibility
+
+**Progress:** 179 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 33, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7, wallet.cpp: 5, irc.cpp: 3, checkpoints.cpp: 3, addrman.cpp: 2, crypter.cpp: 2, script.cpp: 2, rpcdump.cpp: 2, sync.cpp: 1, rpcrawtransaction.cpp: 1), **core non-Qt .cpp files complete!**
+
 ### Version 1.4.1.15 (2025-11-18) - nullptr Conversions in Network and Synchronization Code
 
 **C++11 nullptr Updates (6 occurrences across 3 files):**
