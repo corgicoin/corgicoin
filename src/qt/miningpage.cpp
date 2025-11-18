@@ -179,13 +179,13 @@ void MiningPage::readProcessOutput()
             else if (line.contains("LONGPOLL detected new block"))
                 reportToList("LONGPOLL detected a new block", LONGPOLL, getTime(line));
             else if (line.contains("Supported options:"))
-                reportToList("Miner didn't start properly. Try checking your settings.", ERROR, NULL);
+                reportToList("Miner didn't start properly. Try checking your settings.", ERROR, nullptr);
             else if (line.contains("The requested URL returned error: 403"))
-                reportToList("Couldn't connect. Please check your username and password.", ERROR, NULL);
+                reportToList("Couldn't connect. Please check your username and password.", ERROR, nullptr);
             else if (line.contains("HTTP request failed"))
-                reportToList("Couldn't connect. Please check pool server and port.", ERROR, NULL);
+                reportToList("Couldn't connect. Please check pool server and port.", ERROR, nullptr);
             else if (line.contains("JSON-RPC call failed"))
-                reportToList("Couldn't communicate with server. Retrying in 30 seconds.", ERROR, NULL);
+                reportToList("Couldn't communicate with server. Retrying in 30 seconds.", ERROR, nullptr);
             else if (line.contains("thread ") && line.contains("khash/s"))
             {
                 QString threadIDstr = line.at(line.indexOf("thread ")+7);
@@ -212,16 +212,16 @@ void MiningPage::minerError(QProcess::ProcessError error)
 {
     if (error == QProcess::FailedToStart)
     {
-        reportToList("Strutting error", ERROR, NULL);
+        reportToList("Strutting error", ERROR, nullptr);
     }
 }
 
 void MiningPage::minerFinished()
 {
     if (getMiningType() == ClientModel::SoloMining)
-        reportToList("Solo strutting stopped", ERROR, NULL);
+        reportToList("Solo strutting stopped", ERROR, nullptr);
     else
-        reportToList("Strutting stopped", ERROR, NULL);
+        reportToList("Strutting stopped", ERROR, nullptr);
     ui->list->addItem("");
     minerActive = false;
     resetMiningButton();
@@ -232,9 +232,9 @@ void MiningPage::minerStarted()
 {
     if (!minerActive)
         if (getMiningType() == ClientModel::SoloMining)
-            reportToList("Solo strutting started!", ERROR, NULL);
+            reportToList("Solo strutting started!", ERROR, nullptr);
         else
-            reportToList("Strutting started!", STARTED, NULL);
+            reportToList("Strutting started!", STARTED, nullptr);
     minerActive = true;
     resetMiningButton();
     model->setMining(getMiningType(), true, initThreads, 0);
@@ -281,7 +281,7 @@ void MiningPage::updateSpeed()
 void MiningPage::reportToList(QString msg, int type, QString time)
 {
     QString message;
-    if (time == NULL)
+    if (time == nullptr)
         message = QString("[%1] - %2").arg(QTime::currentTime().toString(), msg);
     else
         message = QString("[%1] - %2").arg(time, msg);
@@ -326,7 +326,7 @@ QString MiningPage::getTime(QString time)
         return time;
     }
     else
-        return NULL;
+        return nullptr;
 }
 
 void MiningPage::enableMiningControls(bool enable)
