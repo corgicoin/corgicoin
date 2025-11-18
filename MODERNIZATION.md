@@ -175,6 +175,30 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.6 (2025-11-18) - Extended nullptr and Auto Improvements
+
+**C++11 nullptr Updates:**
+- ✅ Replaced `NULL` with `nullptr` in database layer (12 occurrences)
+  - db.h: DbTxn pointers, Dbc cursors, transaction management, function parameters
+  - addrman.h: Function parameters for Find() and Create() methods
+
+**C++11 Auto Type Deduction:**
+- ✅ Simplified iterator types with `auto` in address manager (5 occurrences)
+  - addrman.h: std::map<int, CAddrInfo>::iterator → auto (2 locations)
+  - addrman.h: std::vector<std::set<int>>::iterator → auto
+  - addrman.h: std::set<int>::iterator → auto
+  - addrman.h: std::vector<CAddress>::const_iterator → auto
+
+**Files Modified:**
+- src/db.h: Berkeley DB wrapper class with 12 nullptr improvements
+- src/addrman.h: Address manager with 2 nullptr + 5 auto improvements
+
+**Benefits:**
+- Consistent nullptr usage across database operations
+- Improved readability in serialization code
+- Better type safety in pointer operations
+- More maintainable iterator-based code
+
 ### Version 1.4.1.5 (2025-11-18) - Virtual Functions and Auto Type Deduction
 
 **C++11 Virtual Function Safety:**

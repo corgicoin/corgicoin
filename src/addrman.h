@@ -201,11 +201,11 @@ private:
 protected:
 
     // Find an entry.
-    CAddrInfo* Find(const CNetAddr& addr, int *pnId = NULL);
+    CAddrInfo* Find(const CNetAddr& addr, int *pnId = nullptr);
 
     // find an entry, creating it if necessary.
     // nTime and nServices of found node is updated, if necessary.
-    CAddrInfo* Create(const CAddress &addr, const CNetAddr &addrSource, int *pnId = NULL);
+    CAddrInfo* Create(const CAddress &addr, const CNetAddr &addrSource, int *pnId = nullptr);
 
     // Swap two elements in vRandom.
     void SwapRandom(unsigned int nRandomPos1, unsigned int nRandomPos2);
@@ -285,7 +285,7 @@ public:
                 READWRITE(nUBuckets);
                 std::map<int, int> mapUnkIds;
                 int nIds = 0;
-                for (std::map<int, CAddrInfo>::iterator it = am->mapInfo.begin(); it != am->mapInfo.end(); it++)
+                for (auto it = am->mapInfo.begin(); it != am->mapInfo.end(); it++)
                 {
                     if (nIds == nNew) break; // this means nNew was wrong, oh ow
                     mapUnkIds[(*it).first] = nIds;
@@ -297,7 +297,7 @@ public:
                     }
                 }
                 nIds = 0;
-                for (std::map<int, CAddrInfo>::iterator it = am->mapInfo.begin(); it != am->mapInfo.end(); it++)
+                for (auto it = am->mapInfo.begin(); it != am->mapInfo.end(); it++)
                 {
                     if (nIds == nTried) break; // this means nTried was wrong, oh ow
                     CAddrInfo &info = (*it).second;
@@ -307,12 +307,12 @@ public:
                         nIds++;
                     }
                 }
-                for (std::vector<std::set<int> >::iterator it = am->vvNew.begin(); it != am->vvNew.end(); it++)
+                for (auto it = am->vvNew.begin(); it != am->vvNew.end(); it++)
                 {
                     const std::set<int> &vNew = (*it);
                     int nSize = vNew.size();
                     READWRITE(nSize);
-                    for (std::set<int>::iterator it2 = vNew.begin(); it2 != vNew.end(); it2++)
+                    for (auto it2 = vNew.begin(); it2 != vNew.end(); it2++)
                     {
                         int nIndex = mapUnkIds[*it2];
                         READWRITE(nIndex);
@@ -433,7 +433,7 @@ public:
         {
             LOCK(cs);
             Check();
-            for (std::vector<CAddress>::const_iterator it = vAddr.begin(); it != vAddr.end(); it++)
+            for (auto it = vAddr.begin(); it != vAddr.end(); it++)
                 nAdd += Add_(*it, source, nTimePenalty) ? 1 : 0;
             Check();
         }
