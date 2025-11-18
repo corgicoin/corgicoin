@@ -175,6 +175,69 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.12 (2025-11-18) - nullptr Conversions in Database and RPC Code
+
+**C++11 nullptr Updates (35 occurrences across 2 files):**
+
+**db.cpp (17 occurrences):**
+- ✅ Constructor initialization (3 occurrences):
+  - CDB() member initializer list and parameter check
+
+- ✅ Pointer assignments and checks (6 occurrences):
+  - Database handle initialization and cleanup
+  - mapDb pointer management
+  - activeTxn and pdb pointer clearing
+
+- ✅ Berkeley DB function parameters (4 occurrences):
+  - open() transaction pointer (2 occurrences)
+  - put() transaction pointer
+  - remove() and rename() database name parameters (2 occurrences)
+
+- ✅ Block index management (4 occurrences):
+  - InsertBlockIndex() return value
+  - pindexGenesisBlock checks (2 occurrences)
+  - pindexFork initialization
+
+**bitcoinrpc.cpp (18 occurrences):**
+- ✅ Function parameters and defaults (4 occurrences):
+  - GetDifficulty() default parameter and checks (2 occurrences)
+  - pindexBest checks (2 occurrences)
+
+- ✅ Local variable initialization (2 occurrences):
+  - pindex in listsinceblock()
+  - Command lookup return value
+
+- ✅ Thread creation parameters (2 occurrences):
+  - CreateThread() calls with nullptr arguments
+
+- ✅ ProcessBlock calls (1 occurrence):
+  - Mining block submission
+
+- ✅ Standard library functions (5 occurrences):
+  - setlocale() parameter
+  - setbuf() calls (3 occurrences)
+  - CreateFile() Windows API parameter
+
+- ✅ Error handling (3 occurrences):
+  - PrintException() in catch blocks (3 occurrences)
+
+- ✅ String parsing (1 occurrence):
+  - HTTP version check
+
+**Files Modified:**
+- src/db.cpp: Berkeley DB wrapper and block index loading (17 nullptr)
+- src/bitcoinrpc.cpp: JSON-RPC server and command handlers (18 nullptr)
+- src/version.h: Version updated to 1.4.1.12
+- corgicoin-qt.pro: Version updated to 1.4.1.12
+
+**Benefits:**
+- Consistent nullptr usage across database layer
+- Better type safety in RPC handlers
+- Modernized Berkeley DB interactions
+- Foundation for database and RPC refactoring
+
+**Progress:** 125 nullptr conversions in .cpp files (key.cpp: 37, net.cpp: 30, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18), ~58 remaining
+
 ### Version 1.4.1.11 (2025-11-18) - nullptr Conversions in Main Code
 
 **C++11 nullptr Updates (23 occurrences in main.cpp):**
