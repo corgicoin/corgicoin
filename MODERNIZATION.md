@@ -175,6 +175,82 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.13 (2025-11-18) - nullptr Conversions in Utility and Network Code
+
+**C++11 nullptr Updates (30 occurrences across 3 files):**
+
+**init.cpp (12 occurrences):**
+- ✅ Thread creation parameters (4 occurrences):
+  - CreateThread() calls for Shutdown, ExitTimeout, StartNode, ThreadRPCServer
+
+- ✅ Shutdown function calls (3 occurrences):
+  - Shutdown() parameter in error paths
+
+- ✅ Error handling (1 occurrence):
+  - PrintException() in catch block
+
+- ✅ Windows API (1 occurrence):
+  - CreateFileA() security attributes parameter
+
+- ✅ Signal handling (3 occurrences):
+  - sigaction() oldact parameter for SIGTERM, SIGINT, SIGHUP
+
+**util.cpp (11 occurrences):**
+- ✅ OpenSSL cleanup (1 occurrence):
+  - CRYPTO_set_locking_callback() parameter
+
+- ✅ Windows Registry API (2 occurrences):
+  - RegQueryValueExA() type and reserved parameters
+
+- ✅ File I/O (4 occurrences):
+  - Static FILE* initialization
+  - setbuf() calls for unbuffered I/O (3 occurrences)
+  - freopen() return check
+
+- ✅ Memory allocation (1 occurrence):
+  - Pointer validity check after new
+
+- ✅ Windows API (2 occurrences):
+  - GetModuleFileNameA() module handle
+  - SHGetSpecialFolderPathA() window handle
+
+- ✅ Environment variables (1 occurrence):
+  - getenv() return value check
+
+- ✅ Time function (1 occurrence):
+  - time() parameter
+
+**netbase.cpp (7 occurrences):**
+- ✅ String parsing (1 occurrence):
+  - strtol() endptr initialization
+
+- ✅ DNS resolution (3 occurrences):
+  - addrinfo pointer initialization
+  - getaddrinfo() service parameter
+  - addrinfo iteration nullptr check
+
+- ✅ Socket operations (2 occurrences):
+  - select() read and exception fd_set parameters
+
+- ✅ Network functions (2 occurrences):
+  - getnameinfo() service name parameter
+  - GetExtNetwork() addr parameter check
+
+**Files Modified:**
+- src/init.cpp: Application initialization and shutdown (12 nullptr)
+- src/util.cpp: Utility functions and platform abstractions (11 nullptr)
+- src/netbase.cpp: Network address and socket utilities (7 nullptr)
+- src/version.h: Version updated to 1.4.1.13
+- corgicoin-qt.pro: Version updated to 1.4.1.13
+
+**Benefits:**
+- Consistent nullptr usage across platform-specific code
+- Better type safety in Windows and POSIX APIs
+- Modernized system call patterns
+- Foundation for cross-platform refactoring
+
+**Progress:** 155 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 30, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7), ~28 remaining
+
 ### Version 1.4.1.12 (2025-11-18) - nullptr Conversions in Database and RPC Code
 
 **C++11 nullptr Updates (35 occurrences across 2 files):**

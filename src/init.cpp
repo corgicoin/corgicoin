@@ -51,7 +51,7 @@ void StartShutdown()
     uiInterface.QueueShutdown();
 #else
     // Without UI, Shutdown() can simply be started in a new thread
-    CreateThread(Shutdown, NULL);
+    CreateThread(Shutdown, nullptr);
 #endif
 }
 
@@ -83,7 +83,7 @@ void Shutdown(void* parg)
         boost::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain);
         delete pwalletMain;
-        CreateThread(ExitTimeout, NULL);
+        CreateThread(ExitTimeout, nullptr);
         Sleep(50);
         printf("CorgiCoin exited\n\n");
         fExit = true;
@@ -130,7 +130,7 @@ bool AppInit(int argc, char* argv[])
         if (!boost::filesystem::is_directory(GetDataDir(false)))
         {
             fprintf(stderr, "Error: Specified directory does not exist\n");
-            Shutdown(NULL);
+            Shutdown(nullptr);
         }
         ReadConfigFile(mapArgs, mapMultiArgs);
 
@@ -166,10 +166,10 @@ bool AppInit(int argc, char* argv[])
     catch (std::exception& e) {
         PrintException(&e, "AppInit()");
     } catch (...) {
-        PrintException(NULL, "AppInit()");
+        PrintException(nullptr, "AppInit()");
     }
     if (!fRet)
-        Shutdown(NULL);
+        Shutdown(nullptr);
     return fRet;
 }
 
@@ -304,7 +304,7 @@ bool AppInit2()
 #ifdef _MSC_VER
     // Turn off microsoft heap dump noise
     _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
-    _CrtSetReportFile(_CRT_WARN, CreateFileA("NUL", GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, 0));
+    _CrtSetReportFile(_CRT_WARN, CreateFileA("NUL", GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, 0));
 #endif
 #if _MSC_VER >= 1400
     // Disable confusing "helpful" text message on abort, ctrl-c
@@ -319,15 +319,15 @@ bool AppInit2()
     sa.sa_handler = HandleSIGTERM;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGINT, &sa, nullptr);
 
     // Reopen debug.log on SIGHUP
     struct sigaction sa_hup;
     sa_hup.sa_handler = HandleSIGHUP;
     sigemptyset(&sa_hup.sa_mask);
     sa_hup.sa_flags = 0;
-    sigaction(SIGHUP, &sa_hup, NULL);
+    sigaction(SIGHUP, &sa_hup, nullptr);
 #endif
 
     // ********************************************************* Step 2: parameter interactions
@@ -759,11 +759,11 @@ bool AppInit2()
     printf("mapWallet.size() = %d\n",       pwalletMain->mapWallet.size());
     printf("mapAddressBook.size() = %d\n",  pwalletMain->mapAddressBook.size());
 
-    if (!CreateThread(StartNode, NULL))
+    if (!CreateThread(StartNode, nullptr))
         InitError(_("Error: could not start node"));
 
     if (fServer)
-        CreateThread(ThreadRPCServer, NULL);
+        CreateThread(ThreadRPCServer, nullptr);
 
     // ********************************************************* Step 11: finished
 
