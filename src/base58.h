@@ -87,7 +87,7 @@ inline bool DecodeBase58(const char* psz, std::vector<unsigned char>& vchRet)
     for (const char* p = psz; *p; p++)
     {
         const char* p1 = strchr(pszBase58, *p);
-        if (p1 == NULL)
+        if (p1 == nullptr)
         {
             while (isspace(*p))
                 p++;
@@ -328,9 +328,7 @@ public:
         return fExpectTestNet == fTestNet && vchData.size() == nExpectedSize;
     }
 
-    CBitcoinAddress()
-    {
-    }
+    CBitcoinAddress() = default;
 
     CBitcoinAddress(const CTxDestination &dest)
     {
@@ -459,9 +457,7 @@ public:
         SetSecret(vchSecret, fCompressed);
     }
 
-    CBitcoinSecret()
-    {
-    }
+    CBitcoinSecret() = default;
 };
 
 #endif

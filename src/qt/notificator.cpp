@@ -77,7 +77,7 @@ Notificator::~Notificator()
 class FreedesktopImage
 {
 public:
-    FreedesktopImage() {}
+    FreedesktopImage() = default;
     FreedesktopImage(const QImage &img);
 
     static int metaType();

@@ -84,7 +84,7 @@ static void push_lock(void* c, const CLockLocation& locklocation, bool fTry)
     if (fDebug) printf("Locking: %s\n", locklocation.ToString().c_str());
     dd_mutex.lock();
 
-    (*lockstack).push_back(std::make_pair(c, locklocation));
+    (*lockstack).emplace_back(c, locklocation);
 
     if (!fTry) {
         for (const PAIRTYPE(void*, CLockLocation)& i : (*lockstack)) {

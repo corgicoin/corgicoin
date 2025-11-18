@@ -22,7 +22,7 @@ struct AddressTableEntry
     QString label;
     QString address;
 
-    AddressTableEntry() {}
+    AddressTableEntry() = default;
     AddressTableEntry(Type type, const QString &label, const QString &address):
         type(type), label(label), address(address) {}
 };
@@ -74,9 +74,9 @@ public:
     void updateEntry(const QString &address, const QString &label, bool isMine, int status)
     {
         // Find address / label in model
-        QList<AddressTableEntry>::iterator lower = qLowerBound(
+        auto lower = qLowerBound(
             cachedAddressTable.begin(), cachedAddressTable.end(), address, AddressTableEntryLessThan());
-        QList<AddressTableEntry>::iterator upper = qUpperBound(
+        auto upper = qUpperBound(
             cachedAddressTable.begin(), cachedAddressTable.end(), address, AddressTableEntryLessThan());
         int lowerIndex = (lower - cachedAddressTable.begin());
         int upperIndex = (upper - cachedAddressTable.begin());
@@ -377,7 +377,7 @@ QString AddressTableModel::labelForAddress(const QString &address) const
     {
         LOCK(wallet->cs_wallet);
         CBitcoinAddress address_parsed(address.toStdString());
-        std::map<CTxDestination, std::string>::iterator mi = wallet->mapAddressBook.find(address_parsed.Get());
+        auto mi = wallet->mapAddressBook.find(address_parsed.Get());
         if (mi != wallet->mapAddressBook.end())
         {
             return QString::fromStdString(mi->second);

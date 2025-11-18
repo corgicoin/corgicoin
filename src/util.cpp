@@ -96,7 +96,7 @@ public:
     CInit()
     {
         // Init openssl library multithreading support
-        ppmutexOpenSSL = (CCriticalSection**)OPENSSL_malloc(CRYPTO_num_locks() * sizeof(CCriticalSection*));
+        ppmutexOpenSSL = reinterpret_cast<CCriticalSection**>(OPENSSL_malloc(CRYPTO_num_locks() * sizeof(CCriticalSection*)));
         for (int i = 0; i < CRYPTO_num_locks(); i++)
             ppmutexOpenSSL[i] = new CCriticalSection();
         CRYPTO_set_locking_callback(locking_callback);
@@ -172,7 +172,7 @@ uint64 GetRand(uint64 nMax)
     uint64 nRange = (std::numeric_limits<uint64>::max() / nMax) * nMax;
     uint64 nRand = 0;
     do
-        RAND_bytes((unsigned char*)&nRand, sizeof(nRand));
+        RAND_bytes(reinterpret_cast<unsigned char*>(&nRand), sizeof(nRand));
     while (nRand >= nRange);
     return (nRand % nMax);
 }
@@ -185,7 +185,7 @@ int GetRandInt(int nMax)
 uint256 GetRandHash()
 {
     uint256 hash;
-    RAND_bytes((unsigned char*)&hash, sizeof(hash));
+    RAND_bytes(reinterpret_cast<unsigned char*>(&hash), sizeof(hash));
     return hash;
 }
 
@@ -359,9 +359,9 @@ string FormatMoney(int64 n, bool fPlus)
         str.erase(str.size()-nTrim, nTrim);
 
     if (n < 0)
-        str.insert((unsigned int)0, 1, '-');
+        str.insert(static_cast<unsigned int>(0), 1, '-');
     else if (fPlus && n > 0)
-        str.insert((unsigned int)0, 1, '+');
+        str.insert(static_cast<unsigned int>(0), 1, '+');
     return str;
 }
 
@@ -489,7 +489,7 @@ void ParseParameters(int argc, const char* const argv[])
     {
         char psz[10000];
         strlcpy(psz, argv[i], sizeof(psz));
-        char* pszValue = (char*)"";
+        char* pszValue = const_cast<char*>("");
         if (strchr(psz, '='))
         {
             pszValue = strchr(psz, '=');
@@ -616,7 +616,7 @@ string EncodeBase64(const unsigned char* pch, size_t len)
 
 string EncodeBase64(const string& str)
 {
-    return EncodeBase64((const unsigned char*)str.c_str(), str.size());
+    return EncodeBase64(reinterpret_cast<const unsigned char*>(str.c_str()), str.size());
 }
 
 vector<unsigned char> DecodeBase64(const char* p, bool* pfInvalid)
@@ -705,7 +705,7 @@ vector<unsigned char> DecodeBase64(const char* p, bool* pfInvalid)
 string DecodeBase64(const string& str)
 {
     vector<unsigned char> vchRet = DecodeBase64(str.c_str());
-    return string((const char*)&vchRet[0], vchRet.size());
+    return string(reinterpret_cast<const char*>(&vchRet[0]), vchRet.size());
 }
 
 string EncodeBase32(const unsigned char* pch, size_t len)
@@ -769,7 +769,7 @@ string EncodeBase32(const unsigned char* pch, size_t len)
 
 string EncodeBase32(const string& str)
 {
-    return EncodeBase32((const unsigned char*)str.c_str(), str.size());
+    return EncodeBase32(reinterpret_cast<const unsigned char*>(str.c_str()), str.size());
 }
 
 vector<unsigned char> DecodeBase32(const char* p, bool* pfInvalid)
@@ -892,7 +892,7 @@ vector<unsigned char> DecodeBase32(const char* p, bool* pfInvalid)
 string DecodeBase32(const string& str)
 {
     vector<unsigned char> vchRet = DecodeBase32(str.c_str());
-    return string((const char*)&vchRet[0], vchRet.size());
+    return string(reinterpret_cast<const char*>(&vchRet[0]), vchRet.size());
 }
 
 

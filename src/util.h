@@ -206,7 +206,7 @@ inline int64 atoi64(const char* psz)
 #ifdef _MSC_VER
     return _atoi64(psz);
 #else
-    return strtoll(psz, NULL, 10);
+    return strtoll(psz, nullptr, 10);
 #endif
 }
 
@@ -215,7 +215,7 @@ inline int64 atoi64(const std::string& str)
 #ifdef _MSC_VER
     return _atoi64(str.c_str());
 #else
-    return strtoll(str.c_str(), NULL, 10);
+    return strtoll(str.c_str(), nullptr, 10);
 #endif
 }
 
@@ -226,12 +226,12 @@ inline int atoi(const std::string& str)
 
 inline int roundint(double d)
 {
-    return (int)(d > 0 ? d + 0.5 : d - 0.5);
+    return static_cast<int>(d > 0 ? d + 0.5 : d - 0.5);
 }
 
 inline int64 roundint64(double d)
 {
-    return (int64)(d > 0 ? d + 0.5 : d - 0.5);
+    return static_cast<int64>(d > 0 ? d + 0.5 : d - 0.5);
 }
 
 inline int64 abs64(int64 n)
@@ -248,7 +248,7 @@ std::string HexStr(const T itbegin, const T itend, bool fSpaces=false)
     rv.reserve((itend-itbegin)*3);
     for(T it = itbegin; it < itend; ++it)
     {
-        unsigned char val = (unsigned char)(*it);
+        unsigned char val = static_cast<unsigned char>(*it);
         if(fSpaces && it != itbegin)
             rv.push_back(' ');
         rv.push_back(hexmap[val>>4]);
@@ -278,11 +278,11 @@ inline int64 GetPerformanceCounter()
 {
     int64 nCounter = 0;
 #ifdef WIN32
-    QueryPerformanceCounter((LARGE_INTEGER*)&nCounter);
+    QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&nCounter));
 #else
     timeval t;
-    gettimeofday(&t, NULL);
-    nCounter = (int64) t.tv_sec * 1000000 + t.tv_usec;
+    gettimeofday(&t, nullptr);
+    nCounter = static_cast<int64>(t.tv_sec) * 1000000 + t.tv_usec;
 #endif
     return nCounter;
 }
@@ -390,9 +390,9 @@ inline uint256 Hash(const T1 pbegin, const T1 pend)
 {
     static unsigned char pblank[1];
     uint256 hash1;
-    SHA256((pbegin == pend ? pblank : (unsigned char*)&pbegin[0]), (pend - pbegin) * sizeof(pbegin[0]), (unsigned char*)&hash1);
+    SHA256((pbegin == pend ? pblank : reinterpret_cast<const unsigned char*>(&pbegin[0])), (pend - pbegin) * sizeof(pbegin[0]), reinterpret_cast<unsigned char*>(&hash1));
     uint256 hash2;
-    SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    SHA256(reinterpret_cast<const unsigned char*>(&hash1), sizeof(hash1), reinterpret_cast<unsigned char*>(&hash2));
     return hash2;
 }
 
@@ -421,9 +421,9 @@ public:
     // invalidates the object
     uint256 GetHash() {
         uint256 hash1;
-        SHA256_Final((unsigned char*)&hash1, &ctx);
+        SHA256_Final(reinterpret_cast<unsigned char*>(&hash1), &ctx);
         uint256 hash2;
-        SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+        SHA256(reinterpret_cast<const unsigned char*>(&hash1), sizeof(hash1), reinterpret_cast<unsigned char*>(&hash2));
         return hash2;
     }
 
@@ -444,11 +444,11 @@ inline uint256 Hash(const T1 p1begin, const T1 p1end,
     uint256 hash1;
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
-    SHA256_Update(&ctx, (p1begin == p1end ? pblank : (unsigned char*)&p1begin[0]), (p1end - p1begin) * sizeof(p1begin[0]));
-    SHA256_Update(&ctx, (p2begin == p2end ? pblank : (unsigned char*)&p2begin[0]), (p2end - p2begin) * sizeof(p2begin[0]));
-    SHA256_Final((unsigned char*)&hash1, &ctx);
+    SHA256_Update(&ctx, (p1begin == p1end ? pblank : reinterpret_cast<const unsigned char*>(&p1begin[0])), (p1end - p1begin) * sizeof(p1begin[0]));
+    SHA256_Update(&ctx, (p2begin == p2end ? pblank : reinterpret_cast<const unsigned char*>(&p2begin[0])), (p2end - p2begin) * sizeof(p2begin[0]));
+    SHA256_Final(reinterpret_cast<unsigned char*>(&hash1), &ctx);
     uint256 hash2;
-    SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    SHA256(reinterpret_cast<const unsigned char*>(&hash1), sizeof(hash1), reinterpret_cast<unsigned char*>(&hash2));
     return hash2;
 }
 
@@ -461,12 +461,12 @@ inline uint256 Hash(const T1 p1begin, const T1 p1end,
     uint256 hash1;
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
-    SHA256_Update(&ctx, (p1begin == p1end ? pblank : (unsigned char*)&p1begin[0]), (p1end - p1begin) * sizeof(p1begin[0]));
-    SHA256_Update(&ctx, (p2begin == p2end ? pblank : (unsigned char*)&p2begin[0]), (p2end - p2begin) * sizeof(p2begin[0]));
-    SHA256_Update(&ctx, (p3begin == p3end ? pblank : (unsigned char*)&p3begin[0]), (p3end - p3begin) * sizeof(p3begin[0]));
-    SHA256_Final((unsigned char*)&hash1, &ctx);
+    SHA256_Update(&ctx, (p1begin == p1end ? pblank : reinterpret_cast<const unsigned char*>(&p1begin[0])), (p1end - p1begin) * sizeof(p1begin[0]));
+    SHA256_Update(&ctx, (p2begin == p2end ? pblank : reinterpret_cast<const unsigned char*>(&p2begin[0])), (p2end - p2begin) * sizeof(p2begin[0]));
+    SHA256_Update(&ctx, (p3begin == p3end ? pblank : reinterpret_cast<const unsigned char*>(&p3begin[0])), (p3end - p3begin) * sizeof(p3begin[0]));
+    SHA256_Final(reinterpret_cast<unsigned char*>(&hash1), &ctx);
     uint256 hash2;
-    SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    SHA256(reinterpret_cast<const unsigned char*>(&hash1), sizeof(hash1), reinterpret_cast<unsigned char*>(&hash2));
     return hash2;
 }
 
@@ -481,9 +481,9 @@ uint256 SerializeHash(const T& obj, int nType=SER_GETHASH, int nVersion=PROTOCOL
 inline uint160 Hash160(const std::vector<unsigned char>& vch)
 {
     uint256 hash1;
-    SHA256(&vch[0], vch.size(), (unsigned char*)&hash1);
+    SHA256(&vch[0], vch.size(), reinterpret_cast<unsigned char*>(&hash1));
     uint160 hash2;
-    RIPEMD160((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    RIPEMD160(reinterpret_cast<const unsigned char*>(&hash1), sizeof(hash1), reinterpret_cast<unsigned char*>(&hash2));
     return hash2;
 }
 
@@ -563,21 +563,21 @@ inline pthread_thread CreateThread(void(*pfn)(void*), void* parg, bool fWantHand
     DWORD nUnused = 0;
     HANDLE hthread =
         CreateThread(
-            NULL,                        // default security
+            nullptr,                     // default security
             0,                           // inherit stack size from parent
             (LPTHREAD_START_ROUTINE)pfn, // function pointer
             parg,                        // argument
             0,                           // creation option, start immediately
             &nUnused);                   // thread identifier
-    if (hthread == NULL)
+    if (hthread == nullptr)
     {
         printf("Error: CreateThread() returned %d\n", GetLastError());
-        return (pthread_thread)0;
+        return static_cast<pthread_thread>(0);
     }
     if (!fWantHandle)
     {
         CloseHandle(hthread);
-        return (pthread_thread)-1;
+        return static_cast<pthread_thread>(-1);
     }
     return hthread;
 }
@@ -590,16 +590,16 @@ inline void SetThreadPriority(int nPriority)
 inline pthread_t CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
 {
     pthread_t hthread = 0;
-    int ret = pthread_create(&hthread, NULL, (void*(*)(void*))pfn, parg);
+    int ret = pthread_create(&hthread, nullptr, (void*(*)(void*))pfn, parg);
     if (ret != 0)
     {
         printf("Error: pthread_create() returned %d\n", ret);
-        return (pthread_t)0;
+        return static_cast<pthread_t>(0);
     }
     if (!fWantHandle)
     {
         pthread_detach(hthread);
-        return (pthread_t)-1;
+        return static_cast<pthread_t>(-1);
     }
     return hthread;
 }
@@ -622,7 +622,7 @@ inline void SetThreadPriority(int nPriority)
 
 inline void ExitThread(size_t nExitCode)
 {
-    pthread_exit((void*)nExitCode);
+    pthread_exit(reinterpret_cast<void*>(nExitCode));
 }
 #endif
 
