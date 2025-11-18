@@ -175,6 +175,32 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.9 (2025-11-18) - nullptr Conversions in key.cpp
+
+**C++11 nullptr Updates (37 occurrences in key.cpp):**
+- ✅ EC_KEY_regenerate_key(): OpenSSL context and point initialization (6 occurrences)
+- ✅ ECDSA_SIG_recover_key_GFp(): ECDSA key recovery with extensive pointer handling (20 occurrences)
+  - BN_CTX, BIGNUM, EC_POINT pointer initialization and checks
+  - OpenSSL function parameters (EC_GROUP_get_curve_GFp, EC_POINT_mul, etc.)
+- ✅ CKey class methods (11 occurrences):
+  - Reset(), Constructor: EC_KEY pointer management
+  - SetSecret(), GetSecret(): BIGNUM pointer handling
+  - GetPrivKey(), GetPubKey(): Size query parameters
+  - SignCompact(): ECDSA_SIG pointer check
+
+**File Modified:**
+- src/key.cpp: Cryptographic key management (37 nullptr conversions)
+- src/version.h: Version updated to 1.4.1.9
+- corgicoin-qt.pro: Version updated to 1.4.1.9
+
+**Benefits:**
+- Consistent nullptr usage in cryptographic code
+- Better type safety for OpenSSL pointer operations
+- Modernized ECDSA and EC key handling
+- Continued progress toward full C++11 source file modernization
+
+**Progress:** Headers complete (~60+ nullptr), now modernizing .cpp files (37 in key.cpp, ~146 remaining in other .cpp files)
+
 ### Version 1.4.1.8 (2025-11-18) - Additional nullptr Conversions in Headers
 
 **C++11 nullptr Updates (25 occurrences across 4 headers):**
