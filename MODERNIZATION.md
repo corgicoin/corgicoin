@@ -175,6 +175,44 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.18 (2025-11-18) - nullptr Conversions in Qt GUI Code (Part 2 - Complete)
+
+**C++11 nullptr Updates (13 occurrences across 3 Qt files):**
+
+**qt/miningpage.cpp (11 occurrences):**
+- ✅ reportToList() function calls (9 occurrences):
+  - Error messages with nullptr time parameter (4 occurrences)
+  - Mining status messages (strutting errors, stopped, started) (5 occurrences)
+
+- ✅ QString comparison (1 occurrence):
+  - time parameter nullptr check in reportToList()
+
+- ✅ Return statement (1 occurrence):
+  - getTime() returning nullptr when time not found
+
+**qt/rpcconsole.cpp (1 occurrence):**
+- ✅ Array sentinel (2 NULLs on one line):
+  - ICON_MAPPING array terminator {nullptr, nullptr}
+
+**qt/transactionrecord.cpp (1 occurrence):**
+- ✅ Pointer initialization (1 occurrence):
+  - pindex (CBlockIndex*) initialization in updateStatus()
+
+**Files Modified:**
+- src/qt/miningpage.cpp: Mining page UI (11 nullptr)
+- src/qt/rpcconsole.cpp: RPC console (1 nullptr)
+- src/qt/transactionrecord.cpp: Transaction records (1 nullptr)
+- src/version.h: Version updated to 1.4.1.18
+- corgicoin-qt.pro: Version updated to 1.4.1.18
+
+**Benefits:**
+- Complete nullptr modernization of Qt GUI layer
+- Consistent nullptr usage across all UI components
+- Better mining page error handling
+- Improved transaction status tracking
+
+**Progress:** 202 nullptr conversions total (179 core + 23 Qt GUI files), **ALL Qt GUI FILES COMPLETE!**
+
 ### Version 1.4.1.17 (2025-11-18) - nullptr Conversions in Qt GUI Code (Part 1)
 
 **C++11 nullptr Updates (10 occurrences across 4 Qt files):**
