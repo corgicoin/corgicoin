@@ -87,7 +87,7 @@ void MacDockIconHandler::setIcon(const QIcon &icon)
 
 MacDockIconHandler *MacDockIconHandler::instance()
 {
-    static MacDockIconHandler *s_instance = NULL;
+    static MacDockIconHandler *s_instance = nullptr;
     if (!s_instance)
         s_instance = new MacDockIconHandler();
     return s_instance;

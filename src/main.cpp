@@ -3472,9 +3472,9 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         list<COrphan> vOrphan; // list memory doesn't move
         map<uint256, vector<COrphan*> > mapDependers;
         multimap<double, CTransaction*> mapPriority;
-        for (map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); mi != mempool.mapTx.end(); ++mi)
+        for (auto& entry : mempool.mapTx)
         {
-            CTransaction& tx = (*mi).second;
+            CTransaction& tx = entry.second;
             if (tx.IsCoinBase() || !tx.IsFinal())
                 continue;
 

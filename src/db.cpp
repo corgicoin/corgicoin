@@ -489,7 +489,7 @@ bool CTxDB::LoadBlockIndex()
     for (const PAIRTYPE(uint256, CBlockIndex*)& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
-        vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
+        vSortedByHeight.emplace_back(pindex->nHeight, pindex);
     }
     sort(vSortedByHeight.begin(), vSortedByHeight.end());
     for (const PAIRTYPE(int, CBlockIndex*)& item : vSortedByHeight)

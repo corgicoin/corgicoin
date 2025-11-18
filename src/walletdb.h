@@ -40,7 +40,7 @@ public:
     bool ReadName(const std::string& strAddress, std::string& strName)
     {
         strName = "";
-        return Read(std::make_pair(std::string("name"), strAddress), strName);
+        return Read({std::string("name"), strAddress}, strName);
     }
 
     bool WriteName(const std::string& strAddress, const std::string& strName);
@@ -49,42 +49,42 @@ public:
 
     bool ReadTx(uint256 hash, CWalletTx& wtx)
     {
-        return Read(std::make_pair(std::string("tx"), hash), wtx);
+        return Read({std::string("tx"), hash}, wtx);
     }
 
     bool WriteTx(uint256 hash, const CWalletTx& wtx)
     {
         nWalletDBUpdated++;
-        return Write(std::make_pair(std::string("tx"), hash), wtx);
+        return Write({std::string("tx"), hash}, wtx);
     }
 
     bool EraseTx(uint256 hash)
     {
         nWalletDBUpdated++;
-        return Erase(std::make_pair(std::string("tx"), hash));
+        return Erase({std::string("tx"), hash});
     }
 
     bool ReadKey(const CPubKey& vchPubKey, CPrivKey& vchPrivKey)
     {
         vchPrivKey.clear();
-        return Read(std::make_pair(std::string("key"), vchPubKey.Raw()), vchPrivKey);
+        return Read({std::string("key"), vchPubKey.Raw()}, vchPrivKey);
     }
 
     bool WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey)
     {
         nWalletDBUpdated++;
-        return Write(std::make_pair(std::string("key"), vchPubKey.Raw()), vchPrivKey, false);
+        return Write({std::string("key"), vchPubKey.Raw()}, vchPrivKey, false);
     }
 
     bool WriteCryptedKey(const CPubKey& vchPubKey, const std::vector<unsigned char>& vchCryptedSecret, bool fEraseUnencryptedKey = true)
     {
         nWalletDBUpdated++;
-        if (!Write(std::make_pair(std::string("ckey"), vchPubKey.Raw()), vchCryptedSecret, false))
+        if (!Write({std::string("ckey"), vchPubKey.Raw()}, vchCryptedSecret, false))
             return false;
         if (fEraseUnencryptedKey)
         {
-            Erase(std::make_pair(std::string("key"), vchPubKey.Raw()));
-            Erase(std::make_pair(std::string("wkey"), vchPubKey.Raw()));
+            Erase({std::string("key"), vchPubKey.Raw()});
+            Erase({std::string("wkey"), vchPubKey.Raw()});
         }
         return true;
     }
@@ -92,20 +92,20 @@ public:
     bool WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey)
     {
         nWalletDBUpdated++;
-        return Write(std::make_pair(std::string("mkey"), nID), kMasterKey, true);
+        return Write({std::string("mkey"), nID}, kMasterKey, true);
     }
 
     // Support for BIP 0013 : see https://en.bitcoin.it/wiki/BIP_0013
     bool ReadCScript(const uint160 &hash, CScript& redeemScript)
     {
         redeemScript.clear();
-        return Read(std::make_pair(std::string("cscript"), hash), redeemScript);
+        return Read({std::string("cscript"), hash}, redeemScript);
     }
 
     bool WriteCScript(const uint160& hash, const CScript& redeemScript)
     {
         nWalletDBUpdated++;
-        return Write(std::make_pair(std::string("cscript"), hash), redeemScript, false);
+        return Write({std::string("cscript"), hash}, redeemScript, false);
     }
 
     bool WriteBestBlock(const CBlockLocator& locator)
@@ -133,19 +133,19 @@ public:
 
     bool ReadPool(int64 nPool, CKeyPool& keypool)
     {
-        return Read(std::make_pair(std::string("pool"), nPool), keypool);
+        return Read({std::string("pool"), nPool}, keypool);
     }
 
     bool WritePool(int64 nPool, const CKeyPool& keypool)
     {
         nWalletDBUpdated++;
-        return Write(std::make_pair(std::string("pool"), nPool), keypool);
+        return Write({std::string("pool"), nPool}, keypool);
     }
 
     bool ErasePool(int64 nPool)
     {
         nWalletDBUpdated++;
-        return Erase(std::make_pair(std::string("pool"), nPool));
+        return Erase({std::string("pool"), nPool});
     }
 
     // Settings are no longer stored in wallet.dat; these are
@@ -153,18 +153,18 @@ public:
     template<typename T>
     bool ReadSetting(const std::string& strKey, T& value)
     {
-        return Read(std::make_pair(std::string("setting"), strKey), value);
+        return Read({std::string("setting"), strKey}, value);
     }
     template<typename T>
     bool WriteSetting(const std::string& strKey, const T& value)
     {
         nWalletDBUpdated++;
-        return Write(std::make_pair(std::string("setting"), strKey), value);
+        return Write({std::string("setting"), strKey}, value);
     }
     bool EraseSetting(const std::string& strKey)
     {
         nWalletDBUpdated++;
-        return Erase(std::make_pair(std::string("setting"), strKey));
+        return Erase({std::string("setting"), strKey});
     }
 
     bool WriteMinVersion(int nVersion)
