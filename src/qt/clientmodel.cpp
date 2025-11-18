@@ -169,7 +169,7 @@ double ClientModel::GetDifficulty() const
     // Floating point number that is a multiple of the minimum difficulty,
     // minimum difficulty = 1.0.
 
-    if (pindexBest == NULL)
+    if (pindexBest == nullptr)
         return 1.0;
     int nShift = (pindexBest->nBits >> 24) & 0xff;
 

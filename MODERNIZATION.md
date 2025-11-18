@@ -175,6 +175,52 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.17 (2025-11-18) - nullptr Conversions in Qt GUI Code (Part 1)
+
+**C++11 nullptr Updates (10 occurrences across 4 Qt files):**
+
+**qt/bitcoin.cpp (2 occurrences):**
+- ✅ Shutdown function call (1 occurrence):
+  - Shutdown() parameter in main shutdown path
+
+- ✅ Error handling (1 occurrence):
+  - handleRunawayException() in catch-all handler
+
+**qt/clientmodel.cpp (1 occurrence):**
+- ✅ Block index check (1 occurrence):
+  - pindexBest nullptr comparison in GetDifficulty()
+
+**qt/guiutil.cpp (5 occurrences):**
+- ✅ Windows COM initialization (5 occurrences):
+  - CoInitialize() parameter
+  - IShellLink pointer initialization
+  - CoCreateInstance() aggregate parameter
+  - GetModuleFileName() module handle parameter
+  - IPersistFile pointer initialization
+
+**qt/qtipcserver.cpp (2 occurrences):**
+- ✅ Error handling (1 occurrence):
+  - PrintExceptionContinue() in catch-all handler
+
+- ✅ Pointer initialization (1 occurrence):
+  - message_queue pointer in ipcInit()
+
+**Files Modified:**
+- src/qt/bitcoin.cpp: Main GUI application (2 nullptr)
+- src/qt/clientmodel.cpp: Client model interface (1 nullptr)
+- src/qt/guiutil.cpp: GUI utility functions (5 nullptr)
+- src/qt/qtipcserver.cpp: IPC server for URI handling (2 nullptr)
+- src/version.h: Version updated to 1.4.1.17
+- corgicoin-qt.pro: Version updated to 1.4.1.17
+
+**Benefits:**
+- Modernized Qt GUI application code
+- Consistent nullptr usage in Windows COM API calls
+- Improved type safety in GUI error handling
+- Better cross-platform compatibility
+
+**Progress:** 189 nullptr conversions total (179 core + 10 Qt GUI files), ~13 Qt files remaining
+
 ### Version 1.4.1.16 (2025-11-18) - nullptr Conversions in Cryptography, Script, and RPC Code
 
 **C++11 nullptr Updates (7 occurrences across 4 files):**
