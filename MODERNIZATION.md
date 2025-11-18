@@ -175,6 +175,402 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.17 (2025-11-18) - nullptr Conversions in Qt GUI Code (Part 1)
+
+**C++11 nullptr Updates (10 occurrences across 4 Qt files):**
+
+**qt/bitcoin.cpp (2 occurrences):**
+- ✅ Shutdown function call (1 occurrence):
+  - Shutdown() parameter in main shutdown path
+
+- ✅ Error handling (1 occurrence):
+  - handleRunawayException() in catch-all handler
+
+**qt/clientmodel.cpp (1 occurrence):**
+- ✅ Block index check (1 occurrence):
+  - pindexBest nullptr comparison in GetDifficulty()
+
+**qt/guiutil.cpp (5 occurrences):**
+- ✅ Windows COM initialization (5 occurrences):
+  - CoInitialize() parameter
+  - IShellLink pointer initialization
+  - CoCreateInstance() aggregate parameter
+  - GetModuleFileName() module handle parameter
+  - IPersistFile pointer initialization
+
+**qt/qtipcserver.cpp (2 occurrences):**
+- ✅ Error handling (1 occurrence):
+  - PrintExceptionContinue() in catch-all handler
+
+- ✅ Pointer initialization (1 occurrence):
+  - message_queue pointer in ipcInit()
+
+**Files Modified:**
+- src/qt/bitcoin.cpp: Main GUI application (2 nullptr)
+- src/qt/clientmodel.cpp: Client model interface (1 nullptr)
+- src/qt/guiutil.cpp: GUI utility functions (5 nullptr)
+- src/qt/qtipcserver.cpp: IPC server for URI handling (2 nullptr)
+- src/version.h: Version updated to 1.4.1.17
+- corgicoin-qt.pro: Version updated to 1.4.1.17
+
+**Benefits:**
+- Modernized Qt GUI application code
+- Consistent nullptr usage in Windows COM API calls
+- Improved type safety in GUI error handling
+- Better cross-platform compatibility
+
+**Progress:** 189 nullptr conversions total (179 core + 10 Qt GUI files), ~13 Qt files remaining
+
+### Version 1.4.1.16 (2025-11-18) - nullptr Conversions in Cryptography, Script, and RPC Code
+
+**C++11 nullptr Updates (7 occurrences across 4 files):**
+
+**crypter.cpp (2 occurrences):**
+- ✅ OpenSSL function parameters (2 occurrences):
+  - EVP_EncryptInit_ex() engine parameter in Encrypt() method
+  - EVP_DecryptInit_ex() engine parameter in Decrypt() method
+
+**script.cpp (2 occurrences):**
+- ✅ Return statement (1 occurrence):
+  - GetTxnOutputType() returning nullptr for unknown transaction type
+
+- ✅ OpenSSL BigNum operation (1 occurrence):
+  - BN_div() remainder parameter in OP_DIV operation
+
+**rpcdump.cpp (2 occurrences):**
+- ✅ Constructor default parameter (1 occurrence):
+  - CTxDump() ptx parameter default value
+
+- ✅ Member initialization (1 occurrence):
+  - pindex pointer initialization in CTxDump constructor
+
+**rpcrawtransaction.cpp (1 occurrence):**
+- ✅ Function call (1 occurrence):
+  - SyncWithWallets() block parameter when broadcasting raw transaction
+
+**Files Modified:**
+- src/crypter.cpp: Wallet encryption/decryption (2 nullptr)
+- src/script.cpp: Script validation and operations (2 nullptr)
+- src/rpcdump.cpp: Wallet dump RPC commands (2 nullptr)
+- src/rpcrawtransaction.cpp: Raw transaction RPC (1 nullptr)
+- src/version.h: Version updated to 1.4.1.16
+- corgicoin-qt.pro: Version updated to 1.4.1.16
+
+**Benefits:**
+- Complete nullptr modernization of cryptographic operations
+- Improved type safety in script execution
+- Consistent nullptr usage in RPC layer
+- Better OpenSSL API compatibility
+
+**Progress:** 179 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 33, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7, wallet.cpp: 5, irc.cpp: 3, checkpoints.cpp: 3, addrman.cpp: 2, crypter.cpp: 2, script.cpp: 2, rpcdump.cpp: 2, sync.cpp: 1, rpcrawtransaction.cpp: 1), **core non-Qt .cpp files complete!**
+
+### Version 1.4.1.15 (2025-11-18) - nullptr Conversions in Network and Synchronization Code
+
+**C++11 nullptr Updates (6 occurrences across 3 files):**
+
+**net.cpp (3 occurrences - missed in previous pass):**
+- ✅ Error handling (2 occurrences):
+  - PrintException() in catch blocks for ThreadOpenAddedConnections() and ThreadMessageHandler()
+
+- ✅ Node pointer initialization (1 occurrence):
+  - pnodeTrickle local variable in message handler loop
+
+**addrman.cpp (2 occurrences):**
+- ✅ Return statements (2 occurrences):
+  - Find() method returning nullptr when address not found
+  - Find() method returning nullptr when address info not found
+
+**sync.cpp (1 occurrence):**
+- ✅ Smart pointer check (1 occurrence):
+  - lockstack.get() nullptr comparison in deadlock detection
+
+**Files Modified:**
+- src/net.cpp: Network thread error handling (3 nullptr)
+- src/addrman.cpp: Address manager lookup (2 nullptr)
+- src/sync.cpp: Lock debugging and deadlock detection (1 nullptr)
+- src/version.h: Version updated to 1.4.1.15
+- corgicoin-qt.pro: Version updated to 1.4.1.15
+
+**Benefits:**
+- Complete nullptr modernization of networking layer
+- Improved type safety in address manager
+- Consistent error handling patterns across threads
+- Better thread-local storage handling
+
+**Progress:** 172 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 33, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7, wallet.cpp: 5, irc.cpp: 3, checkpoints.cpp: 3, addrman.cpp: 2, sync.cpp: 1), ~11 remaining in non-Qt source files
+
+### Version 1.4.1.14 (2025-11-18) - nullptr Conversions in Wallet, IRC, and Checkpoint Code
+
+**C++11 nullptr Updates (11 occurrences across 3 files):**
+
+**wallet.cpp (5 occurrences):**
+- ✅ Encryption pointer cleanup (2 occurrences):
+  - pwalletdbEncryption deletion and nullification after encryption
+
+- ✅ Transaction handling (1 occurrence):
+  - AddToWalletIfInvolvingMe() parameter
+
+- ✅ Coin selection algorithm (2 occurrences):
+  - coinLowestLarger pointer initialization and validity check
+
+- ✅ Database allocation (1 occurrence):
+  - Conditional CWalletDB allocation
+
+**irc.cpp (3 occurrences):**
+- ✅ Function default parameters (3 occurrences):
+  - RecvUntil() optional string parameters (psz2, psz3, psz4)
+
+- ✅ Error handling (1 occurrence):
+  - PrintExceptionContinue() in catch block
+
+- ✅ Thread function call (1 occurrence):
+  - ThreadIRCSeed() test main function
+
+**checkpoints.cpp (3 occurrences):**
+- ✅ Return statements (2 occurrences):
+  - GetLastCheckpoint() testnet early return
+  - GetLastCheckpoint() not found return
+
+- ✅ Code comments (1 occurrence):
+  - Commented nullptr in GetLastCheckpoint()
+
+**Files Modified:**
+- src/wallet.cpp: Wallet encryption and coin selection (5 nullptr)
+- src/irc.cpp: Deprecated IRC peer discovery (3 nullptr)
+- src/checkpoints.cpp: Blockchain checkpoint validation (3 nullptr)
+- src/version.h: Version updated to 1.4.1.14
+- corgicoin-qt.pro: Version updated to 1.4.1.14
+
+**Benefits:**
+- Consistent nullptr usage in critical wallet operations
+- Improved type safety in transaction and encryption handling
+- Modernized deprecated IRC code for future removal
+
+**Progress:** 166 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 30, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7, wallet.cpp: 5, irc.cpp: 3, checkpoints.cpp: 3), ~17 remaining
+
+### Version 1.4.1.13 (2025-11-18) - nullptr Conversions in Utility and Network Code
+
+**C++11 nullptr Updates (30 occurrences across 3 files):**
+
+**init.cpp (12 occurrences):**
+- ✅ Thread creation parameters (4 occurrences):
+  - CreateThread() calls for Shutdown, ExitTimeout, StartNode, ThreadRPCServer
+
+- ✅ Shutdown function calls (3 occurrences):
+  - Shutdown() parameter in error paths
+
+- ✅ Error handling (1 occurrence):
+  - PrintException() in catch block
+
+- ✅ Windows API (1 occurrence):
+  - CreateFileA() security attributes parameter
+
+- ✅ Signal handling (3 occurrences):
+  - sigaction() oldact parameter for SIGTERM, SIGINT, SIGHUP
+
+**util.cpp (11 occurrences):**
+- ✅ OpenSSL cleanup (1 occurrence):
+  - CRYPTO_set_locking_callback() parameter
+
+- ✅ Windows Registry API (2 occurrences):
+  - RegQueryValueExA() type and reserved parameters
+
+- ✅ File I/O (4 occurrences):
+  - Static FILE* initialization
+  - setbuf() calls for unbuffered I/O (3 occurrences)
+  - freopen() return check
+
+- ✅ Memory allocation (1 occurrence):
+  - Pointer validity check after new
+
+- ✅ Windows API (2 occurrences):
+  - GetModuleFileNameA() module handle
+  - SHGetSpecialFolderPathA() window handle
+
+- ✅ Environment variables (1 occurrence):
+  - getenv() return value check
+
+- ✅ Time function (1 occurrence):
+  - time() parameter
+
+**netbase.cpp (7 occurrences):**
+- ✅ String parsing (1 occurrence):
+  - strtol() endptr initialization
+
+- ✅ DNS resolution (3 occurrences):
+  - addrinfo pointer initialization
+  - getaddrinfo() service parameter
+  - addrinfo iteration nullptr check
+
+- ✅ Socket operations (2 occurrences):
+  - select() read and exception fd_set parameters
+
+- ✅ Network functions (2 occurrences):
+  - getnameinfo() service name parameter
+  - GetExtNetwork() addr parameter check
+
+**Files Modified:**
+- src/init.cpp: Application initialization and shutdown (12 nullptr)
+- src/util.cpp: Utility functions and platform abstractions (11 nullptr)
+- src/netbase.cpp: Network address and socket utilities (7 nullptr)
+- src/version.h: Version updated to 1.4.1.13
+- corgicoin-qt.pro: Version updated to 1.4.1.13
+
+**Benefits:**
+- Consistent nullptr usage across platform-specific code
+- Better type safety in Windows and POSIX APIs
+- Modernized system call patterns
+- Foundation for cross-platform refactoring
+
+**Progress:** 155 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 30, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7), ~28 remaining
+
+### Version 1.4.1.12 (2025-11-18) - nullptr Conversions in Database and RPC Code
+
+**C++11 nullptr Updates (35 occurrences across 2 files):**
+
+**db.cpp (17 occurrences):**
+- ✅ Constructor initialization (3 occurrences):
+  - CDB() member initializer list and parameter check
+
+- ✅ Pointer assignments and checks (6 occurrences):
+  - Database handle initialization and cleanup
+  - mapDb pointer management
+  - activeTxn and pdb pointer clearing
+
+- ✅ Berkeley DB function parameters (4 occurrences):
+  - open() transaction pointer (2 occurrences)
+  - put() transaction pointer
+  - remove() and rename() database name parameters (2 occurrences)
+
+- ✅ Block index management (4 occurrences):
+  - InsertBlockIndex() return value
+  - pindexGenesisBlock checks (2 occurrences)
+  - pindexFork initialization
+
+**bitcoinrpc.cpp (18 occurrences):**
+- ✅ Function parameters and defaults (4 occurrences):
+  - GetDifficulty() default parameter and checks (2 occurrences)
+  - pindexBest checks (2 occurrences)
+
+- ✅ Local variable initialization (2 occurrences):
+  - pindex in listsinceblock()
+  - Command lookup return value
+
+- ✅ Thread creation parameters (2 occurrences):
+  - CreateThread() calls with nullptr arguments
+
+- ✅ ProcessBlock calls (1 occurrence):
+  - Mining block submission
+
+- ✅ Standard library functions (5 occurrences):
+  - setlocale() parameter
+  - setbuf() calls (3 occurrences)
+  - CreateFile() Windows API parameter
+
+- ✅ Error handling (3 occurrences):
+  - PrintException() in catch blocks (3 occurrences)
+
+- ✅ String parsing (1 occurrence):
+  - HTTP version check
+
+**Files Modified:**
+- src/db.cpp: Berkeley DB wrapper and block index loading (17 nullptr)
+- src/bitcoinrpc.cpp: JSON-RPC server and command handlers (18 nullptr)
+- src/version.h: Version updated to 1.4.1.12
+- corgicoin-qt.pro: Version updated to 1.4.1.12
+
+**Benefits:**
+- Consistent nullptr usage across database layer
+- Better type safety in RPC handlers
+- Modernized Berkeley DB interactions
+- Foundation for database and RPC refactoring
+
+**Progress:** 125 nullptr conversions in .cpp files (key.cpp: 37, net.cpp: 30, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18), ~58 remaining
+
+### Version 1.4.1.11 (2025-11-18) - nullptr Conversions in Main Code
+
+**C++11 nullptr Updates (23 occurrences in main.cpp):**
+- ✅ Global variable initialization (2 occurrences):
+  - pindexGenesisBlock, pindexBest block index pointers
+
+- ✅ Pointer checks and comparisons (7 occurrences):
+  - pblock validity check in SetMerkleBranch()
+  - pindexLast check in GetNextWorkRequired()
+  - pindexBest check in IsInitialBlockDownload()
+  - pindexGenesisBlock check in SetBestChain()
+  - pindex loop condition in version checking
+
+- ✅ Local variable initialization (4 occurrences):
+  - ptxOld in AcceptToMemoryPool()
+  - pindex in message handler
+  - porphan in block creation
+
+- ✅ Pointer assignments (1 occurrence):
+  - pnext pointer unlinking in blockchain reorganization
+
+- ✅ Return statements (6 occurrences):
+  - OpenBlockFile() error returns (3 occurrences)
+  - AppendBlockFile() error returns (2 occurrences)
+  - CreateNewBlock() allocation failure
+
+- ✅ Function parameters (4 occurrences):
+  - ProcessBlock() called with nullptr node parameter (2 occurrences)
+  - SyncWithWallets() called with nullptr block parameter (2 occurrences)
+  - PrintException() and PrintExceptionContinue() error handlers (2 occurrences)
+
+**Files Modified:**
+- src/main.cpp: Core blockchain and transaction code (23 nullptr conversions)
+- src/version.h: Version updated to 1.4.1.11
+- corgicoin-qt.pro: Version updated to 1.4.1.11
+
+**Benefits:**
+- Consistent nullptr usage across blockchain core
+- Better type safety in block management
+- Modernized error handling patterns
+- Foundation for blockchain refactoring
+
+**Progress:** 90 nullptr conversions in .cpp files (key.cpp: 37, net.cpp: 30, main.cpp: 23), ~93 remaining
+
+### Version 1.4.1.10 (2025-11-18) - nullptr Conversions in Network Code
+
+**C++11 nullptr Updates (30 occurrences in net.cpp):**
+- ✅ Global variable initialization (3 occurrences):
+  - pnodeLocalHost, semOutbound static pointers
+  - OpenNetworkConnection() function parameter defaults
+
+- ✅ Node management functions (6 occurrences):
+  - FindNode() overloads returning nullptr (3 occurrences)
+  - ConnectNode() pointer checks and returns (3 occurrences)
+
+- ✅ Network thread creation (8 occurrences):
+  - CreateThread() calls for DNS seed, IRC, socket handler, connections, message handler, address dump
+  - ThreadGetMyExternalIP, ThreadMapPort
+
+- ✅ StartNode() initialization (2 occurrences):
+  - semOutbound and pnodeLocalHost nullptr checks
+
+- ✅ Error handling (2 occurrences):
+  - PrintException(nullptr, ...) in catch blocks
+
+- ✅ External IP detection (2 occurrences):
+  - GetMyExternalIP2() keyword pointer handling
+
+- ✅ Network interface discovery (2 occurrences):
+  - ifaddrs iteration and nullptr checks
+
+**Files Modified:**
+- src/net.cpp: Complete networking code (30 nullptr conversions)
+- src/version.h: Version updated to 1.4.1.10
+- corgicoin-qt.pro: Version updated to 1.4.1.10
+
+**Benefits:**
+- Consistent nullptr usage across networking layer
+- Better type safety in node management
+- Modernized thread creation patterns
+- Foundation for network code refactoring
+
+**Progress:** 67 nullptr conversions in .cpp files (key.cpp: 37, net.cpp: 30), ~116 remaining
+
 ### Version 1.4.1.9 (2025-11-18) - nullptr Conversions in key.cpp
 
 **C++11 nullptr Updates (37 occurrences in key.cpp):**

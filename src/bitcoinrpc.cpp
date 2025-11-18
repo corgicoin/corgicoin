@@ -103,13 +103,13 @@ void RPCTypeCheck(const Object& o,
     }
 }
 
-double GetDifficulty(const CBlockIndex* blockindex = NULL)
+double GetDifficulty(const CBlockIndex* blockindex = nullptr)
 {
     // Floating point number that is a multiple of the minimum difficulty,
     // minimum difficulty = 1.0.
-    if (blockindex == NULL)
+    if (blockindex == nullptr)
     {
-        if (pindexBest == NULL)
+        if (pindexBest == nullptr)
             return 1.0;
         else
             blockindex = pindexBest;
@@ -316,7 +316,7 @@ Value getdifficulty(const Array& params, bool fHelp)
 
 // CorgiCoin: Return average network hashes per second based on last number of blocks.
 Value GetNetworkHashPS(int lookup) {
-    if (pindexBest == NULL)
+    if (pindexBest == nullptr)
         return 0;
 
     // If lookup is -1, then use blocks since last difficulty change.
@@ -1493,7 +1493,7 @@ Value listsinceblock(const Array& params, bool fHelp)
             "listsinceblock [blockhash] [target-confirmations]\n"
             "Get all transactions in blocks since block [blockhash], or all transactions if omitted");
 
-    CBlockIndex *pindex = NULL;
+    CBlockIndex *pindex = nullptr;
     int target_confirms = 1;
 
     if (params.size() > 0)
@@ -1699,7 +1699,7 @@ Value walletpassphrase(const Array& params, bool fHelp)
             "walletpassphrase <passphrase> <timeout>\n"
             "Stores the wallet decryption key in memory for <timeout> seconds.");
 
-    CreateThread(ThreadTopUpKeyPool, NULL);
+    CreateThread(ThreadTopUpKeyPool, nullptr);
     int64* pnSleepTime = new int64(params[1].get_int64());
     CreateThread(ThreadCleanWalletPassphrase, pnSleepTime);
 
@@ -2247,7 +2247,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
         CBlock pblock;
         ssBlock >> pblock;
 
-        bool fAccepted = ProcessBlock(NULL, &pblock);
+        bool fAccepted = ProcessBlock(nullptr, &pblock);
 
         return fAccepted ? Value::null : "rejected";
     }
@@ -2398,7 +2398,7 @@ const CRPCCommand *CRPCTable::operator[](string name) const
 {
     map<string, const CRPCCommand*>::const_iterator it = mapCommands.find(name);
     if (it == mapCommands.end())
-        return NULL;
+        return nullptr;
     return (*it).second;
 }
 
@@ -2432,7 +2432,7 @@ string rfc1123Time()
     time_t now;
     time(&now);
     struct tm* now_gmt = gmtime(&now);
-    string locale(setlocale(LC_TIME, NULL));
+    string locale(setlocale(LC_TIME, nullptr));
     setlocale(LC_TIME, "C"); // we want posix (aka "C") weekday/month strings
     strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S +0000", now_gmt);
     setlocale(LC_TIME, locale.c_str());
@@ -2493,7 +2493,7 @@ int ReadHTTPStatus(std::basic_istream<char>& stream, int &proto)
         return 500;
     proto = 0;
     const char *ver = strstr(str.c_str(), "HTTP/1.");
-    if (ver != NULL)
+    if (ver != nullptr)
         proto = atoi(ver+7);
     return atoi(vWords[1].c_str());
 }
@@ -2757,7 +2757,7 @@ void ThreadRPCServer(void* parg)
         PrintException(&e, "ThreadRPCServer()");
     } catch (...) {
         vnThreadsRunning[THREAD_RPCLISTENER]--;
-        PrintException(NULL, "ThreadRPCServer()");
+        PrintException(nullptr, "ThreadRPCServer()");
     }
     printf("ThreadRPCServer exited\n");
 }
@@ -3329,7 +3329,7 @@ int CommandLineRPC(int argc, char *argv[])
     }
     catch (...)
     {
-        PrintException(NULL, "CommandLineRPC()");
+        PrintException(nullptr, "CommandLineRPC()");
     }
 
     if (strPrint != "")
@@ -3348,18 +3348,18 @@ int main(int argc, char *argv[])
 #ifdef _MSC_VER
     // Turn off microsoft heap dump noise
     _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
-    _CrtSetReportFile(_CRT_WARN, CreateFile("NUL", GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, 0));
+    _CrtSetReportFile(_CRT_WARN, CreateFile("NUL", GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, 0));
 #endif
-    setbuf(stdin, NULL);
-    setbuf(stdout, NULL);
-    setbuf(stderr, NULL);
+    setbuf(stdin, nullptr);
+    setbuf(stdout, nullptr);
+    setbuf(stderr, nullptr);
 
     try
     {
         if (argc >= 2 && string(argv[1]) == "-server")
         {
             printf("server ready\n");
-            ThreadRPCServer(NULL);
+            ThreadRPCServer(nullptr);
         }
         else
         {
@@ -3369,7 +3369,7 @@ int main(int argc, char *argv[])
     catch (std::exception& e) {
         PrintException(&e, "main()");
     } catch (...) {
-        PrintException(NULL, "main()");
+        PrintException(nullptr, "main()");
     }
     return 0;
 }
