@@ -48,7 +48,7 @@ ParseScript(string s)
     vector<string> words;
     split(words, s, is_any_of(" \t\n"), token_compress_on);
 
-    BOOST_FOREACH(string w, words)
+    for (string w : words)
     {
         if (all(w, is_digit()) ||
             (starts_with(w, "-") && all(string(w.begin()+1, w.end()), is_digit())))
@@ -128,7 +128,7 @@ BOOST_AUTO_TEST_CASE(script_valid)
     // scripts.
     Array tests = read_json("script_valid.json");
 
-    BOOST_FOREACH(Value& tv, tests)
+    for (Value& tv : tests)
     {
         Array test = tv.get_array();
         string strTest = write_string(tv, false);
@@ -152,7 +152,7 @@ BOOST_AUTO_TEST_CASE(script_invalid)
     // Scripts that should evaluate as invalid
     Array tests = read_json("script_invalid.json");
 
-    BOOST_FOREACH(Value& tv, tests)
+    for (Value& tv : tests)
     {
         Array test = tv.get_array();
         string strTest = write_string(tv, false);
@@ -211,7 +211,7 @@ sign_multisig(CScript scriptPubKey, std::vector<CKey> keys, CTransaction transac
     // and vice-versa)
     //
     result << OP_0;
-    BOOST_FOREACH(CKey key, keys)
+    for (CKey key : keys)
     {
         vector<unsigned char> vchSig;
         BOOST_CHECK(key.Sign(hash, vchSig));

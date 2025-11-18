@@ -53,8 +53,9 @@ namespace Checkpoints
     {
         if (fTestNet) return nullptr;
 
-        BOOST_REVERSE_FOREACH(const MapCheckpoints::value_type& i, mapCheckpoints)
+        for (auto it = mapCheckpoints.rbegin(); it != mapCheckpoints.rend(); ++it)
         {
+            const MapCheckpoints::value_type& i = *it;
             const uint256& hash = i.second;
             std::map<uint256, CBlockIndex*>::const_iterator t = mapBlockIndex.find(hash);
             if (t != mapBlockIndex.end())
