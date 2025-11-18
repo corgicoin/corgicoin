@@ -53,7 +53,7 @@ bool CBasicKeyStore::GetCScript(const CScriptID &hash, CScript& redeemScriptOut)
 {
     {
         LOCK(cs_KeyStore);
-        ScriptMap::const_iterator mi = mapScripts.find(hash);
+        auto mi = mapScripts.find(hash);
         if (mi != mapScripts.end())
         {
             redeemScriptOut = (*mi).second;
@@ -97,7 +97,7 @@ bool CCryptoKeyStore::Unlock(const CKeyingMaterial& vMasterKeyIn)
         if (!SetCrypted())
             return false;
 
-        CryptedKeyMap::const_iterator mi = mapCryptedKeys.begin();
+        auto mi = mapCryptedKeys.begin();
         for (; mi != mapCryptedKeys.end(); ++mi)
         {
             const CPubKey &vchPubKey = (*mi).second.first;
@@ -162,7 +162,7 @@ bool CCryptoKeyStore::GetKey(const CKeyID &address, CKey& keyOut) const
         if (!IsCrypted())
             return CBasicKeyStore::GetKey(address, keyOut);
 
-        CryptedKeyMap::const_iterator mi = mapCryptedKeys.find(address);
+        auto mi = mapCryptedKeys.find(address);
         if (mi != mapCryptedKeys.end())
         {
             const CPubKey &vchPubKey = (*mi).second.first;
@@ -187,7 +187,7 @@ bool CCryptoKeyStore::GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) co
         if (!IsCrypted())
             return CKeyStore::GetPubKey(address, vchPubKeyOut);
 
-        CryptedKeyMap::const_iterator mi = mapCryptedKeys.find(address);
+        auto mi = mapCryptedKeys.find(address);
         if (mi != mapCryptedKeys.end())
         {
             vchPubKeyOut = (*mi).second.first;

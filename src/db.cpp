@@ -323,7 +323,7 @@ void CDBEnv::Flush(bool fShutdown)
         return;
     {
         LOCK(cs_db);
-        map<string, int>::iterator mi = mapFileUseCount.begin();
+        auto mi = mapFileUseCount.begin();
         while (mi != mapFileUseCount.end())
         {
             string strFile = (*mi).first;
@@ -461,7 +461,7 @@ CBlockIndex static * InsertBlockIndex(uint256 hash)
         return nullptr;
 
     // Return existing
-    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hash);
+    auto mi = mapBlockIndex.find(hash);
     if (mi != mapBlockIndex.end())
         return (*mi).second;
 

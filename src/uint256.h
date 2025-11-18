@@ -63,8 +63,8 @@ public:
 
     base_uint& operator=(uint64 b)
     {
-        pn[0] = (unsigned int)b;
-        pn[1] = (unsigned int)(b >> 32);
+        pn[0] = static_cast<unsigned int>(b);
+        pn[1] = static_cast<unsigned int>(b >> 32);
         for (int i = 2; i < WIDTH; i++)
             pn[i] = 0;
         return *this;
@@ -93,15 +93,15 @@ public:
 
     base_uint& operator^=(uint64 b)
     {
-        pn[0] ^= (unsigned int)b;
-        pn[1] ^= (unsigned int)(b >> 32);
+        pn[0] ^= static_cast<unsigned int>(b);
+        pn[1] ^= static_cast<unsigned int>(b >> 32);
         return *this;
     }
 
     base_uint& operator|=(uint64 b)
     {
-        pn[0] |= (unsigned int)b;
-        pn[1] |= (unsigned int)(b >> 32);
+        pn[0] |= static_cast<unsigned int>(b);
+        pn[1] |= static_cast<unsigned int>(b >> 32);
         return *this;
     }
 
@@ -267,9 +267,9 @@ public:
 
     friend inline bool operator==(const base_uint& a, uint64 b)
     {
-        if (a.pn[0] != (unsigned int)b)
+        if (a.pn[0] != static_cast<unsigned int>(b))
             return false;
-        if (a.pn[1] != (unsigned int)(b >> 32))
+        if (a.pn[1] != static_cast<unsigned int>(b >> 32))
             return false;
         for (int i = 2; i < base_uint::WIDTH; i++)
             if (a.pn[i] != 0)
@@ -293,7 +293,7 @@ public:
     {
         char psz[sizeof(pn)*2 + 1];
         for (unsigned int i = 0; i < sizeof(pn); i++)
-            sprintf(psz + i*2, "%02x", ((unsigned char*)pn)[sizeof(pn) - i - 1]);
+            sprintf(psz + i*2, "%02x", (reinterpret_cast<const unsigned char*>(pn))[sizeof(pn) - i - 1]);
         return std::string(psz, psz + sizeof(pn)*2);
     }
 
@@ -316,7 +316,7 @@ public:
         while (phexdigit[(unsigned char)*psz] || *psz == '0')
             psz++;
         psz--;
-        unsigned char* p1 = (unsigned char*)pn;
+        unsigned char* p1 = reinterpret_cast<unsigned char*>(pn);
         unsigned char* pend = p1 + WIDTH * 4;
         while (psz >= pbegin && p1 < pend)
         {
@@ -341,12 +341,12 @@ public:
 
     unsigned char* begin()
     {
-        return (unsigned char*)&pn[0];
+        return reinterpret_cast<unsigned char*>(&pn[0]);
     }
 
     unsigned char* end()
     {
-        return (unsigned char*)&pn[WIDTH];
+        return reinterpret_cast<unsigned char*>(&pn[WIDTH]);
     }
 
     unsigned int size()
@@ -369,14 +369,14 @@ public:
 //    void Serialize(Stream& s, int nType=0, int nVersion=PROTOCOL_VERSION) const
     void Serialize(Stream& s, int nType, int nVersion) const
     {
-        s.write((char*)pn, sizeof(pn));
+        s.write(reinterpret_cast<const char*>(pn), sizeof(pn));
     }
 
     template<typename Stream>
 //    void Unserialize(Stream& s, int nType=0, int nVersion=PROTOCOL_VERSION)
     void Unserialize(Stream& s, int nType, int nVersion)
     {
-        s.read((char*)pn, sizeof(pn));
+        s.read(reinterpret_cast<char*>(pn), sizeof(pn));
     }
 
 
@@ -430,16 +430,16 @@ public:
 
     uint160(uint64 b)
     {
-        pn[0] = (unsigned int)b;
-        pn[1] = (unsigned int)(b >> 32);
+        pn[0] = static_cast<unsigned int>(b);
+        pn[1] = static_cast<unsigned int>(b >> 32);
         for (int i = 2; i < WIDTH; i++)
             pn[i] = 0;
     }
 
     uint160& operator=(uint64 b)
     {
-        pn[0] = (unsigned int)b;
-        pn[1] = (unsigned int)(b >> 32);
+        pn[0] = static_cast<unsigned int>(b);
+        pn[1] = static_cast<unsigned int>(b >> 32);
         for (int i = 2; i < WIDTH; i++)
             pn[i] = 0;
         return *this;
@@ -545,16 +545,16 @@ public:
 
     uint256(uint64 b)
     {
-        pn[0] = (unsigned int)b;
-        pn[1] = (unsigned int)(b >> 32);
+        pn[0] = static_cast<unsigned int>(b);
+        pn[1] = static_cast<unsigned int>(b >> 32);
         for (int i = 2; i < WIDTH; i++)
             pn[i] = 0;
     }
 
     uint256& operator=(uint64 b)
     {
-        pn[0] = (unsigned int)b;
-        pn[1] = (unsigned int)(b >> 32);
+        pn[0] = static_cast<unsigned int>(b);
+        pn[1] = static_cast<unsigned int>(b >> 32);
         for (int i = 2; i < WIDTH; i++)
             pn[i] = 0;
         return *this;

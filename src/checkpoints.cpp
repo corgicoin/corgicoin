@@ -35,7 +35,7 @@ namespace Checkpoints
     {
         if (fTestNet) return true; // Testnet has no checkpoints
 
-        MapCheckpoints::const_iterator i = mapCheckpoints.find(nHeight);
+        auto i = mapCheckpoints.find(nHeight);
         if (i == mapCheckpoints.end()) return true;
         return hash == i->second;
 		// return true;
@@ -57,7 +57,7 @@ namespace Checkpoints
         {
             const MapCheckpoints::value_type& i = *it;
             const uint256& hash = i.second;
-            std::map<uint256, CBlockIndex*>::const_iterator t = mapBlockIndex.find(hash);
+            auto t = mapBlockIndex.find(hash);
             if (t != mapBlockIndex.end())
                 return t->second;
 				// return nullptr;

@@ -65,7 +65,7 @@ void RPCExecutor::request(const QString &command)
         boost::tokenizer<boost::escaped_list_separator<char> > tok(strCommand, els);
 
         int n = 0;
-        for(boost::tokenizer<boost::escaped_list_separator<char> >::iterator beg=tok.begin(); beg!=tok.end();++beg,++n)
+        for(auto beg=tok.begin(); beg!=tok.end();++beg,++n)
         {
             if(n == 0) // First parameter is the command
                 strMethod = *beg;
