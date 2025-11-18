@@ -59,8 +59,8 @@ protected:
     ScriptMap mapScripts;
 
 public:
-    bool AddKey(const CKey& key);
-    bool HaveKey(const CKeyID &address) const
+    bool AddKey(const CKey& key) override;
+    bool HaveKey(const CKeyID &address) const override
     {
         bool result;
         {
@@ -69,12 +69,12 @@ public:
         }
         return result;
     }
-    void GetKeys(std::set<CKeyID> &setAddress) const
+    void GetKeys(std::set<CKeyID> &setAddress) const override
     {
         setAddress.clear();
         {
             LOCK(cs_KeyStore);
-            KeyMap::const_iterator mi = mapKeys.begin();
+            auto mi = mapKeys.begin();
             while (mi != mapKeys.end())
             {
                 setAddress.insert((*mi).first);
@@ -82,11 +82,11 @@ public:
             }
         }
     }
-    bool GetKey(const CKeyID &address, CKey &keyOut) const
+    bool GetKey(const CKeyID &address, CKey &keyOut) const override
     {
         {
             LOCK(cs_KeyStore);
-            KeyMap::const_iterator mi = mapKeys.find(address);
+            auto mi = mapKeys.find(address);
             if (mi != mapKeys.end())
             {
                 keyOut.Reset();
@@ -96,9 +96,9 @@ public:
         }
         return false;
     }
-    virtual bool AddCScript(const CScript& redeemScript);
-    virtual bool HaveCScript(const CScriptID &hash) const;
-    virtual bool GetCScript(const CScriptID &hash, CScript& redeemScriptOut) const;
+    bool AddCScript(const CScript& redeemScript) override;
+    bool HaveCScript(const CScriptID &hash) const override;
+    bool GetCScript(const CScriptID &hash, CScript& redeemScriptOut) const override;
 };
 
 // Modern C++11 type alias for encrypted key storage
@@ -151,8 +151,8 @@ public:
     bool Lock();
 
     virtual bool AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret);
-    bool AddKey(const CKey& key);
-    bool HaveKey(const CKeyID &address) const
+    bool AddKey(const CKey& key) override;
+    bool HaveKey(const CKeyID &address) const override
     {
         {
             LOCK(cs_KeyStore);
@@ -162,9 +162,9 @@ public:
         }
         return false;
     }
-    bool GetKey(const CKeyID &address, CKey& keyOut) const;
-    bool GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const;
-    void GetKeys(std::set<CKeyID> &setAddress) const
+    bool GetKey(const CKeyID &address, CKey& keyOut) const override;
+    bool GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const override;
+    void GetKeys(std::set<CKeyID> &setAddress) const override
     {
         if (!IsCrypted())
         {
@@ -172,7 +172,7 @@ public:
             return;
         }
         setAddress.clear();
-        CryptedKeyMap::const_iterator mi = mapCryptedKeys.begin();
+        auto mi = mapCryptedKeys.begin();
         while (mi != mapCryptedKeys.end())
         {
             setAddress.insert((*mi).first);

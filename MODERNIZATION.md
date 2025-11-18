@@ -104,8 +104,8 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [x] Use nullptr instead of NULL (v1.4.1.4) - Critical headers updated
 - [x] Enable C++11/14 features (v1.4.1.3) - Compiler flags set
 - [ ] Replace raw pointers with smart pointers (requires more extensive testing)
-- [ ] Add override/final keywords to virtual functions
-- [ ] Use auto for complex iterator types
+- [x] Add override/final keywords to virtual functions (v1.4.1.5) - Keystore and wallet classes
+- [x] Use auto for complex iterator types (v1.4.1.5) - Iterator loops simplified
 
 ### Phase 4: Protocol Updates (Low Priority)
 - [ ] Remove/disable IRC peer discovery
@@ -174,6 +174,117 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.8 (2025-11-18) - Additional nullptr Conversions in Headers
+
+**C++11 nullptr Updates (25 occurrences across 4 headers):**
+- ✅ serialize.h (12 occurrences):
+  - time(nullptr) calls in benchmark code (4 occurrences)
+  - CAutoFile class: file pointer comparisons and assignments (5 occurrences)
+  - Error messages updated to "nullptr" instead of "NULL" (3 occurrences)
+
+- ✅ bignum.h (8 occurrences):
+  - CAutoBN_CTX class: pointer checks and error message (4 occurrences)
+  - BN_bn2mpi() calls for size queries (3 occurrences)
+  - BN_div() remainder parameter (1 occurrence)
+
+- ✅ script.h (2 occurrences):
+  - GetOp() optional parameter (2 occurrences)
+
+- ✅ allocators.h (3 occurrences):
+  - secure_allocator pointer checks (2 occurrences)
+  - zero_after_free_allocator pointer check (1 occurrence)
+
+**Files Modified:**
+- src/serialize.h: File I/O wrapper class modernized
+- src/bignum.h: OpenSSL BIGNUM wrapper modernized
+- src/script.h: Script parsing functions modernized
+- src/allocators.h: Memory allocators modernized
+- src/version.h: Version updated to 1.4.1.8
+- corgicoin-qt.pro: Version updated to 1.4.1.8
+
+**Benefits:**
+- Consistent nullptr usage across all core headers
+- Better type safety with typed null pointer
+- Continued progress toward full C++11 compliance
+- Foundation for future smart pointer adoption
+
+### Version 1.4.1.7 (2025-11-18) - Documentation Modernization
+
+**Documentation Updates:**
+- ✅ Updated COPYING with 2025 copyright year
+- ✅ Completely rewrote INSTALL file with:
+  - Critical security warnings prominently displayed
+  - Modern dependency version requirements
+  - References to MODERNIZATION.md
+  - Clear structure and formatting
+
+- ✅ Modernized doc/build-unix.txt with:
+  - Updated copyright to 2025
+  - Modern Ubuntu versions (22.04 LTS / 24.04 LTS)
+  - Updated dependency table with recommended versions
+  - Clear warnings about outdated versions
+  - Security-focused guidance (OpenSSL 3.x, Boost 1.70+, etc.)
+  - GCC 7+ requirement for C++11 support
+
+**Files Modified:**
+- COPYING: Copyright year updated
+- INSTALL: Complete rewrite with modern guidance
+- doc/build-unix.txt: Ubuntu versions and dependency updates
+
+**Benefits:**
+- Clear warnings about security vulnerabilities
+- Modern build instructions for current systems
+- Better developer onboarding experience
+- Reduced confusion about dependency versions
+
+### Version 1.4.1.6 (2025-11-18) - Extended nullptr and Auto Improvements
+
+**C++11 nullptr Updates:**
+- ✅ Replaced `NULL` with `nullptr` in database layer (12 occurrences)
+  - db.h: DbTxn pointers, Dbc cursors, transaction management, function parameters
+  - addrman.h: Function parameters for Find() and Create() methods
+
+**C++11 Auto Type Deduction:**
+- ✅ Simplified iterator types with `auto` in address manager (5 occurrences)
+  - addrman.h: std::map<int, CAddrInfo>::iterator → auto (2 locations)
+  - addrman.h: std::vector<std::set<int>>::iterator → auto
+  - addrman.h: std::set<int>::iterator → auto
+  - addrman.h: std::vector<CAddress>::const_iterator → auto
+
+**Files Modified:**
+- src/db.h: Berkeley DB wrapper class with 12 nullptr improvements
+- src/addrman.h: Address manager with 2 nullptr + 5 auto improvements
+
+**Benefits:**
+- Consistent nullptr usage across database operations
+- Improved readability in serialization code
+- Better type safety in pointer operations
+- More maintainable iterator-based code
+
+### Version 1.4.1.5 (2025-11-18) - Virtual Functions and Auto Type Deduction
+
+**C++11 Virtual Function Safety:**
+- ✅ Added `override` keywords to virtual functions (11+ occurrences)
+  - keystore.h: CBasicKeyStore methods (AddKey, HaveKey, GetKeys, GetKey, AddCScript, HaveCScript, GetCScript)
+  - keystore.h: CCryptoKeyStore methods (AddKey, HaveKey, GetKey, GetPubKey, GetKeys)
+  - wallet.h: CWallet methods (AddKey, AddCryptedKey, AddCScript)
+
+**C++11 Auto Type Deduction:**
+- ✅ Replaced complex iterator types with `auto` (4+ occurrences)
+  - keystore.h: KeyMap::const_iterator → auto (CBasicKeyStore::GetKeys)
+  - keystore.h: KeyMap::const_iterator → auto (CBasicKeyStore::GetKey)
+  - keystore.h: CryptedKeyMap::const_iterator → auto (CCryptoKeyStore::GetKeys)
+
+**Additional nullptr Updates:**
+- ✅ wallet.h: Constructor initialization (2 occurrences)
+
+**Benefits:**
+- Compile-time verification of virtual function overrides
+- Prevents accidental virtual function hiding
+- More maintainable code with clearer intent
+- Improved readability for iterator-heavy code
+- Better type safety with nullptr in constructors
 
 ### Version 1.4.1.4 (2025-11-18) - Code Modernization Release
 
