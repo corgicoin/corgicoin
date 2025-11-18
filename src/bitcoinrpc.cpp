@@ -1386,8 +1386,8 @@ Value listtransactions(const Array& params, bool fHelp)
     CWalletDB walletdb(pwalletMain->strWalletFile);
 
     // First: get all CWalletTx and CAccountingEntry into a sorted-by-time multimap.
-    typedef pair<CWalletTx*, CAccountingEntry*> TxPair;
-    typedef multimap<int64, TxPair > TxItems;
+    using TxPair = pair<CWalletTx*, CAccountingEntry*>;
+    using TxItems = multimap<int64, TxPair >;
     TxItems txByTime;
 
     // Note: maintaining indices in the database of (account,time) --> txid and (account, time) --> acentry
@@ -1875,7 +1875,7 @@ Value getworkex(const Array& params, bool fHelp)
     if (IsInitialBlockDownload())
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
-    typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
+    using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
     static mapNewBlock_t mapNewBlock;
     static vector<CBlock*> vNewBlock;
     static CReserveKey reservekey(pwalletMain);
@@ -2007,7 +2007,7 @@ Value getwork(const Array& params, bool fHelp)
     if (IsInitialBlockDownload())
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
-    typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
+    using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
     static vector<CBlock*> vNewBlock;
     static CReserveKey reservekey(pwalletMain);

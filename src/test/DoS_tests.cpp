@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(DoS_checknbits)
 
     // Timestamps,nBits from the bitcoin blockchain.
     // These are the block-chain checkpoint blocks
-    typedef std::map<int64, unsigned int> BlockData;
+    using BlockData = std::map<int64, unsigned int>;
     BlockData chainData =
         map_list_of(1239852051,486604799)(1262749024,486594666)
         (1279305360,469854461)(1280200847,469830746)(1281678674,469809688)

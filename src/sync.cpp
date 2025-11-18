@@ -50,7 +50,7 @@ private:
     int sourceLine;
 };
 
-typedef std::vector< std::pair<void*, CLockLocation> > LockStack;
+using LockStack = std::vector< std::pair<void*, CLockLocation> >;
 
 static boost::mutex dd_mutex;
 static std::map<std::pair<void*, void*>, LockStack> lockorders;

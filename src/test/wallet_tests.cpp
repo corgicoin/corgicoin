@@ -12,7 +12,7 @@
 
 using namespace std;
 
-typedef set<pair<const CWalletTx*,unsigned int> > CoinSet;
+using CoinSet = set<pair<const CWalletTx*,unsigned int> >;
 
 BOOST_AUTO_TEST_SUITE(wallet_tests)
 

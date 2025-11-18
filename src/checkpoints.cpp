@@ -15,7 +15,7 @@
 
 namespace Checkpoints
 {
-    typedef std::map<int, uint256> MapCheckpoints;
+    using MapCheckpoints = std::map<int, uint256>;
 
     //
     // What makes a good checkpoint block?

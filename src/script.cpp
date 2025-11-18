@@ -23,7 +23,7 @@ bool CheckSig(vector<unsigned char> vchSig, vector<unsigned char> vchPubKey, CSc
 
 
 
-typedef vector<unsigned char> valtype;
+using valtype = vector<unsigned char>;
 static const valtype vchFalse(0);
 static const valtype vchZero(0);
 static const valtype vchTrue(1, 1);
@@ -1113,7 +1113,7 @@ class CSignatureCache
 {
 private:
      // sigdata_type is (signature hash, signature, public key):
-    typedef boost::tuple<uint256, std::vector<unsigned char>, std::vector<unsigned char> > sigdata_type;
+    using sigdata_type = boost::tuple<uint256, std::vector<unsigned char>, std::vector<unsigned char> >;
     std::set< sigdata_type> setValid;
     CCriticalSection cs_sigcache;
 
