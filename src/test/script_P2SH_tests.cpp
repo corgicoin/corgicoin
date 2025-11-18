@@ -280,7 +280,7 @@ BOOST_AUTO_TEST_CASE(AreInputsStandard)
     oneOfEleven << OP_11 << OP_CHECKMULTISIG;
     txFrom.vout[5].scriptPubKey.SetDestination(oneOfEleven.GetID());
 
-    mapInputs[txFrom.GetHash()] = make_pair(CTxIndex(), txFrom);
+    mapInputs[txFrom.GetHash()] = {CTxIndex(), txFrom};
 
     CTransaction txTo;
     txTo.vout.resize(1);
