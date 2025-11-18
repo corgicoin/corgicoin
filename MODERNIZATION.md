@@ -175,6 +175,46 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.10 (2025-11-18) - nullptr Conversions in Network Code
+
+**C++11 nullptr Updates (30 occurrences in net.cpp):**
+- ✅ Global variable initialization (3 occurrences):
+  - pnodeLocalHost, semOutbound static pointers
+  - OpenNetworkConnection() function parameter defaults
+
+- ✅ Node management functions (6 occurrences):
+  - FindNode() overloads returning nullptr (3 occurrences)
+  - ConnectNode() pointer checks and returns (3 occurrences)
+
+- ✅ Network thread creation (8 occurrences):
+  - CreateThread() calls for DNS seed, IRC, socket handler, connections, message handler, address dump
+  - ThreadGetMyExternalIP, ThreadMapPort
+
+- ✅ StartNode() initialization (2 occurrences):
+  - semOutbound and pnodeLocalHost nullptr checks
+
+- ✅ Error handling (2 occurrences):
+  - PrintException(nullptr, ...) in catch blocks
+
+- ✅ External IP detection (2 occurrences):
+  - GetMyExternalIP2() keyword pointer handling
+
+- ✅ Network interface discovery (2 occurrences):
+  - ifaddrs iteration and nullptr checks
+
+**Files Modified:**
+- src/net.cpp: Complete networking code (30 nullptr conversions)
+- src/version.h: Version updated to 1.4.1.10
+- corgicoin-qt.pro: Version updated to 1.4.1.10
+
+**Benefits:**
+- Consistent nullptr usage across networking layer
+- Better type safety in node management
+- Modernized thread creation patterns
+- Foundation for network code refactoring
+
+**Progress:** 67 nullptr conversions in .cpp files (key.cpp: 37, net.cpp: 30), ~116 remaining
+
 ### Version 1.4.1.9 (2025-11-18) - nullptr Conversions in key.cpp
 
 **C++11 nullptr Updates (37 occurrences in key.cpp):**
