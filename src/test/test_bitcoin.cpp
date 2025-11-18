@@ -20,7 +20,7 @@ struct TestingSetup {
     ~TestingSetup()
     {
         delete pwalletMain;
-        pwalletMain = NULL;
+        pwalletMain = nullptr;
     }
 };
 

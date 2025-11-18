@@ -12,7 +12,7 @@
 
 using namespace std;
 
-typedef set<pair<const CWalletTx*,unsigned int> > CoinSet;
+using CoinSet = set<pair<const CWalletTx*,unsigned int> >;
 
 BOOST_AUTO_TEST_SUITE(wallet_tests)
 
@@ -42,7 +42,7 @@ static void add_coin(int64 nValue, int nAge = 6*24, bool fIsFromMe = false, int 
 
 static void empty_wallet(void)
 {
-    BOOST_FOREACH(COutput output, vCoins)
+    for (COutput output : vCoins)
         delete output.tx;
     vCoins.clear();
 }

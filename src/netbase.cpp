@@ -19,7 +19,7 @@
 using namespace std;
 
 // Settings
-typedef std::pair<CService, int> proxyType;
+using proxyType = std::pair<CService, int>;
 static proxyType proxyInfo[NET_MAX];
 static proxyType nameproxyInfo;
 int nConnectTimeout = 5000;
