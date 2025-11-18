@@ -194,7 +194,7 @@ bool AddOrphanTx(const CDataStream& vMsg)
 
     mapOrphanTransactions[hash] = pvMsg;
     for (const CTxIn& txin : tx.vin)
-        mapOrphanTransactionsByPrev[txin.prevout.hash].insert(make_pair(hash, pvMsg));
+        mapOrphanTransactionsByPrev[txin.prevout.hash].insert({hash, pvMsg});
 
     printf("stored orphan tx %s (mapsz %u)\n", hash.ToString().substr(0,10).c_str(),
         mapOrphanTransactions.size());
@@ -582,7 +582,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             {
                 LOCK(cs);
                 // Use an exponentially decaying ~10-minute window:
-                dFreeCount *= pow(1.0 - 1.0/600.0, (double)(nNow - nLastTime));
+                dFreeCount *= pow(1.0 - 1.0/600.0, static_cast<double>(nNow - nLastTime));
                 nLastTime = nNow;
                 // -limitfreerelay unit is thousand-bytes-per-minute
                 // At default rate it would take over a month to fill 1GB
@@ -666,8 +666,8 @@ void CTxMemPool::queryHashes(std::vector<uint256>& vtxid)
 
     LOCK(cs);
     vtxid.reserve(mapTx.size());
-    for (auto mi = mapTx.begin(); mi != mapTx.end(); ++mi)
-        vtxid.push_back((*mi).first);
+    for (const auto& entry : mapTx)
+        vtxid.push_back(entry.first);
 }
 
 
@@ -1763,7 +1763,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     CBlockIndex* pindexNew = new CBlockIndex(nFile, nBlockPos, *this);
     if (!pindexNew)
         return error("AddToBlockIndex() : new CBlockIndex failed");
-    auto mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
+    auto mi = mapBlockIndex.insert({hash, pindexNew}).first;
     pindexNew->phashBlock = &((*mi).first);
     auto miPrev = mapBlockIndex.find(hashPrevBlock);
     if (miPrev != mapBlockIndex.end())
@@ -2036,7 +2036,7 @@ static unsigned int nCurrentBlockFile = 1;
 FILE* AppendBlockFile(unsigned int& nFileRet)
 {
     nFileRet = 0;
-    loop
+    while(true)
     {
         FILE* file = OpenBlockFile(nCurrentBlockFile, 0, "ab");
         if (!file)
@@ -2130,7 +2130,7 @@ bool LoadBlockIndex(bool fAllowNew)
             uint256 thash;
             char scratchpad[SCRYPT_SCRATCHPAD_SIZE];
 
-            loop
+            while(true)
             {
                 scrypt_1024_1_1_256_sp(BEGIN(block.nVersion), BEGIN(thash), scratchpad);
                 if (thash <= hashTarget)
@@ -2169,9 +2169,9 @@ void PrintBlockTree()
 {
     // precompute tree structure
     map<CBlockIndex*, vector<CBlockIndex*> > mapNext;
-    for (auto mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi)
+    for (const auto& entry : mapBlockIndex)
     {
-        CBlockIndex* pindex = (*mi).second;
+        CBlockIndex* pindex = entry.second;
         mapNext[pindex->pprev].push_back(pindex);
         // test
         //while (rand() % 3 == 0)
@@ -2408,7 +2408,7 @@ bool CAlert::ProcessAlert()
         }
 
         // Add to mapAlerts
-        mapAlerts.insert(make_pair(GetHash(), *this));
+        mapAlerts.insert({GetHash(), *this});
         // Notify UI if it applies to me
         if(AppliesToMe())
             uiInterface.NotifyAlertChanged(GetHash(), CT_NEW);
@@ -2651,7 +2651,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                         memcpy(&nPointer, &pnode, sizeof(nPointer));
                         uint256 hashKey = hashRand ^ nPointer;
                         hashKey = Hash(BEGIN(hashKey), END(hashKey));
-                        mapMix.insert(make_pair(hashKey, pnode));
+                        mapMix.insert({hashKey, pnode});
                     }
                     int nRelayNodes = fReachable ? 2 : 1; // limited relaying of addresses outside our network(s)
                     for (auto mi = mapMix.begin(); mi != mapMix.end() && nRelayNodes-- > 0; ++mi)
@@ -3065,7 +3065,7 @@ bool ProcessMessages(CNode* pfrom)
     //  (x) data
     //
 
-    loop
+    while(true)
     {
         // Don't bother if send buffer is too full to respond anyway
         if (pfrom->vSend.size() >= SendBufferSize())
@@ -3503,7 +3503,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                 // Read block header
                 int nConf = txindex.GetDepthInMainChain();
 
-                dPriority += (double)nValueIn * nConf;
+                dPriority += static_cast<double>(nValueIn) * nConf;
 
                 if (fDebug && GetBoolArg("-printpriority"))
                     printf("priority     nValueIn=%-12"PRI64d" nConf=%-5d dPriority=%-20.1f\n", nValueIn, nConf, dPriority);
@@ -3780,14 +3780,14 @@ void static BitcoinMiner(CWallet *pwallet)
         //
         int64 nStart = GetTime();
         uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
-        loop
+        while(true)
         {
             unsigned int nHashesDone = 0;
             //unsigned int nNonceFound;
 
             uint256 thash;
             char scratchpad[SCRYPT_SCRATCHPAD_SIZE];
-            loop
+            while(true)
             {
                 scrypt_1024_1_1_256_sp(BEGIN(pblock->nVersion), BEGIN(thash), scratchpad);
 

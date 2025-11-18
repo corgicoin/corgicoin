@@ -118,7 +118,7 @@ double GetDifficulty(const CBlockIndex* blockindex = nullptr)
     int nShift = (blockindex->nBits >> 24) & 0xff;
 
     double dDiff =
-        (double)0x0000ffff / (double)(blockindex->nBits & 0x00ffffff);
+        static_cast<double>(0x0000ffff) / static_cast<double>(blockindex->nBits & 0x00ffffff);
 
     while (nShift < 29)
     {
@@ -148,7 +148,7 @@ int64 AmountFromValue(const Value& value)
 
 Value ValueFromAmount(int64 amount)
 {
-    return (double)amount / (double)COIN;
+    return static_cast<double>(amount) / static_cast<double>(COIN);
 }
 
 std::string
@@ -206,8 +206,8 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex)
     result.emplace_back("hash", block.GetHash().GetHex());
     CMerkleTx txGen(block.vtx[0]);
     txGen.SetMerkleBranch(&block);
-    result.emplace_back("confirmations", (int)txGen.GetDepthInMainChain());
-    result.emplace_back("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION));
+    result.emplace_back("confirmations", static_cast<int>(txGen.GetDepthInMainChain()));
+    result.emplace_back("size", static_cast<int>(::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
     result.emplace_back("height", blockindex->nHeight);
     result.emplace_back("version", block.nVersion);
     result.emplace_back("merkleroot", block.hashMerkleRoot.GetHex());
@@ -334,7 +334,7 @@ Value GetNetworkHashPS(int lookup) {
     double timeDiff = pindexBest->GetBlockTime() - pindexPrev->GetBlockTime();
     double timePerBlock = timeDiff / lookup;
 
-    return (boost::int64_t)(((double)GetDifficulty() * pow(2.0, 32)) / timePerBlock);
+    return static_cast<boost::int64_t>((static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock);
 }
 
 Value getnetworkhashps(const Array& params, bool fHelp)
@@ -410,14 +410,14 @@ Value getinfo(const Array& params, bool fHelp)
     GetProxy(NET_IPV4, addrProxy);
 
     Object obj;
-    obj.emplace_back("version",       (int)CLIENT_VERSION);
-    obj.emplace_back("protocolversion",(int)PROTOCOL_VERSION);
+    obj.emplace_back("version",       static_cast<int>(CLIENT_VERSION));
+    obj.emplace_back("protocolversion",static_cast<int>(PROTOCOL_VERSION));
     obj.emplace_back("walletversion", pwalletMain->GetVersion());
     obj.emplace_back("balance",       ValueFromAmount(pwalletMain->GetBalance()));
-    obj.emplace_back("blocks",        (int)nBestHeight);
-    obj.emplace_back("connections",   (int)vNodes.size());
+    obj.emplace_back("blocks",        static_cast<int>(nBestHeight));
+    obj.emplace_back("connections",   static_cast<int>(vNodes.size()));
     obj.emplace_back("proxy",         (addrProxy.IsValid() ? addrProxy.ToStringIPPort() : string()));
-    obj.emplace_back("difficulty",    (double)GetDifficulty());
+    obj.emplace_back("difficulty",    static_cast<double>(GetDifficulty()));
     obj.emplace_back("testnet",       fTestNet);
     obj.emplace_back("keypoololdest", (boost::int64_t)pwalletMain->GetOldestKeyPoolTime());
     obj.emplace_back("keypoolsize",   pwalletMain->GetKeyPoolSize());
@@ -438,13 +438,13 @@ Value getmininginfo(const Array& params, bool fHelp)
             "Returns an object containing mining-related information.");
 
     Object obj;
-    obj.emplace_back("blocks",        (int)nBestHeight);
+    obj.emplace_back("blocks",        static_cast<int>(nBestHeight));
     obj.emplace_back("currentblocksize",(uint64_t)nLastBlockSize);
     obj.emplace_back("currentblocktx",(uint64_t)nLastBlockTx);
-    obj.emplace_back("difficulty",    (double)GetDifficulty());
+    obj.emplace_back("difficulty",    static_cast<double>(GetDifficulty()));
     obj.emplace_back("errors",        GetWarnings("statusbar"));
     obj.emplace_back("generate",      GetBoolArg("-gen"));
-    obj.emplace_back("genproclimit",  (int)GetArg("-genproclimit", -1));
+    obj.emplace_back("genproclimit",  static_cast<int>(GetArg("-genproclimit", -1)));
     obj.emplace_back("hashespersec",  gethashespersec(params, false));
     obj.emplace_back("networkhashps", getnetworkhashps(params, false));
     obj.emplace_back("pooledtx",      (uint64_t)mempool.size());
@@ -759,7 +759,7 @@ Value getreceivedbyaddress(const Array& params, bool fHelp)
         throw JSONRPCError(-5, "Invalid CorgiCoin address");
     scriptPubKey.SetDestination(address.Get());
     if (!IsMine(*pwalletMain,scriptPubKey))
-        return (double)0.0;
+        return static_cast<double>(0.0);
 
     // Minimum confirmations
     int nMinDepth = 1;
@@ -768,9 +768,9 @@ Value getreceivedbyaddress(const Array& params, bool fHelp)
 
     // Tally
     int64 nAmount = 0;
-    for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         if (wtx.IsCoinBase() || !wtx.IsFinal())
             continue;
 
@@ -814,9 +814,9 @@ Value getreceivedbyaccount(const Array& params, bool fHelp)
 
     // Tally
     int64 nAmount = 0;
-    for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         if (wtx.IsCoinBase() || !wtx.IsFinal())
             continue;
 
@@ -829,7 +829,7 @@ Value getreceivedbyaccount(const Array& params, bool fHelp)
         }
     }
 
-    return (double)nAmount / (double)COIN;
+    return static_cast<double>(nAmount) / static_cast<double>(COIN);
 }
 
 
@@ -838,9 +838,9 @@ int64 GetAccountBalance(CWalletDB& walletdb, const string& strAccount, int nMinD
     int64 nBalance = 0;
 
     // Tally wallet transactions
-    for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         if (!wtx.IsFinal())
             continue;
 
@@ -1090,7 +1090,7 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     // Gather public keys
     if (nRequired < 1)
         throw runtime_error("a multisignature address must require at least one key to redeem");
-    if ((int)keys.size() < nRequired)
+    if (static_cast<int>(keys.size()) < nRequired)
         throw runtime_error(
             strprintf("not enough keys supplied "
                       "(got %d keys, but need at least %d to redeem)", keys.size(), nRequired));
@@ -1165,9 +1165,9 @@ Value ListReceived(const Array& params, bool fByAccounts)
 
     // Tally
     map<CBitcoinAddress, tallyitem> mapTally;
-    for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
 
         if (wtx.IsCoinBase() || !wtx.IsFinal())
             continue;
@@ -1414,13 +1414,13 @@ Value listtransactions(const Array& params, bool fHelp)
         if (pacentry != 0)
             AcentryToJSON(*pacentry, strAccount, ret);
 
-        if ((int)ret.size() >= (nCount+nFrom)) break;
+        if (static_cast<int>(ret.size()) >= (nCount+nFrom)) break;
     }
     // ret is newest to oldest
 
-    if (nFrom > (int)ret.size())
+    if (nFrom > static_cast<int>(ret.size()))
         nFrom = ret.size();
-    if ((nFrom + nCount) > (int)ret.size())
+    if ((nFrom + nCount) > static_cast<int>(ret.size()))
         nCount = ret.size() - nFrom;
     auto first = ret.begin();
     std::advance(first, nFrom);
@@ -1452,9 +1452,9 @@ Value listaccounts(const Array& params, bool fHelp)
             mapAccountBalances[entry.second] = 0;
     }
 
-    for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (const auto& entry : pwalletMain->mapWallet)
     {
-        const CWalletTx& wtx = (*it).second;
+        const CWalletTx& wtx = entry.second;
         int64 nGeneratedImmature, nGeneratedMature, nFee;
         string strSentAccount;
         list<pair<CTxDestination, int64> > listReceived;
@@ -2501,7 +2501,7 @@ int ReadHTTPStatus(std::basic_istream<char>& stream, int &proto)
 int ReadHTTPHeader(std::basic_istream<char>& stream, map<string, string>& mapHeadersRet)
 {
     int nLen = 0;
-    loop
+    while(true)
     {
         string str;
         std::getline(stream, str);
@@ -2534,7 +2534,7 @@ int ReadHTTP(std::basic_istream<char>& stream, map<string, string>& mapHeadersRe
 
     // Read header
     int nLen = ReadHTTPHeader(stream, mapHeadersRet);
-    if (nLen < 0 || nLen > (int)MAX_SIZE)
+    if (nLen < 0 || nLen > static_cast<int>(MAX_SIZE))
         return 500;
 
     // Read message
@@ -3040,7 +3040,7 @@ void ThreadRPCServer3(void* parg)
     AcceptedConnection *conn = (AcceptedConnection *) parg;
 
     bool fRun = true;
-    loop {
+    while(true) {
         if (fShutdown || !fRun)
         {
             conn->close();

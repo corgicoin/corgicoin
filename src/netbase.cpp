@@ -435,7 +435,7 @@ bool SetProxy(enum Network net, CService addrProxy, int nSocksVersion) {
         return false;
     if (nSocksVersion != 0 && !addrProxy.IsValid())
         return false;
-    proxyInfo[net] = std::make_pair(addrProxy, nSocksVersion);
+    proxyInfo[net] = {addrProxy, nSocksVersion};
     return true;
 }
 
@@ -452,7 +452,7 @@ bool SetNameProxy(CService addrProxy, int nSocksVersion) {
         return false;
     if (nSocksVersion != 0 && !addrProxy.IsValid())
         return false;
-    nameproxyInfo = std::make_pair(addrProxy, nSocksVersion);
+    nameproxyInfo = {addrProxy, nSocksVersion);
     return true;
 }
 

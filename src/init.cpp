@@ -622,12 +622,12 @@ bool AppInit2()
     {
         string strMatch = mapArgs["-printblock"];
         int nFound = 0;
-        for (auto mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi)
+        for (const auto& entry : mapBlockIndex)
         {
-            uint256 hash = (*mi).first;
+            uint256 hash = entry.first;
             if (strncmp(hash.ToString().c_str(), strMatch.c_str(), strMatch.size()) == 0)
             {
-                CBlockIndex* pindex = (*mi).second;
+                CBlockIndex* pindex = entry.second;
                 CBlock block;
                 block.ReadFromDisk(pindex);
                 block.BuildMerkleTree();
