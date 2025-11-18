@@ -2716,17 +2716,17 @@ public:
     {
     }
 
-    virtual std::iostream& stream()
+    virtual std::iostream& stream() override
     {
         return _stream;
     }
 
-    virtual std::string peer_address_to_string() const
+    virtual std::string peer_address_to_string() const override
     {
         return peer.address().to_string();
     }
 
-    virtual void close()
+    virtual void close() override
     {
         _stream.close();
     }
