@@ -1952,8 +1952,8 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     {
         printf("ProcessBlock: ORPHAN BLOCK, prev=%s\n", pblock->hashPrevBlock.ToString().substr(0,20).c_str());
         CBlock* pblock2 = new CBlock(*pblock);
-        mapOrphanBlocks.insert(make_pair(hash, pblock2));
-        mapOrphanBlocksByPrev.insert(make_pair(pblock2->hashPrevBlock, pblock2));
+        mapOrphanBlocks.insert({hash, pblock2});
+        mapOrphanBlocksByPrev.insert({pblock2->hashPrevBlock, pblock2});
 
         // Ask this guy to fill in what we're missing
         if (pfrom)
@@ -3472,9 +3472,9 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         list<COrphan> vOrphan; // list memory doesn't move
         map<uint256, vector<COrphan*> > mapDependers;
         multimap<double, CTransaction*> mapPriority;
-        for (map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); mi != mempool.mapTx.end(); ++mi)
+        for (auto& entry : mempool.mapTx)
         {
-            CTransaction& tx = (*mi).second;
+            CTransaction& tx = entry.second;
             if (tx.IsCoinBase() || !tx.IsFinal())
                 continue;
 
@@ -3515,7 +3515,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             if (porphan)
                 porphan->dPriority = dPriority;
             else
-                mapPriority.insert(make_pair(-dPriority, &(*mi).second));
+                mapPriority.insert({-dPriority, &(*mi).second});
 
             if (fDebug && GetBoolArg("-printpriority"))
             {
@@ -3591,7 +3591,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                     {
                         porphan->setDependsOn.erase(hash);
                         if (porphan->setDependsOn.empty())
-                            mapPriority.insert(make_pair(-porphan->dPriority, porphan->ptx));
+                            mapPriority.insert({-porphan->dPriority, porphan->ptx});
                     }
                 }
             }

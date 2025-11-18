@@ -371,13 +371,13 @@ bool CTxDB::ReadTxIndex(uint256 hash, CTxIndex& txindex)
 {
     assert(!fClient);
     txindex.SetNull();
-    return Read(make_pair(string("tx"), hash), txindex);
+    return Read({string("tx"), hash}, txindex);
 }
 
 bool CTxDB::UpdateTxIndex(uint256 hash, const CTxIndex& txindex)
 {
     assert(!fClient);
-    return Write(make_pair(string("tx"), hash), txindex);
+    return Write({string("tx"), hash}, txindex);
 }
 
 bool CTxDB::AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeight)
@@ -387,7 +387,7 @@ bool CTxDB::AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeigh
     // Add to tx index
     uint256 hash = tx.GetHash();
     CTxIndex txindex(pos, tx.vout.size());
-    return Write(make_pair(string("tx"), hash), txindex);
+    return Write({string("tx"), hash}, txindex);
 }
 
 bool CTxDB::EraseTxIndex(const CTransaction& tx)
@@ -395,13 +395,13 @@ bool CTxDB::EraseTxIndex(const CTransaction& tx)
     assert(!fClient);
     uint256 hash = tx.GetHash();
 
-    return Erase(make_pair(string("tx"), hash));
+    return Erase({string("tx"), hash});
 }
 
 bool CTxDB::ContainsTx(uint256 hash)
 {
     assert(!fClient);
-    return Exists(make_pair(string("tx"), hash));
+    return Exists({string("tx"), hash});
 }
 
 bool CTxDB::ReadDiskTx(uint256 hash, CTransaction& tx, CTxIndex& txindex)
@@ -432,7 +432,7 @@ bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction& tx)
 
 bool CTxDB::WriteBlockIndex(const CDiskBlockIndex& blockindex)
 {
-    return Write(make_pair(string("blockindex"), blockindex.GetBlockHash()), blockindex);
+    return Write({string("blockindex"), blockindex.GetBlockHash()}, blockindex);
 }
 
 bool CTxDB::ReadHashBestChain(uint256& hashBestChain)
@@ -469,7 +469,7 @@ CBlockIndex static * InsertBlockIndex(uint256 hash)
     CBlockIndex* pindexNew = new CBlockIndex();
     if (!pindexNew)
         throw runtime_error("LoadBlockIndex() : new CBlockIndex failed");
-    mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
+    mi = mapBlockIndex.insert({hash, pindexNew}).first;
     pindexNew->phashBlock = &((*mi).first);
 
     return pindexNew;
@@ -489,7 +489,7 @@ bool CTxDB::LoadBlockIndex()
     for (const PAIRTYPE(uint256, CBlockIndex*)& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
-        vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
+        vSortedByHeight.emplace_back(pindex->nHeight, pindex);
     }
     sort(vSortedByHeight.begin(), vSortedByHeight.end());
     for (const PAIRTYPE(int, CBlockIndex*)& item : vSortedByHeight)
@@ -543,7 +543,7 @@ bool CTxDB::LoadBlockIndex()
         // check level 2: verify transaction index validity
         if (nCheckLevel>1)
         {
-            pair<unsigned int, unsigned int> pos = make_pair(pindex->nFile, pindex->nBlockPos);
+            pair<unsigned int, unsigned int> pos = {pindex->nFile, pindex->nBlockPos};
             mapBlockPos[pos] = pindex;
             for (const CTransaction &tx : block.vtx)
             {
@@ -576,7 +576,7 @@ bool CTxDB::LoadBlockIndex()
                         {
                             if (!txpos.IsNull())
                             {
-                                pair<unsigned int, unsigned int> posFind = make_pair(txpos.nFile, txpos.nBlockPos);
+                                pair<unsigned int, unsigned int> posFind = {txpos.nFile, txpos.nBlockPos};
                                 if (!mapBlockPos.count(posFind))
                                 {
                                     printf("LoadBlockIndex(): *** found bad spend at %d, hashBlock=%s, hashTx=%s\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str(), hashTx.ToString().c_str());
@@ -661,7 +661,7 @@ bool CTxDB::LoadBlockIndexGuts()
         // Read next record
         CDataStream ssKey(SER_DISK, CLIENT_VERSION);
         if (fFlags == DB_SET_RANGE)
-            ssKey << make_pair(string("blockindex"), uint256(0));
+            ssKey << std::make_pair(string("blockindex"), uint256(0));
         CDataStream ssValue(SER_DISK, CLIENT_VERSION);
         int ret = ReadAtCursor(pcursor, ssKey, ssValue, fFlags);
         fFlags = DB_NEXT;

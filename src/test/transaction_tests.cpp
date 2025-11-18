@@ -48,14 +48,14 @@ SetupDummyInputs(CBasicKeyStore& keystoreRet, MapPrevTx& inputsRet)
     dummyTransactions[0].vout[0].scriptPubKey << key[0].GetPubKey() << OP_CHECKSIG;
     dummyTransactions[0].vout[1].nValue = 50*CENT;
     dummyTransactions[0].vout[1].scriptPubKey << key[1].GetPubKey() << OP_CHECKSIG;
-    inputsRet[dummyTransactions[0].GetHash()] = make_pair(CTxIndex(), dummyTransactions[0]);
+    inputsRet[dummyTransactions[0].GetHash()] = {CTxIndex(), dummyTransactions[0]};
 
     dummyTransactions[1].vout.resize(2);
     dummyTransactions[1].vout[0].nValue = 21*CENT;
     dummyTransactions[1].vout[0].scriptPubKey.SetDestination(key[2].GetPubKey().GetID());
     dummyTransactions[1].vout[1].nValue = 22*CENT;
     dummyTransactions[1].vout[1].scriptPubKey.SetDestination(key[3].GetPubKey().GetID());
-    inputsRet[dummyTransactions[1].GetHash()] = make_pair(CTxIndex(), dummyTransactions[1]);
+    inputsRet[dummyTransactions[1].GetHash()] = {CTxIndex(), dummyTransactions[1]};
 
     return dummyTransactions;
 }

@@ -1395,13 +1395,13 @@ Value listtransactions(const Array& params, bool fHelp)
     for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
     {
         CWalletTx* wtx = &((*it).second);
-        txByTime.insert(make_pair(wtx->GetTxTime(), TxPair(wtx, (CAccountingEntry*)0)));
+        txByTime.insert({wtx->GetTxTime(), TxPair(wtx, (CAccountingEntry*)0)});
     }
     list<CAccountingEntry> acentries;
     walletdb.ListAccountCreditDebit(strAccount, acentries);
     for (CAccountingEntry& entry : acentries)
     {
-        txByTime.insert(make_pair(entry.nTime, TxPair((CWalletTx*)0, &entry)));
+        txByTime.insert({entry.nTime, TxPair((CWalletTx*)0, &entry)});
     }
 
     // iterate backwards until we have nCount items to return:
@@ -1918,7 +1918,7 @@ Value getworkex(const Array& params, bool fHelp)
         IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
 
         // Save
-        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock, pblock->vtx[0].vin[0].scriptSig);
+        mapNewBlock[pblock->hashMerkleRoot] = {pblock, pblock->vtx[0].vin[0].scriptSig};
 
         // Prebuild hash buffers
         char pmidstate[32];
@@ -2050,7 +2050,7 @@ Value getwork(const Array& params, bool fHelp)
         IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
 
         // Save
-        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock, pblock->vtx[0].vin[0].scriptSig);
+        mapNewBlock[pblock->hashMerkleRoot] = {pblock, pblock->vtx[0].vin[0].scriptSig};
 
         // Prebuild hash buffers
         char pmidstate[32];
