@@ -175,6 +175,40 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.8 (2025-11-18) - Additional nullptr Conversions in Headers
+
+**C++11 nullptr Updates (25 occurrences across 4 headers):**
+- ✅ serialize.h (12 occurrences):
+  - time(nullptr) calls in benchmark code (4 occurrences)
+  - CAutoFile class: file pointer comparisons and assignments (5 occurrences)
+  - Error messages updated to "nullptr" instead of "NULL" (3 occurrences)
+
+- ✅ bignum.h (8 occurrences):
+  - CAutoBN_CTX class: pointer checks and error message (4 occurrences)
+  - BN_bn2mpi() calls for size queries (3 occurrences)
+  - BN_div() remainder parameter (1 occurrence)
+
+- ✅ script.h (2 occurrences):
+  - GetOp() optional parameter (2 occurrences)
+
+- ✅ allocators.h (3 occurrences):
+  - secure_allocator pointer checks (2 occurrences)
+  - zero_after_free_allocator pointer check (1 occurrence)
+
+**Files Modified:**
+- src/serialize.h: File I/O wrapper class modernized
+- src/bignum.h: OpenSSL BIGNUM wrapper modernized
+- src/script.h: Script parsing functions modernized
+- src/allocators.h: Memory allocators modernized
+- src/version.h: Version updated to 1.4.1.8
+- corgicoin-qt.pro: Version updated to 1.4.1.8
+
+**Benefits:**
+- Consistent nullptr usage across all core headers
+- Better type safety with typed null pointer
+- Continued progress toward full C++11 compliance
+- Foundation for future smart pointer adoption
+
 ### Version 1.4.1.7 (2025-11-18) - Documentation Modernization
 
 **Documentation Updates:**

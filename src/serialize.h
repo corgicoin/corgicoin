@@ -1036,19 +1036,19 @@ int main(int argc, char *argv[])
     for (int n = 1000; n <= 4500000; n *= 2)
     {
         CDataStream ss;
-        time_t nStart = time(NULL);
+        time_t nStart = time(nullptr);
         for (int i = 0; i < n; i++)
             ss.write((char*)&vch[0], vch.size());
-        printf("n=%-10d %d seconds\n", n, time(NULL) - nStart);
+        printf("n=%-10d %d seconds\n", n, time(nullptr) - nStart);
     }
     printf("stringstream:\n");
     for (int n = 1000; n <= 4500000; n *= 2)
     {
         stringstream ss;
-        time_t nStart = time(NULL);
+        time_t nStart = time(nullptr);
         for (int i = 0; i < n; i++)
             ss.write((char*)&vch[0], vch.size());
-        printf("n=%-10d %d seconds\n", n, time(NULL) - nStart);
+        printf("n=%-10d %d seconds\n", n, time(nullptr) - nStart);
     }
 }
 #endif
@@ -1094,18 +1094,18 @@ public:
 
     void fclose()
     {
-        if (file != NULL && file != stdin && file != stdout && file != stderr)
+        if (file != nullptr && file != stdin && file != stdout && file != stderr)
             ::fclose(file);
-        file = NULL;
+        file = nullptr;
     }
 
-    FILE* release()             { FILE* ret = file; file = NULL; return ret; }
+    FILE* release()             { FILE* ret = file; file = nullptr; return ret; }
     operator FILE*()            { return file; }
     FILE* operator->()          { return file; }
     FILE& operator*()           { return *file; }
     FILE** operator&()          { return &file; }
     FILE* operator=(FILE* pnew) { return file = pnew; }
-    bool operator!()            { return (file == NULL); }
+    bool operator!()            { return (file == nullptr); }
 
 
     //
@@ -1134,7 +1134,7 @@ public:
     CAutoFile& read(char* pch, size_t nSize)
     {
         if (!file)
-            throw std::ios_base::failure("CAutoFile::read : file handle is NULL");
+            throw std::ios_base::failure("CAutoFile::read : file handle is nullptr");
         if (fread(pch, 1, nSize, file) != nSize)
             setstate(std::ios::failbit, feof(file) ? "CAutoFile::read : end of file" : "CAutoFile::read : fread failed");
         return (*this);
@@ -1143,7 +1143,7 @@ public:
     CAutoFile& write(const char* pch, size_t nSize)
     {
         if (!file)
-            throw std::ios_base::failure("CAutoFile::write : file handle is NULL");
+            throw std::ios_base::failure("CAutoFile::write : file handle is nullptr");
         if (fwrite(pch, 1, nSize, file) != nSize)
             setstate(std::ios::failbit, "CAutoFile::write : write failed");
         return (*this);
@@ -1161,7 +1161,7 @@ public:
     {
         // Serialize to this stream
         if (!file)
-            throw std::ios_base::failure("CAutoFile::operator<< : file handle is NULL");
+            throw std::ios_base::failure("CAutoFile::operator<< : file handle is nullptr");
         ::Serialize(*this, obj, nType, nVersion);
         return (*this);
     }
@@ -1171,7 +1171,7 @@ public:
     {
         // Unserialize from this stream
         if (!file)
-            throw std::ios_base::failure("CAutoFile::operator>> : file handle is NULL");
+            throw std::ios_base::failure("CAutoFile::operator>> : file handle is nullptr");
         ::Unserialize(*this, obj, nType, nVersion);
         return (*this);
     }
