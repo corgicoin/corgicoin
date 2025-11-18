@@ -83,12 +83,15 @@ Note: Wallet compatibility must be maintained during upgrades.
 
 ## Modernization Roadmap
 
-### Phase 1: Build System Updates (Immediate)
-- [x] Add C++11 compiler flags
-- [x] Update .gitignore for modern build artifacts
-- [x] Document security issues
+### Phase 1: Build System Updates (Immediate) ✅ COMPLETED
+- [x] Add C++11 compiler flags (v1.4.1.3)
+- [x] Update .gitignore for modern build artifacts (v1.4.1.3)
+- [x] Document security issues (v1.4.1.3)
+- [x] Update build configs for modern dependencies (v1.4.1.3)
+- [x] Add version checking and warnings (v1.4.1.3)
+- [x] IRC disabled by default with deprecation warnings (v1.4.1.3)
 - [ ] Add CMake build system alongside qmake
-- [ ] Update compiler warning flags
+- [x] Update compiler warning flags (v1.4.1.3)
 
 ### Phase 2: Dependency Updates (High Priority)
 - [ ] OpenSSL 3.x migration (CRITICAL)
@@ -169,6 +172,39 @@ After each modernization phase:
 ## Build Instructions (Updated)
 
 See README.md for updated build instructions with modern dependency versions.
+
+## Changelog
+
+### Version 1.4.1.3 (2025-11-18) - Modernization Release
+
+**Build System:**
+- ✅ Enabled C++11 compiler standard (-std=c++11)
+- ✅ Enhanced security hardening flags
+- ✅ Updated build configs to support modern dependencies
+- ✅ macOS: Updated from 10.5/32-bit to 10.13+/64-bit
+- ✅ Added support for Boost 1.70+, OpenSSL 3.x, Berkeley DB 6.x
+
+**Compatibility & Security:**
+- ✅ Added compat_openssl.h with OpenSSL 3.x compatibility checks
+- ✅ Added compat_boost.h with Boost version checks
+- ✅ Runtime version printing and security warnings
+- ✅ Critical security warnings for OpenSSL 1.0.x users
+
+**Network & Protocol:**
+- ✅ IRC peer discovery disabled by default (already was, now explicit)
+- ✅ IRC thread only created if explicitly enabled via -irc flag
+- ✅ Added deprecation warnings for IRC usage
+- ✅ Improved .gitignore for modern development
+
+**Documentation:**
+- ✅ Comprehensive MODERNIZATION.md guide
+- ✅ Updated README.md with security warnings
+- ✅ Build instructions for modern dependency versions
+
+**Testing Status:**
+- ⚠️ Code changes are backward compatible
+- ⚠️ Requires testing with modern dependencies
+- ⚠️ Wallet compatibility should be verified before production use
 
 ## Security Disclosure
 

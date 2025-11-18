@@ -209,6 +209,9 @@ void ThreadIRCSeed2(void* parg)
     if (!GetBoolArg("-irc", false))
         return;
 
+    printf("WARNING: IRC peer discovery is deprecated and disabled by default.\n");
+    printf("WARNING: IRC support may be removed in future versions.\n");
+    printf("WARNING: Please use DNS seeds and -addnode instead.\n");
     printf("ThreadIRCSeed started\n");
     int nErrorWait = 10;
     int nRetryWait = 10;
