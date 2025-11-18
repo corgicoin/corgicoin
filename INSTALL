@@ -1,9 +1,37 @@
 Building Corgicoin
+==================
 
-See doc/readme-qt.rst for instructions on building Corgicoin-QT,
-the intended-for-end-users, nice-graphical-interface, reference
-implementation of CorgiCoin.
+IMPORTANT: Before building, please read MODERNIZATION.md for critical security
+information about outdated dependencies and recommended versions.
 
-See doc/build-*.txt for instructions on building corgicoind,
-the intended-for-services, no-graphical-interface, reference
-implementation of CorgiCoin.
+Quick Start
+-----------
+
+For GUI wallet (Corgicoin-QT):
+    See doc/readme-qt.rst for detailed build instructions
+
+For daemon (corgicoind):
+    See doc/build-unix.txt (Linux/Unix)
+    See doc/build-osx.txt (macOS)
+    See doc/build-msw.txt (Windows)
+
+Modernization Status
+--------------------
+
+This codebase (v1.4.1.6) has been modernized with C++11 support but still
+requires dependency upgrades for production use. See MODERNIZATION.md for:
+- Critical security warnings (OpenSSL 1.0.x vulnerabilities)
+- Recommended modern dependency versions
+- Build configuration updates
+- Testing requirements
+
+Recommended Dependencies for Modern Systems
+-------------------------------------------
+
+- OpenSSL 3.x (CRITICAL - 1.0.x has known vulnerabilities)
+- Boost 1.70+ (for C++11/14/17 compatibility)
+- Berkeley DB 5.3.28+ or 6.x (for wallet storage)
+- Qt 5.15 LTS (for GUI builds)
+- GCC 7+ or Clang 7+ (C++11 support required)
+
+See MODERNIZATION.md for complete dependency information and migration guide.

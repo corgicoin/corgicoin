@@ -1,7 +1,7 @@
 Copyright (c) 2009-2012 Bitcoin Developers
 Copyright (c) 2011-2012 Litecoin Developers
 Copyright (c) 2013-2014 Dogecoin Developers
-Copyright (c) 2013-2014 Corgicoin Developers
+Copyright (c) 2013-2025 Corgicoin Developers
 
 Distributed under the MIT/X11 software license, see the accompanying
 file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -24,18 +24,26 @@ make -f makefile.unix USE_UPNP=-           # Headless corgicoind
 See readme-qt.rst for instructions on building Corgicoin-Qt,
 the graphical user interface.
 
-Build Instructions Ubuntu (13.04 Raring)
-----------------------------------------
+Build Instructions Ubuntu (22.04 LTS / 24.04 LTS)
+--------------------------------------------------
 
+IMPORTANT: See ../MODERNIZATION.md for critical security warnings about
+dependency versions. OpenSSL 1.0.x has known vulnerabilities!
+
+    sudo apt-get update
     sudo apt-get install build-essential \
                          libssl-dev \
-                         libdb5.1++-dev \
+                         libdb-dev \
+                         libdb++-dev \
                          libboost-all-dev \
                          libqrencode-dev \
                          libminiupnpc-dev
 
     cd src/
     make -f makefile.unix USE_UPNP=1 USE_IPV6=1 USE_QRCODE=1
+
+Legacy Ubuntu (13.04 - EOL, not recommended):
+    sudo apt-get install libssl-dev libdb5.1++-dev libboost-all-dev
 
 Unless you're debugging, strip debug symbols
 
@@ -63,16 +71,25 @@ IPv6 support may be enabled by setting
 Dependencies
 ------------
 
- Library      Version  Purpose            Description
- -------      -------  -------            -----------
- libssl       1.0.1c   SSL Support        Secure communications
- libdb        5.1.29   Berkeley DB        Blockchain & wallet storage
- libboost     1.49.0.1 Boost              C++ Library
- miniupnpc    1.6.3    UPnP Support       Optional firewall-jumping support
- libqrencode  3.4.1    QRCode generation  Optional QRCode generation
- gcc          4:4.7.3
+RECOMMENDED MODERN VERSIONS (2025):
 
- See licenses.txt for license details
+ Library      Minimum  Recommended  Purpose            Description
+ -------      -------  -----------  -------            -----------
+ libssl       3.0.0    3.3+         SSL Support        Secure communications (CRITICAL!)
+ libdb        5.3.28   6.2.32       Berkeley DB        Blockchain & wallet storage
+ libboost     1.70.0   1.80+        Boost              C++ Library (C++11 support)
+ miniupnpc    2.0      2.2+         UPnP Support       Optional firewall-jumping support
+ libqrencode  4.0      4.1+         QRCode generation  Optional QRCode generation
+ gcc          7.0      11+          Compiler           C++11 required
+
+WARNING: The original codebase referenced these OUTDATED versions (DO NOT USE):
+ libssl 1.0.1c (2013) - CRITICAL VULNERABILITIES (Heartbleed, etc.)
+ libdb 5.1.29 (2013) - Old version, wallet compatibility issues possible
+ libboost 1.49 (2012) - Lacks C++11/14/17 features
+ gcc 4.7.3 (2013) - Limited C++11 support
+
+See licenses.txt for license details
+See ../MODERNIZATION.md for complete security and upgrade information
 
 Security
 --------

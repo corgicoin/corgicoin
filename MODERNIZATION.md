@@ -175,6 +175,35 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.7 (2025-11-18) - Documentation Modernization
+
+**Documentation Updates:**
+- ✅ Updated COPYING with 2025 copyright year
+- ✅ Completely rewrote INSTALL file with:
+  - Critical security warnings prominently displayed
+  - Modern dependency version requirements
+  - References to MODERNIZATION.md
+  - Clear structure and formatting
+
+- ✅ Modernized doc/build-unix.txt with:
+  - Updated copyright to 2025
+  - Modern Ubuntu versions (22.04 LTS / 24.04 LTS)
+  - Updated dependency table with recommended versions
+  - Clear warnings about outdated versions
+  - Security-focused guidance (OpenSSL 3.x, Boost 1.70+, etc.)
+  - GCC 7+ requirement for C++11 support
+
+**Files Modified:**
+- COPYING: Copyright year updated
+- INSTALL: Complete rewrite with modern guidance
+- doc/build-unix.txt: Ubuntu versions and dependency updates
+
+**Benefits:**
+- Clear warnings about security vulnerabilities
+- Modern build instructions for current systems
+- Better developer onboarding experience
+- Reduced confusion about dependency versions
+
 ### Version 1.4.1.6 (2025-11-18) - Extended nullptr and Auto Improvements
 
 **C++11 nullptr Updates:**
