@@ -1,9 +1,9 @@
 TEMPLATE = app
 TARGET =
-VERSION = 1.4.1
+VERSION = 1.4.1.3
 INCLUDEPATH += src src/json src/qt
 DEFINES += QT_GUI BOOST_THREAD_USE_LIB BOOST_SPIRIT_THREADSAFE BOOST_THREAD_PROVIDES_GENERIC_SHARED_MUTEX_ON_WIN __NO_SYSTEM_INCLUDES
-CONFIG += no_include_pwd
+CONFIG += no_include_pwd c++11
 
 win32 {
 
@@ -49,10 +49,13 @@ UI_DIR = build
 
 # use: qmake "RELEASE=1"
 contains(RELEASE, 1) {
-    # Mac: compile for maximum compatibility (10.5, 32-bit)
-    macx:QMAKE_CXXFLAGS += -mmacosx-version-min=10.5 -arch i386 -isysroot /Developer/SDKs/MacOSX10.5.sdk
-    macx:QMAKE_CFLAGS += -mmacosx-version-min=10.5 -arch i386 -isysroot /Developer/SDKs/MacOSX10.5.sdk
-    macx:QMAKE_LFLAGS += -mmacosx-version-min=10.5 -arch i386 -isysroot /Developer/SDKs/MacOSX10.5.sdk
+    # Mac: Modern macOS compatibility (10.13+, 64-bit)
+    # Note: Old 10.5/32-bit settings are obsolete for modern systems
+    macx:QMAKE_CXXFLAGS += -mmacosx-version-min=10.13
+    macx:QMAKE_CFLAGS += -mmacosx-version-min=10.13
+    macx:QMAKE_LFLAGS += -mmacosx-version-min=10.13
+    # Support both Intel and Apple Silicon
+    #macx:QMAKE_APPLE_DEVICE_ARCHS = x86_64 arm64
 
     !windows:!macx {
         # Linux: static link
@@ -105,8 +108,10 @@ contains(BITCOIN_NEED_QT_PLUGINS, 1) {
 
 !windows {
     # for extra security against potential buffer overflows
-    QMAKE_CXXFLAGS += -fstack-protector
-    QMAKE_LFLAGS += -fstack-protector
+    QMAKE_CXXFLAGS += -fstack-protector-all -Wstack-protector
+    QMAKE_LFLAGS += -fstack-protector-all
+    # Enable additional hardening flags
+    QMAKE_CXXFLAGS += -D_GLIBCXX_ASSERTIONS
     # do not enable this on windows, as it will result in a non-working executable!
 }
 
@@ -139,6 +144,8 @@ HEADERS += src/qt/bitcoingui.h \
     src/bignum.h \
     src/checkpoints.h \
     src/compat.h \
+    src/compat_openssl.h \
+    src/compat_boost.h \
     src/sync.h \
     src/util.h \
     src/uint256.h \
@@ -324,38 +331,51 @@ isEmpty(BOOST_THREAD_LIB_SUFFIX) {
 }
 
 isEmpty(BDB_LIB_PATH) {
-    #macx:BDB_LIB_PATH = /opt/local/lib/db48
-    #macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/lib/
-    macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db/5.3.21/lib/
+    # Try to find the latest Berkeley DB version installed
+    # Supports BDB 5.3, 6.x, and 18.x (which reports as 6.x)
+    macx:BDB_LIB_PATH = /usr/local/lib
+    # Homebrew paths for different versions
+    #macx:BDB_LIB_PATH = /usr/local/Cellar/berkeley-db/5.3.28/lib/
 }
 
 isEmpty(BDB_LIB_SUFFIX) {
-    #macx:BDB_LIB_SUFFIX = -4.8
+    # Try -5.3 first, fallback to -6 for newer versions
     macx:BDB_LIB_SUFFIX = -5.3
+    # For BDB 6.x use: -6
 }
 
 isEmpty(BDB_INCLUDE_PATH) {
-    #macx:BDB_INCLUDE_PATH = /opt/local/include/db48
-    #macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db4/4.8.30/include/
-    macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db/5.3.21/include/
+    macx:BDB_INCLUDE_PATH = /usr/local/include
+    # Homebrew paths for different versions
+    #macx:BDB_INCLUDE_PATH = /usr/local/Cellar/berkeley-db/5.3.28/include/
 }
 
 isEmpty(BOOST_LIB_PATH) {
-    #macx:BOOST_LIB_PATH = /opt/local/lib
-    macx:BOOST_LIB_PATH = /usr/local/Cellar/boost/1.55.0/lib/
+    # Support modern Boost versions (1.70+)
+    macx:BOOST_LIB_PATH = /usr/local/lib
+    # For specific Homebrew Boost version:
+    #macx:BOOST_LIB_PATH = /usr/local/Cellar/boost/1.84.0/lib/
 }
 
 isEmpty(BOOST_INCLUDE_PATH) {
-    #macx:BOOST_INCLUDE_PATH = /opt/local/include
-    macx:BOOST_LIB_PATH = /usr/local/Cellar/boost/1.55.0/include/
+    # Support modern Boost versions (1.70+)
+    macx:BOOST_INCLUDE_PATH = /usr/local/include
+    # For specific Homebrew Boost version:
+    #macx:BOOST_INCLUDE_PATH = /usr/local/Cellar/boost/1.84.0/include/
 }
 
 isEmpty(OPENSSL_INCLUDE_PATH) {
-    macx:OPENSSL_INCLUDE_PATH = /usr/local/Cellar/openssl/1.0.1f/include/
+    # IMPORTANT: Use OpenSSL 3.x for security (1.0.1f is CRITICALLY vulnerable)
+    macx:OPENSSL_INCLUDE_PATH = /usr/local/include
+    # For specific Homebrew OpenSSL version:
+    #macx:OPENSSL_INCLUDE_PATH = /usr/local/Cellar/openssl@3/3.0.0/include/
 }
 
 isEmpty(OPENSSL_LIB_PATH) {
-    macx:OPENSSL_LIB_PATH = /usr/local/Cellar/openssl/1.0.1f/lib/
+    # IMPORTANT: Use OpenSSL 3.x for security (1.0.1f is CRITICALLY vulnerable)
+    macx:OPENSSL_LIB_PATH = /usr/local/lib
+    # For specific Homebrew OpenSSL version:
+    #macx:OPENSSL_LIB_PATH = /usr/local/Cellar/openssl@3/3.0.0/lib/
 }
 
 windows:LIBS += -lws2_32 -lshlwapi -lmswsock

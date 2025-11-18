@@ -13,6 +13,8 @@
 #include "init.h"
 #include "util.h"
 #include "ui_interface.h"
+#include "compat_openssl.h"
+#include "compat_boost.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem/convenience.hpp>
@@ -460,6 +462,20 @@ bool AppInit2()
         ShrinkDebugFile();
     printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
     printf("CorgiCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
+
+    // Print dependency versions and security warnings
+    PrintBoostVersion();
+    PrintOpenSSLVersion();
+
+#ifdef OPENSSL_1_0_LEGACY
+    printf("\n");
+    printf("*********************************************************************\n");
+    printf("*** CRITICAL SECURITY WARNING: OpenSSL 1.0.x DETECTED            ***\n");
+    printf("*** This version is INSECURE and should NOT be used in production ***\n");
+    printf("*** Please upgrade to OpenSSL 3.0+ immediately                    ***\n");
+    printf("*********************************************************************\n");
+    printf("\n");
+#endif
     printf("Startup time: %s\n", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
     printf("Default data directory %s\n", GetDefaultDataDir().string().c_str());
     printf("Used data directory %s\n", GetDataDir().string().c_str());

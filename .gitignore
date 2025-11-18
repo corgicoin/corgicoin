@@ -14,8 +14,8 @@ build/
 xcuserdata
 profile
 *.moved-aside
-*.tar.gz
 
+# macOS
 .DS_Store
 .Trashes
 .fseventsd
@@ -25,9 +25,74 @@ profile
 *.swp
 *~.nib
 
+# Build artifacts
 Makefile
-corgicoin-qt
-qrc_bitcoin.cpp
-src/obj
-src/corgicoind
+Makefile.in
+autom4te.cache/
+*.autosave
+*.o
+*.P
+*.d
+*.a
+*.so
+*.dylib
+*.exe
+*.dll
 *.app
+*.tar.gz
+
+# Compiled binaries
+corgicoin-qt
+corgicoind
+test_corgicoin
+src/obj/
+src/obj-test/
+src/corgicoind
+src/test_corgicoin
+qrc_bitcoin.cpp
+moc_*.cpp
+ui_*.h
+
+# Qt generated files
+*.qm
+.qmake.cache
+.qmake.stash
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+*.user
+*.creator
+*.includes
+
+# CMake (if added later)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# Logs and databases
+*.log
+debug.log
+db.log
+wallet.dat.bak
+peers.dat
+addr.dat
+.lock
+
+# Test and coverage
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Wallet backups (security)
+wallet.dat.bak*
+*.wallet
+
+# Node runtime
+blocks/
+chainstate/
+testnet3/
+regtest/

@@ -1829,9 +1829,13 @@ void StartNode(void* parg)
     if (fUseUPnP)
         MapPort();
 
-    // Get addresses from IRC and advertise ours
-    if (!CreateThread(ThreadIRCSeed, NULL))
-        printf("Error: CreateThread(ThreadIRCSeed) failed\n");
+    // Get addresses from IRC and advertise ours (deprecated, disabled by default)
+    // Only create thread if IRC is explicitly enabled via -irc flag
+    if (GetBoolArg("-irc", false))
+    {
+        if (!CreateThread(ThreadIRCSeed, NULL))
+            printf("Error: CreateThread(ThreadIRCSeed) failed\n");
+    }
 
     // Send and receive from sockets, accept connections
     if (!CreateThread(ThreadSocketHandler, NULL))
