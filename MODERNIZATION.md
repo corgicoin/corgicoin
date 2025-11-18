@@ -175,6 +175,41 @@ See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
 
+### Version 1.4.1.15 (2025-11-18) - nullptr Conversions in Network and Synchronization Code
+
+**C++11 nullptr Updates (6 occurrences across 3 files):**
+
+**net.cpp (3 occurrences - missed in previous pass):**
+- ✅ Error handling (2 occurrences):
+  - PrintException() in catch blocks for ThreadOpenAddedConnections() and ThreadMessageHandler()
+
+- ✅ Node pointer initialization (1 occurrence):
+  - pnodeTrickle local variable in message handler loop
+
+**addrman.cpp (2 occurrences):**
+- ✅ Return statements (2 occurrences):
+  - Find() method returning nullptr when address not found
+  - Find() method returning nullptr when address info not found
+
+**sync.cpp (1 occurrence):**
+- ✅ Smart pointer check (1 occurrence):
+  - lockstack.get() nullptr comparison in deadlock detection
+
+**Files Modified:**
+- src/net.cpp: Network thread error handling (3 nullptr)
+- src/addrman.cpp: Address manager lookup (2 nullptr)
+- src/sync.cpp: Lock debugging and deadlock detection (1 nullptr)
+- src/version.h: Version updated to 1.4.1.15
+- corgicoin-qt.pro: Version updated to 1.4.1.15
+
+**Benefits:**
+- Complete nullptr modernization of networking layer
+- Improved type safety in address manager
+- Consistent error handling patterns across threads
+- Better thread-local storage handling
+
+**Progress:** 172 nullptr conversions in .cpp files total (key.cpp: 37, net.cpp: 33, main.cpp: 23, db.cpp: 17, bitcoinrpc.cpp: 18, init.cpp: 12, util.cpp: 11, netbase.cpp: 7, wallet.cpp: 5, irc.cpp: 3, checkpoints.cpp: 3, addrman.cpp: 2, sync.cpp: 1), ~11 remaining in non-Qt source files
+
 ### Version 1.4.1.14 (2025-11-18) - nullptr Conversions in Wallet, IRC, and Checkpoint Code
 
 **C++11 nullptr Updates (11 occurrences across 3 files):**

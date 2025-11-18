@@ -1437,7 +1437,7 @@ void ThreadOpenAddedConnections(void* parg)
         PrintException(&e, "ThreadOpenAddedConnections()");
     } catch (...) {
         vnThreadsRunning[THREAD_ADDEDCONNECTIONS]--;
-        PrintException(NULL, "ThreadOpenAddedConnections()");
+        PrintException(nullptr, "ThreadOpenAddedConnections()");
     }
     printf("ThreadOpenAddedConnections exited\n");
 }
@@ -1570,7 +1570,7 @@ void ThreadMessageHandler(void* parg)
         PrintException(&e, "ThreadMessageHandler()");
     } catch (...) {
         vnThreadsRunning[THREAD_MESSAGEHANDLER]--;
-        PrintException(NULL, "ThreadMessageHandler()");
+        PrintException(nullptr, "ThreadMessageHandler()");
     }
     printf("ThreadMessageHandler exited\n");
 }
@@ -1590,7 +1590,7 @@ void ThreadMessageHandler2(void* parg)
         }
 
         // Poll the connected nodes for messages
-        CNode* pnodeTrickle = NULL;
+        CNode* pnodeTrickle = nullptr;
         if (!vNodesCopy.empty())
             pnodeTrickle = vNodesCopy[GetRand(vNodesCopy.size())];
         BOOST_FOREACH(CNode* pnode, vNodesCopy)
