@@ -118,7 +118,7 @@ double GetDifficulty(const CBlockIndex* blockindex = nullptr)
     int nShift = (blockindex->nBits >> 24) & 0xff;
 
     double dDiff =
-        (double)0x0000ffff / (double)(blockindex->nBits & 0x00ffffff);
+        static_cast<double>(0x0000ffff) / static_cast<double>(blockindex->nBits & 0x00ffffff);
 
     while (nShift < 29)
     {
@@ -148,7 +148,7 @@ int64 AmountFromValue(const Value& value)
 
 Value ValueFromAmount(int64 amount)
 {
-    return (double)amount / (double)COIN;
+    return static_cast<double>(amount) / static_cast<double>(COIN);
 }
 
 std::string
@@ -206,8 +206,8 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex)
     result.push_back(Pair("hash", block.GetHash().GetHex()));
     CMerkleTx txGen(block.vtx[0]);
     txGen.SetMerkleBranch(&block);
-    result.push_back(Pair("confirmations", (int)txGen.GetDepthInMainChain()));
-    result.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
+    result.push_back(Pair("confirmations", static_cast<int>(txGen.GetDepthInMainChain())));
+    result.push_back(Pair("size", static_cast<int>(::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION))));
     result.push_back(Pair("height", blockindex->nHeight));
     result.push_back(Pair("version", block.nVersion));
     result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
@@ -334,7 +334,7 @@ Value GetNetworkHashPS(int lookup) {
     double timeDiff = pindexBest->GetBlockTime() - pindexPrev->GetBlockTime();
     double timePerBlock = timeDiff / lookup;
 
-    return (boost::int64_t)(((double)GetDifficulty() * pow(2.0, 32)) / timePerBlock);
+    return static_cast<boost::int64_t>((static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock);
 }
 
 Value getnetworkhashps(const Array& params, bool fHelp)
@@ -410,14 +410,14 @@ Value getinfo(const Array& params, bool fHelp)
     GetProxy(NET_IPV4, addrProxy);
 
     Object obj;
-    obj.push_back(Pair("version",       (int)CLIENT_VERSION));
-    obj.push_back(Pair("protocolversion",(int)PROTOCOL_VERSION));
+    obj.push_back(Pair("version",       static_cast<int>(CLIENT_VERSION)));
+    obj.push_back(Pair("protocolversion",static_cast<int>(PROTOCOL_VERSION)));
     obj.push_back(Pair("walletversion", pwalletMain->GetVersion()));
     obj.push_back(Pair("balance",       ValueFromAmount(pwalletMain->GetBalance())));
-    obj.push_back(Pair("blocks",        (int)nBestHeight));
-    obj.push_back(Pair("connections",   (int)vNodes.size()));
+    obj.push_back(Pair("blocks",        static_cast<int>(nBestHeight)));
+    obj.push_back(Pair("connections",   static_cast<int>(vNodes.size())));
     obj.push_back(Pair("proxy",         (addrProxy.IsValid() ? addrProxy.ToStringIPPort() : string())));
-    obj.push_back(Pair("difficulty",    (double)GetDifficulty()));
+    obj.push_back(Pair("difficulty",    static_cast<double>(GetDifficulty())));
     obj.push_back(Pair("testnet",       fTestNet));
     obj.push_back(Pair("keypoololdest", (boost::int64_t)pwalletMain->GetOldestKeyPoolTime()));
     obj.push_back(Pair("keypoolsize",   pwalletMain->GetKeyPoolSize()));
@@ -438,13 +438,13 @@ Value getmininginfo(const Array& params, bool fHelp)
             "Returns an object containing mining-related information.");
 
     Object obj;
-    obj.push_back(Pair("blocks",        (int)nBestHeight));
+    obj.push_back(Pair("blocks",        static_cast<int>(nBestHeight)));
     obj.push_back(Pair("currentblocksize",(uint64_t)nLastBlockSize));
     obj.push_back(Pair("currentblocktx",(uint64_t)nLastBlockTx));
-    obj.push_back(Pair("difficulty",    (double)GetDifficulty()));
+    obj.push_back(Pair("difficulty",    static_cast<double>(GetDifficulty())));
     obj.push_back(Pair("errors",        GetWarnings("statusbar")));
     obj.push_back(Pair("generate",      GetBoolArg("-gen")));
-    obj.push_back(Pair("genproclimit",  (int)GetArg("-genproclimit", -1)));
+    obj.push_back(Pair("genproclimit",  static_cast<int>(GetArg("-genproclimit", -1))));
     obj.push_back(Pair("hashespersec",  gethashespersec(params, false)));
     obj.push_back(Pair("networkhashps", getnetworkhashps(params, false)));
     obj.push_back(Pair("pooledtx",      (uint64_t)mempool.size()));
@@ -759,7 +759,7 @@ Value getreceivedbyaddress(const Array& params, bool fHelp)
         throw JSONRPCError(-5, "Invalid CorgiCoin address");
     scriptPubKey.SetDestination(address.Get());
     if (!IsMine(*pwalletMain,scriptPubKey))
-        return (double)0.0;
+        return static_cast<double>(0.0);
 
     // Minimum confirmations
     int nMinDepth = 1;
@@ -829,7 +829,7 @@ Value getreceivedbyaccount(const Array& params, bool fHelp)
         }
     }
 
-    return (double)nAmount / (double)COIN;
+    return static_cast<double>(nAmount) / static_cast<double>(COIN);
 }
 
 
@@ -1090,7 +1090,7 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     // Gather public keys
     if (nRequired < 1)
         throw runtime_error("a multisignature address must require at least one key to redeem");
-    if ((int)keys.size() < nRequired)
+    if (static_cast<int>(keys.size()) < nRequired)
         throw runtime_error(
             strprintf("not enough keys supplied "
                       "(got %d keys, but need at least %d to redeem)", keys.size(), nRequired));
@@ -1414,13 +1414,13 @@ Value listtransactions(const Array& params, bool fHelp)
         if (pacentry != 0)
             AcentryToJSON(*pacentry, strAccount, ret);
 
-        if ((int)ret.size() >= (nCount+nFrom)) break;
+        if (static_cast<int>(ret.size()) >= (nCount+nFrom)) break;
     }
     // ret is newest to oldest
 
-    if (nFrom > (int)ret.size())
+    if (nFrom > static_cast<int>(ret.size()))
         nFrom = ret.size();
-    if ((nFrom + nCount) > (int)ret.size())
+    if ((nFrom + nCount) > static_cast<int>(ret.size()))
         nCount = ret.size() - nFrom;
     Array::iterator first = ret.begin();
     std::advance(first, nFrom);
@@ -2501,7 +2501,7 @@ int ReadHTTPStatus(std::basic_istream<char>& stream, int &proto)
 int ReadHTTPHeader(std::basic_istream<char>& stream, map<string, string>& mapHeadersRet)
 {
     int nLen = 0;
-    loop
+    while(true)
     {
         string str;
         std::getline(stream, str);
@@ -2534,7 +2534,7 @@ int ReadHTTP(std::basic_istream<char>& stream, map<string, string>& mapHeadersRe
 
     // Read header
     int nLen = ReadHTTPHeader(stream, mapHeadersRet);
-    if (nLen < 0 || nLen > (int)MAX_SIZE)
+    if (nLen < 0 || nLen > static_cast<int>(MAX_SIZE))
         return 500;
 
     // Read message
@@ -3040,7 +3040,7 @@ void ThreadRPCServer3(void* parg)
     AcceptedConnection *conn = (AcceptedConnection *) parg;
 
     bool fRun = true;
-    loop {
+    while(true) {
         if (fShutdown || !fRun)
         {
             conn->close();

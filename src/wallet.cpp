@@ -833,7 +833,7 @@ void CWallet::ResendWalletTransactions()
             CWalletTx& wtx = item.second;
             // Don't rebroadcast until it's had plenty of time that
             // it should have gotten in already by now.
-            if (nTimeBestReceived - (int64)wtx.nTimeReceived > 5 * 60)
+            if (nTimeBestReceived - static_cast<int64>(wtx.nTimeReceived) > 5 * 60)
                 mapSorted.insert(make_pair(wtx.nTimeReceived, &wtx));
         }
         for (PAIRTYPE(const unsigned int, CWalletTx*)& item : mapSorted)
@@ -1100,7 +1100,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
         CTxDB txdb("r");
         {
             nFeeRet = nTransactionFee;
-            loop
+            while(true)
             {
                 wtxNew.vin.clear();
                 wtxNew.vout.clear();
@@ -1120,7 +1120,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 for (PAIRTYPE(const CWalletTx*, unsigned int) pcoin : setCoins)
                 {
                     int64 nCredit = pcoin.first->vout[pcoin.second].nValue;
-                    dPriority += (double)nCredit * pcoin.first->GetDepthInMainChain();
+                    dPriority += static_cast<double>(nCredit) * pcoin.first->GetDepthInMainChain();
                 }
 
                 int64 nChange = nValueIn - nValue - nFeeRet;
@@ -1177,7 +1177,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 dPriority /= nBytes;
 
                 // Check that enough fee is included
-                int64 nPayFee = nTransactionFee * (1 + (int64)nBytes / 1000);
+                int64 nPayFee = nTransactionFee * (1 + static_cast<int64>(nBytes) / 1000);
                 bool fAllowFree = CTransaction::AllowFree(dPriority);
                 int64 nMinFee = wtxNew.GetMinFee(1, fAllowFree, GMF_SEND);
                 if (nFeeRet < max(nPayFee, nMinFee))
@@ -1416,7 +1416,7 @@ bool CWallet::NewKeyPool()
         if (IsLocked())
             return false;
 
-        int64 nKeys = max(GetArg("-keypool", 100), (int64)0);
+        int64 nKeys = max(GetArg("-keypool", 100), static_cast<int64>(0));
         for (int i = 0; i < nKeys; i++)
         {
             int64 nIndex = i+1;

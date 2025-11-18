@@ -314,7 +314,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                 case OP_16:
                 {
                     // ( -- value)
-                    CBigNum bn((int)opcode - (int)(OP_1 - 1));
+                    CBigNum bn(static_cast<int>(opcode) - static_cast<int>(OP_1 - 1));
                     stack.push_back(bn.getvch());
                 }
                 break;
@@ -542,7 +542,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                         return false;
                     int n = CastToBigNum(stacktop(-1)).getint();
                     popstack(stack);
-                    if (n < 0 || n >= (int)stack.size())
+                    if (n < 0 || n >= static_cast<int>(stack.size()))
                         return false;
                     valtype vch = stacktop(-n-1);
                     if (opcode == OP_ROLL)
@@ -610,9 +610,9 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     int nEnd = nBegin + CastToBigNum(stacktop(-1)).getint();
                     if (nBegin < 0 || nEnd < nBegin)
                         return false;
-                    if (nBegin > (int)vch.size())
+                    if (nBegin > static_cast<int>(vch.size()))
                         nBegin = vch.size();
-                    if (nEnd > (int)vch.size())
+                    if (nEnd > static_cast<int>(vch.size()))
                         nEnd = vch.size();
                     vch.erase(vch.begin() + nEnd, vch.end());
                     vch.erase(vch.begin(), vch.begin() + nBegin);
@@ -631,7 +631,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     int nSize = CastToBigNum(stacktop(-1)).getint();
                     if (nSize < 0)
                         return false;
-                    if (nSize > (int)vch.size())
+                    if (nSize > static_cast<int>(vch.size()))
                         nSize = vch.size();
                     if (opcode == OP_LEFT)
                         vch.erase(vch.begin() + nSize, vch.end());
@@ -946,7 +946,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
 
                     int i = 1;
-                    if ((int)stack.size() < i)
+                    if (static_cast<int>(stack.size()) < i)
                         return false;
 
                     int nKeysCount = CastToBigNum(stacktop(-i)).getint();
@@ -957,7 +957,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                         return false;
                     int ikey = ++i;
                     i += nKeysCount;
-                    if ((int)stack.size() < i)
+                    if (static_cast<int>(stack.size()) < i)
                         return false;
 
                     int nSigsCount = CastToBigNum(stacktop(-i)).getint();
@@ -965,7 +965,7 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                         return false;
                     int isig = ++i;
                     i += nSigsCount;
-                    if ((int)stack.size() < i)
+                    if (static_cast<int>(stack.size()) < i)
                         return false;
 
                     // Subset of script starting at the most recent codeseparator
@@ -1242,7 +1242,7 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
         // Compare
         CScript::const_iterator pc1 = script1.begin();
         CScript::const_iterator pc2 = script2.begin();
-        loop
+        while(true)
         {
             if (pc1 == script1.end() && pc2 == script2.end())
             {
