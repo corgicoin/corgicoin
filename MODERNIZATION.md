@@ -104,8 +104,8 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [x] Use nullptr instead of NULL (v1.4.1.4) - Critical headers updated
 - [x] Enable C++11/14 features (v1.4.1.3) - Compiler flags set
 - [ ] Replace raw pointers with smart pointers (requires more extensive testing)
-- [ ] Add override/final keywords to virtual functions
-- [ ] Use auto for complex iterator types
+- [x] Add override/final keywords to virtual functions (v1.4.1.5) - Keystore and wallet classes
+- [x] Use auto for complex iterator types (v1.4.1.5) - Iterator loops simplified
 
 ### Phase 4: Protocol Updates (Low Priority)
 - [ ] Remove/disable IRC peer discovery
@@ -174,6 +174,30 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.5 (2025-11-18) - Virtual Functions and Auto Type Deduction
+
+**C++11 Virtual Function Safety:**
+- ✅ Added `override` keywords to virtual functions (11+ occurrences)
+  - keystore.h: CBasicKeyStore methods (AddKey, HaveKey, GetKeys, GetKey, AddCScript, HaveCScript, GetCScript)
+  - keystore.h: CCryptoKeyStore methods (AddKey, HaveKey, GetKey, GetPubKey, GetKeys)
+  - wallet.h: CWallet methods (AddKey, AddCryptedKey, AddCScript)
+
+**C++11 Auto Type Deduction:**
+- ✅ Replaced complex iterator types with `auto` (4+ occurrences)
+  - keystore.h: KeyMap::const_iterator → auto (CBasicKeyStore::GetKeys)
+  - keystore.h: KeyMap::const_iterator → auto (CBasicKeyStore::GetKey)
+  - keystore.h: CryptedKeyMap::const_iterator → auto (CCryptoKeyStore::GetKeys)
+
+**Additional nullptr Updates:**
+- ✅ wallet.h: Constructor initialization (2 occurrences)
+
+**Benefits:**
+- Compile-time verification of virtual function overrides
+- Prevents accidental virtual function hiding
+- More maintainable code with clearer intent
+- Improved readability for iterator-heavy code
+- Better type safety with nullptr in constructors
 
 ### Version 1.4.1.4 (2025-11-18) - Code Modernization Release
 
