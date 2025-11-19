@@ -323,7 +323,7 @@ void CWallet::MarkDirty()
 {
     {
         LOCK(cs_wallet);
-        for (PAIRTYPE(const uint256, CWalletTx)& item : mapWallet)
+        for (std::pair<const uint256, CWalletTx>& item : mapWallet)
             item.second.MarkDirty();
     }
 }
@@ -595,13 +595,13 @@ void CWalletTx::GetAccountAmounts(const string& strAccount, int64& nGenerated, i
         nGenerated = allGeneratedMature;
     if (strAccount == strSentAccount)
     {
-        for (const PAIRTYPE(CTxDestination,int64)& s : listSent)
+        for (const std::pair<CTxDestination,int64>& s : listSent)
             nSent += s.second;
         nFee = allFee;
     }
     {
         LOCK(pwallet->cs_wallet);
-        for (const PAIRTYPE(CTxDestination,int64)& r : listReceived)
+        for (const std::pair<CTxDestination,int64>& r : listReceived)
         {
             if (pwallet->mapAddressBook.count(r.first))
             {
@@ -725,7 +725,7 @@ void CWallet::ReacceptWalletTransactions()
         LOCK(cs_wallet);
         fRepeat = false;
         vector<CDiskTxPos> vMissingTx;
-        for (PAIRTYPE(const uint256, CWalletTx)& item : mapWallet)
+        for (std::pair<const uint256, CWalletTx>& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
             if (wtx.IsCoinBase() && wtx.IsSpent(0))
@@ -828,7 +828,7 @@ void CWallet::ResendWalletTransactions()
         LOCK(cs_wallet);
         // Sort them in chronological order
         multimap<unsigned int, CWalletTx*> mapSorted;
-        for (PAIRTYPE(const uint256, CWalletTx)& item : mapWallet)
+        for (std::pair<const uint256, CWalletTx>& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
             // Don't rebroadcast until it's had plenty of time that
@@ -836,7 +836,7 @@ void CWallet::ResendWalletTransactions()
             if (nTimeBestReceived - static_cast<int64>(wtx.nTimeReceived) > 5 * 60)
                 mapSorted.insert({wtx.nTimeReceived, &wtx});
         }
-        for (PAIRTYPE(const unsigned int, CWalletTx*)& item : mapSorted)
+        for (std::pair<const unsigned int, CWalletTx*>& item : mapSorted)
         {
             CWalletTx& wtx = *item.second;
             wtx.RelayWalletTransaction(txdb);
@@ -1083,7 +1083,7 @@ bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned
 bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet)
 {
     int64 nValue = 0;
-    for (const PAIRTYPE(CScript, int64)& s : vecSend)
+    for (const std::pair<CScript, int64>& s : vecSend)
     {
         if (nValue < 0)
             return false;
@@ -1109,7 +1109,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 int64 nTotalValue = nValue + nFeeRet;
                 double dPriority = 0;
                 // vouts to the payees
-                for (const PAIRTYPE(CScript, int64)& s : vecSend)
+                for (const std::pair<CScript, int64>& s : vecSend)
                     wtxNew.vout.emplace_back(s.second, s.first);
 
                 // Choose coins to use
@@ -1117,7 +1117,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 int64 nValueIn = 0;
                 if (!SelectCoins(nTotalValue, setCoins, nValueIn))
                     return false;
-                for (PAIRTYPE(const CWalletTx*, unsigned int) pcoin : setCoins)
+                for (std::pair<const CWalletTx*, unsigned int> pcoin : setCoins)
                 {
                     int64 nCredit = pcoin.first->vout[pcoin.second].nValue;
                     dPriority += static_cast<double>(nCredit) * pcoin.first->GetDepthInMainChain();
@@ -1161,12 +1161,12 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                     reservekey.ReturnKey();
 
                 // Fill vin
-                for (const PAIRTYPE(const CWalletTx*,unsigned int)& coin : setCoins)
+                for (const std::pair<const CWalletTx*,unsigned int>& coin : setCoins)
                     wtxNew.vin.emplace_back(coin.first->GetHash(),coin.second);
 
                 // Sign
                 int nIn = 0;
-                for (const PAIRTYPE(const CWalletTx*,unsigned int)& coin : setCoins)
+                for (const std::pair<const CWalletTx*,unsigned int>& coin : setCoins)
                     if (!SignSignature(*this, *coin.first, wtxNew, nIn++))
                         return false;
 
