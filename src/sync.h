@@ -86,7 +86,7 @@ public:
             Enter(pszName, pszFile, nLine);
     }
 
-    ~CMutexLock()
+    ~CMutexLock() noexcept
     {
         if (lock.owns_lock())
             LeaveCritical();
@@ -202,7 +202,7 @@ public:
             Acquire();
     }
 
-    ~CSemaphoreGrant() {
+    ~CSemaphoreGrant() noexcept {
         Release();
     }
 

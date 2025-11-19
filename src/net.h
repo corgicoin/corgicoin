@@ -245,7 +245,7 @@ public:
             PushVersion();
     }
 
-    ~CNode()
+    ~CNode() noexcept
     {
         if (hSocket != INVALID_SOCKET)
         {

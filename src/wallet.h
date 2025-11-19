@@ -298,7 +298,7 @@ public:
         pwallet = pwalletIn;
     }
 
-    ~CReserveKey()
+    ~CReserveKey() noexcept
     {
         if (!fShutdown)
             ReturnKey();

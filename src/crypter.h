@@ -93,7 +93,7 @@ public:
         fKeySet = false;
     }
 
-    ~CCrypter()
+    ~CCrypter() noexcept
     {
         CleanKey();
     }

@@ -129,7 +129,7 @@ public:
 
     CKey& operator=(const CKey& b);
 
-    ~CKey();
+    ~CKey() noexcept;
 
     bool IsNull() const;
     bool IsCompressed() const;
