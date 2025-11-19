@@ -33,8 +33,7 @@ typedef int pid_t; /* define for windows compatiblity */
 
 #include "netbase.h" // for AddTimeData
 
-typedef long long  int64;
-typedef unsigned long long  uint64;
+// Note: int64 and uint64 are defined in uint256.h (included above)
 
 static const int64 COIN = 100000000;
 static const int64 CENT = 1000000;

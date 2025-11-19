@@ -407,7 +407,7 @@ using base_uint256 = base_uint<256>;
 class uint160 : public base_uint160
 {
 public:
-    typedef base_uint160 basetype;
+    using basetype = base_uint160;
 
     uint160()
     {
@@ -522,7 +522,7 @@ inline const uint160 operator-(const uint160& a, const uint160& b)      { return
 class uint256 : public base_uint256
 {
 public:
-    typedef base_uint256 basetype;
+    using basetype = base_uint256;
 
     uint256()
     {

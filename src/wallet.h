@@ -84,7 +84,7 @@ public:
     std::set<int64> setKeyPool;
 
 
-    typedef std::map<unsigned int, CMasterKey> MasterKeyMap;
+    using MasterKeyMap = std::map<unsigned int, CMasterKey>;
     MasterKeyMap mapMasterKeys;
     unsigned int nMasterKeyMaxID;
 
