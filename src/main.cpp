@@ -47,11 +47,11 @@ int64 nTimeBestReceived = 0;
 
 CMedianFilter<int> cPeerBlockCounts(5, 0); // Amount of blocks that other nodes claim to have
 
-map<uint256, CBlock*> mapOrphanBlocks;
-multimap<uint256, CBlock*> mapOrphanBlocksByPrev;
+map<uint256, std::shared_ptr<CBlock>> mapOrphanBlocks;
+multimap<uint256, std::shared_ptr<CBlock>> mapOrphanBlocksByPrev;
 
-map<uint256, CDataStream*> mapOrphanTransactions;
-map<uint256, map<uint256, CDataStream*> > mapOrphanTransactionsByPrev;
+map<uint256, std::shared_ptr<CDataStream>> mapOrphanTransactions;
+map<uint256, map<uint256, std::shared_ptr<CDataStream>>> mapOrphanTransactionsByPrev;
 
 // Constant stuff for coinbase transactions we create:
 CScript COINBASE_FLAGS;
@@ -177,7 +177,7 @@ bool AddOrphanTx(const CDataStream& vMsg)
     if (mapOrphanTransactions.count(hash))
         return false;
 
-    CDataStream* pvMsg = new CDataStream(vMsg);
+    auto pvMsg = std::make_shared<CDataStream>(vMsg);
 
     // Ignore big transactions, to avoid a
     // send-big-orphans memory exhaustion attack. If a peer has a legitimate
@@ -189,7 +189,6 @@ bool AddOrphanTx(const CDataStream& vMsg)
     if (pvMsg->size() > 5000)
     {
         printf("ignoring large orphan tx (size: %u, hash: %s)\n", pvMsg->size(), hash.ToString().substr(0,10).c_str());
-        delete pvMsg;
         return false;
     }
 
@@ -206,7 +205,7 @@ void static EraseOrphanTx(uint256 hash)
 {
     if (!mapOrphanTransactions.count(hash))
         return;
-    const CDataStream* pvMsg = mapOrphanTransactions[hash];
+    const auto& pvMsg = mapOrphanTransactions[hash];
     CTransaction tx;
     CDataStream(*pvMsg) >> tx;
     for (const CTxIn& txin : tx.vin)
@@ -215,8 +214,7 @@ void static EraseOrphanTx(uint256 hash)
         if (mapOrphanTransactionsByPrev[txin.prevout.hash].empty())
             mapOrphanTransactionsByPrev.erase(txin.prevout.hash);
     }
-    delete pvMsg;
-    mapOrphanTransactions.erase(hash);
+    mapOrphanTransactions.erase(hash);  // shared_ptr automatically deletes
 }
 
 unsigned int LimitOrphanTxSize(unsigned int nMaxOrphans)
@@ -824,7 +822,7 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
     return true;
 }
 
-uint256 static GetOrphanRoot(const CBlock* pblock)
+uint256 static GetOrphanRoot(std::shared_ptr<const CBlock> pblock)
 {
     // Work back to the first block in the orphan chain
     while (mapOrphanBlocks.count(pblock->hashPrevBlock))
@@ -1953,7 +1951,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     if (!mapBlockIndex.count(pblock->hashPrevBlock))
     {
         printf("ProcessBlock: ORPHAN BLOCK, prev=%s\n", pblock->hashPrevBlock.ToString().substr(0,20).c_str());
-        CBlock* pblock2 = new CBlock(*pblock);
+        auto pblock2 = std::make_shared<CBlock>(*pblock);
         mapOrphanBlocks.insert({hash, pblock2});
         mapOrphanBlocksByPrev.insert({pblock2->hashPrevBlock, pblock2});
 
@@ -1977,11 +1975,10 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
              mi != mapOrphanBlocksByPrev.upper_bound(hashPrev);
              ++mi)
         {
-            CBlock* pblockOrphan = (*mi).second;
+            auto pblockOrphan = (*mi).second;
             if (pblockOrphan->AcceptBlock())
                 vWorkQueue.push_back(pblockOrphan->GetHash());
-            mapOrphanBlocks.erase(pblockOrphan->GetHash());
-            delete pblockOrphan;
+            mapOrphanBlocks.erase(pblockOrphan->GetHash());  // shared_ptr automatically deletes
         }
         mapOrphanBlocksByPrev.erase(hashPrev);
     }
