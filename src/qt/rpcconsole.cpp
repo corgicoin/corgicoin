@@ -119,7 +119,7 @@ RPCConsole::RPCConsole(QWidget *parent) :
     // Install event filter for up and down arrow
     ui->lineEdit->installEventFilter(this);
 
-    connect(ui->clearButton, SIGNAL(clicked()), this, SLOT(clear()));
+    connect(ui->clearButton, &QPushButton::clicked, this, &RPCConsole::clear);
 
     // set OpenSSL version label
     ui->openSSLVersion->setText(SSLeay_version(SSLEAY_VERSION));
@@ -158,8 +158,8 @@ void RPCConsole::setClientModel(ClientModel *model)
     if(model)
     {
         // Subscribe to information, replies, messages, errors
-        connect(model, SIGNAL(numConnectionsChanged(int)), this, SLOT(setNumConnections(int)));
-        connect(model, SIGNAL(numBlocksChanged(int,int)), this, SLOT(setNumBlocks(int,int)));
+        connect(model, &ClientModel::numConnectionsChanged, this, &RPCConsole::setNumConnections);
+        connect(model, &ClientModel::numBlocksChanged, this, &RPCConsole::setNumBlocks);
 
         // Provide initial values
         ui->clientVersion->setText(model->formatFullVersion());
@@ -292,18 +292,18 @@ void RPCConsole::startExecutor()
     executor->moveToThread(thread);
 
     // Notify executor when thread started (in executor thread)
-    connect(thread, SIGNAL(started()), executor, SLOT(start()));
+    connect(thread, &QThread::started, executor, &RPCExecutor::start);
     // Replies from executor object must go to this object
-    connect(executor, SIGNAL(reply(int,QString)), this, SLOT(message(int,QString)));
+    connect(executor, &RPCExecutor::reply, this, &RPCConsole::message);
     // Requests from this object must go to executor
-    connect(this, SIGNAL(cmdRequest(QString)), executor, SLOT(request(QString)));
+    connect(this, &RPCConsole::cmdRequest, executor, &RPCExecutor::request);
     // On stopExecutor signal
     // - queue executor for deletion (in execution thread)
     // - quit the Qt event loop in the execution thread
-    connect(this, SIGNAL(stopExecutor()), executor, SLOT(deleteLater()));
-    connect(this, SIGNAL(stopExecutor()), thread, SLOT(quit()));
+    connect(this, &RPCConsole::stopExecutor, executor, &RPCExecutor::deleteLater);
+    connect(this, &RPCConsole::stopExecutor, thread, &QThread::quit);
     // Queue the thread for deletion (in this thread) when it is finished
-    connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
 
     // Default implementation of QThread::run() simply spins up an event loop in the thread,
     // which is what we want.

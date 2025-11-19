@@ -228,10 +228,10 @@ TransactionTableModel::TransactionTableModel(CWallet* wallet, WalletModel *paren
     priv->refreshWallet();
 
     QTimer *timer = new QTimer(this);
-    connect(timer, SIGNAL(timeout()), this, SLOT(updateConfirmations()));
+    connect(timer, &QTimer::timeout, this, &TransactionTableModel::updateConfirmations);
     timer->start(MODEL_UPDATE_DELAY);
 
-    connect(walletModel->getOptionsModel(), SIGNAL(displayUnitChanged(int)), this, SLOT(updateDisplayUnit()));
+    connect(walletModel->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &TransactionTableModel::updateDisplayUnit);
 }
 
 TransactionTableModel::~TransactionTableModel()
