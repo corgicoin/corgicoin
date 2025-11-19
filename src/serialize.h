@@ -716,7 +716,7 @@ struct ser_streamplaceholder
 class CDataStream
 {
 protected:
-    typedef std::vector<char, zero_after_free_allocator<char> > vector_type;
+    using vector_type = std::vector<char, zero_after_free_allocator<char>>;
     vector_type vch;
     unsigned int nReadPos;
     short state;
@@ -725,15 +725,15 @@ public:
     int nType;
     int nVersion;
 
-    typedef vector_type::allocator_type   allocator_type;
-    typedef vector_type::size_type        size_type;
-    typedef vector_type::difference_type  difference_type;
-    typedef vector_type::reference        reference;
-    typedef vector_type::const_reference  const_reference;
-    typedef vector_type::value_type       value_type;
-    typedef vector_type::iterator         iterator;
-    typedef vector_type::const_iterator   const_iterator;
-    typedef vector_type::reverse_iterator reverse_iterator;
+    using allocator_type = typename vector_type::allocator_type;
+    using size_type = typename vector_type::size_type;
+    using difference_type = typename vector_type::difference_type;
+    using reference = typename vector_type::reference;
+    using const_reference = typename vector_type::const_reference;
+    using value_type = typename vector_type::value_type;
+    using iterator = typename vector_type::iterator;
+    using const_iterator = typename vector_type::const_iterator;
+    using reverse_iterator = typename vector_type::reverse_iterator;
 
     explicit CDataStream(int nTypeIn, int nVersionIn)
     {

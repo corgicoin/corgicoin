@@ -52,21 +52,21 @@ template<typename T>
 struct secure_allocator : public std::allocator<T>
 {
     // MSVC8 default copy constructor is broken
-    typedef std::allocator<T> base;
-    typedef typename base::size_type size_type;
-    typedef typename base::difference_type  difference_type;
-    typedef typename base::pointer pointer;
-    typedef typename base::const_pointer const_pointer;
-    typedef typename base::reference reference;
-    typedef typename base::const_reference const_reference;
-    typedef typename base::value_type value_type;
+    using base = std::allocator<T>;
+    using size_type = typename base::size_type;
+    using difference_type = typename base::difference_type;
+    using pointer = typename base::pointer;
+    using const_pointer = typename base::const_pointer;
+    using reference = typename base::reference;
+    using const_reference = typename base::const_reference;
+    using value_type = typename base::value_type;
     secure_allocator() noexcept = default;
     secure_allocator(const secure_allocator& a) throw() : base(a) {}
     template <typename U>
     secure_allocator(const secure_allocator<U>& a) throw() : base(a) {}
     ~secure_allocator() noexcept = default;
     template<typename _Other> struct rebind
-    { typedef secure_allocator<_Other> other; };
+    { using other = secure_allocator<_Other>; };
 
     T* allocate(std::size_t n, const void *hint = 0)
     {
@@ -96,21 +96,21 @@ template<typename T>
 struct zero_after_free_allocator : public std::allocator<T>
 {
     // MSVC8 default copy constructor is broken
-    typedef std::allocator<T> base;
-    typedef typename base::size_type size_type;
-    typedef typename base::difference_type  difference_type;
-    typedef typename base::pointer pointer;
-    typedef typename base::const_pointer const_pointer;
-    typedef typename base::reference reference;
-    typedef typename base::const_reference const_reference;
-    typedef typename base::value_type value_type;
+    using base = std::allocator<T>;
+    using size_type = typename base::size_type;
+    using difference_type = typename base::difference_type;
+    using pointer = typename base::pointer;
+    using const_pointer = typename base::const_pointer;
+    using reference = typename base::reference;
+    using const_reference = typename base::const_reference;
+    using value_type = typename base::value_type;
     zero_after_free_allocator() noexcept = default;
     zero_after_free_allocator(const zero_after_free_allocator& a) throw() : base(a) {}
     template <typename U>
     zero_after_free_allocator(const zero_after_free_allocator<U>& a) throw() : base(a) {}
     ~zero_after_free_allocator() noexcept = default;
     template<typename _Other> struct rebind
-    { typedef zero_after_free_allocator<_Other> other; };
+    { using other = zero_after_free_allocator<_Other>; };
 
     void deallocate(T* p, std::size_t n)
     {
