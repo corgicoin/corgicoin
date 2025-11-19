@@ -113,7 +113,7 @@ protected:
 
         // Unserialize value
         try {
-            CDataStream ssValue((char*)datValue.get_data(), (char*)datValue.get_data() + datValue.get_size(), SER_DISK, CLIENT_VERSION);
+            CDataStream ssValue(reinterpret_cast<char*>(datValue.get_data()), reinterpret_cast<char*>(datValue.get_data()) + datValue.get_size(), SER_DISK, CLIENT_VERSION);
             ssValue >> value;
         }
         catch (std::exception &e) {
@@ -234,10 +234,10 @@ protected:
         // Convert to streams
         ssKey.SetType(SER_DISK);
         ssKey.clear();
-        ssKey.write((char*)datKey.get_data(), datKey.get_size());
+        ssKey.write(reinterpret_cast<char*>(datKey.get_data()), datKey.get_size());
         ssValue.SetType(SER_DISK);
         ssValue.clear();
-        ssValue.write((char*)datValue.get_data(), datValue.get_size());
+        ssValue.write(reinterpret_cast<char*>(datValue.get_data()), datValue.get_size());
 
         // Clear and free memory
         memset(datKey.get_data(), 0, datKey.get_size());

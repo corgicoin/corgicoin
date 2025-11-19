@@ -400,7 +400,7 @@ public:
             pthis->mapValue["spent"] = str;
         }
 
-        nSerSize += SerReadWrite(s, *(CMerkleTx*)this, nType, nVersion,ser_action);
+        nSerSize += SerReadWrite(s, *static_cast<CMerkleTx*>(this), nType, nVersion,ser_action);
         READWRITE(vtxPrev);
         READWRITE(mapValue);
         READWRITE(vOrderForm);

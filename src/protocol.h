@@ -85,7 +85,7 @@ class CAddress : public CService
         IMPLEMENT_SERIALIZE
             (
              CAddress* pthis = const_cast<CAddress*>(this);
-             CService* pip = (CService*)pthis;
+             CService* pip = static_cast<CService*>(pthis);
              if (fRead)
                  pthis->Init();
              if (nType & SER_DISK)

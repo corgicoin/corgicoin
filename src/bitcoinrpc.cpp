@@ -28,7 +28,7 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/filesystem/fstream.hpp>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 #include <list>
 
 #define printf OutputDebugStringF
@@ -1395,13 +1395,13 @@ Value listtransactions(const Array& params, bool fHelp)
     for (auto& item : pwalletMain->mapWallet)
     {
         CWalletTx* wtx = &item.second;
-        txByTime.insert({wtx->GetTxTime(), TxPair(wtx, (CAccountingEntry*)0)});
+        txByTime.insert({wtx->GetTxTime(), TxPair(wtx, static_cast<CAccountingEntry*>(nullptr))});
     }
     list<CAccountingEntry> acentries;
     walletdb.ListAccountCreditDebit(strAccount, acentries);
     for (CAccountingEntry& entry : acentries)
     {
-        txByTime.insert({entry.nTime, TxPair((CWalletTx*)0, &entry)});
+        txByTime.insert({entry.nTime, TxPair(static_cast<CWalletTx*>(nullptr), &entry)});
     }
 
     // iterate backwards until we have nCount items to return:
@@ -1629,7 +1629,7 @@ void ThreadCleanWalletPassphrase(void* parg)
     // Make this thread recognisable as the wallet relocking thread
     RenameThread("bitcoin-lock-wa");
 
-    int64 nMyWakeTime = GetTimeMillis() + *((int64*)parg) * 1000;
+    int64 nMyWakeTime = GetTimeMillis() + *static_cast<int64*>(parg) * 1000;
 
     ENTER_CRITICAL_SECTION(cs_nWalletUnlockTime);
 
@@ -1665,7 +1665,7 @@ void ThreadCleanWalletPassphrase(void* parg)
 
     LEAVE_CRITICAL_SECTION(cs_nWalletUnlockTime);
 
-    delete (int64*)parg;
+    delete static_cast<int64*>(parg);
 }
 
 Value walletpassphrase(const Array& params, bool fHelp)
@@ -1964,11 +1964,11 @@ Value getworkex(const Array& params, bool fHelp)
         if (vchData.size() != 128)
             throw JSONRPCError(-8, "Invalid parameter");
 
-        CBlock* pdata = (CBlock*)&vchData[0];
+        CBlock* pdata = reinterpret_cast<CBlock*>(&vchData[0]);
 
         // Byte reverse
         for (int i = 0; i < 128/4; i++)
-            ((unsigned int*)pdata)[i] = ByteReverse(((unsigned int*)pdata)[i]);
+            reinterpret_cast<unsigned int*>(pdata)[i] = ByteReverse(reinterpret_cast<unsigned int*>(pdata)[i]);
 
         // Get saved block
         if (!mapNewBlock.count(pdata->hashMerkleRoot))
@@ -2074,11 +2074,11 @@ Value getwork(const Array& params, bool fHelp)
         vector<unsigned char> vchData = ParseHex(params[0].get_str());
         if (vchData.size() != 128)
             throw JSONRPCError(-8, "Invalid parameter");
-        CBlock* pdata = (CBlock*)&vchData[0];
+        CBlock* pdata = reinterpret_cast<CBlock*>(&vchData[0]);
 
         // Byte reverse
         for (int i = 0; i < 128/4; i++)
-            ((unsigned int*)pdata)[i] = ByteReverse(((unsigned int*)pdata)[i]);
+            reinterpret_cast<unsigned int*>(pdata)[i] = ByteReverse(reinterpret_cast<unsigned int*>(pdata)[i]);
 
         // Get saved block
         if (!mapNewBlock.count(pdata->hashMerkleRoot))
@@ -2764,7 +2764,7 @@ void ThreadRPCServer(void* parg)
 
 // Forward declaration required for RPCListen
 template <typename Protocol, typename SocketAcceptorService>
-static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
+static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
                              ssl::context& context,
                              bool fUseSSL,
                              AcceptedConnection* conn,
@@ -2774,7 +2774,7 @@ static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, 
  * Sets up I/O resources to accept and handle a new connection.
  */
 template <typename Protocol, typename SocketAcceptorService>
-static void RPCListen(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
+static void RPCListen(std::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
                    ssl::context& context,
                    const bool fUseSSL)
 {
@@ -2796,7 +2796,7 @@ static void RPCListen(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketA
  * Accept and handle incoming connection.
  */
 template <typename Protocol, typename SocketAcceptorService>
-static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
+static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
                              ssl::context& context,
                              const bool fUseSSL,
                              AcceptedConnection* conn,
@@ -2899,7 +2899,7 @@ void ThreadRPCServer2(void* parg)
 
     try
     {
-        boost::shared_ptr<ip::tcp::acceptor> acceptor(new ip::tcp::acceptor(io_service));
+        std::shared_ptr<ip::tcp::acceptor> acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
         acceptor->open(endpoint.protocol());
         acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
 
@@ -3037,7 +3037,7 @@ void ThreadRPCServer3(void* parg)
         LOCK(cs_THREAD_RPCHANDLER);
         vnThreadsRunning[THREAD_RPCHANDLER]++;
     }
-    AcceptedConnection *conn = (AcceptedConnection *) parg;
+    AcceptedConnection *conn = static_cast<AcceptedConnection*>(parg);
 
     bool fRun = true;
     while(true) {
