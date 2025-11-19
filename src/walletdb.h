@@ -34,8 +34,8 @@ public:
     {
     }
 private:
-    CWalletDB(const CWalletDB&);
-    void operator=(const CWalletDB&);
+    CWalletDB(const CWalletDB&) = delete;
+    void operator=(const CWalletDB&) = delete;
 public:
     bool ReadName(const std::string& strAddress, std::string& strName)
     {

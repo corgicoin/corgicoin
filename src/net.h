@@ -256,8 +256,8 @@ public:
     }
 
 private:
-    CNode(const CNode&);
-    void operator=(const CNode&);
+    CNode(const CNode&) = delete;
+    void operator=(const CNode&) = delete;
 public:
 
 

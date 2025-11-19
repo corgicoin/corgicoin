@@ -11,7 +11,7 @@ class WalletModel;
 
 /** Multifunctional dialog to ask for passphrases. Used for encryption, unlocking, and changing the passphrase.
  */
-class AskPassphraseDialog : public QDialog
+class AskPassphraseDialog final : public QDialog
 {
     Q_OBJECT
 

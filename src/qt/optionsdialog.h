@@ -10,7 +10,7 @@ class OptionsModel;
 class MonitoredDataMapper;
 
 /** Preferences dialog. */
-class OptionsDialog : public QDialog
+class OptionsDialog final : public QDialog
 {
     Q_OBJECT
 

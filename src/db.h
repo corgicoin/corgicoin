@@ -84,11 +84,11 @@ protected:
 
     explicit CDB(const char* pszFile, const char* pszMode="r+");
     ~CDB() { Close(); }
+private:
+    CDB(const CDB&) = delete;
+    void operator=(const CDB&) = delete;
 public:
     void Close();
-private:
-    CDB(const CDB&);
-    void operator=(const CDB&);
 
 protected:
     template<typename K, typename T>
@@ -303,8 +303,8 @@ class CTxDB : public CDB
 public:
     CTxDB(const char* pszMode="r+") : CDB("blkindex.dat", pszMode) { }
 private:
-    CTxDB(const CTxDB&);
-    void operator=(const CTxDB&);
+    CTxDB(const CTxDB&) = delete;
+    void operator=(const CTxDB&) = delete;
 public:
     bool ReadTxIndex(uint256 hash, CTxIndex& txindex);
     bool UpdateTxIndex(uint256 hash, const CTxIndex& txindex);

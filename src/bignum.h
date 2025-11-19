@@ -38,7 +38,7 @@ public:
             throw bignum_error("CAutoBN_CTX : BN_CTX_new() returned nullptr");
     }
 
-    ~CAutoBN_CTX()
+    ~CAutoBN_CTX() noexcept
     {
         if (pctx != nullptr)
             BN_CTX_free(pctx);
@@ -77,7 +77,7 @@ public:
         return (*this);
     }
 
-    ~CBigNum()
+    ~CBigNum() noexcept
     {
         BN_clear_free(this);
     }

@@ -9,7 +9,7 @@ namespace Ui {
 class ClientModel;
 
 /** "About" dialog box */
-class AboutDialog : public QDialog
+class AboutDialog final : public QDialog
 {
     Q_OBJECT
 

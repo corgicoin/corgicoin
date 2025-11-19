@@ -9,7 +9,7 @@ namespace Ui {
 }
 class OptionsModel;
 
-class QRCodeDialog : public QDialog
+class QRCodeDialog final : public QDialog
 {
     Q_OBJECT
 
