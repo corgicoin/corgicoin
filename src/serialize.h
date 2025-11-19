@@ -33,7 +33,7 @@ using uint64 = unsigned long long;
 class CScript;
 class CDataStream;
 class CAutoFile;
-static const unsigned int MAX_SIZE = 0x02000000;
+constexpr unsigned int MAX_SIZE = 0x02000000;
 
 // Used to bypass the rule against non-const reference to temporary
 // where it makes sense with wrappers such as CFlatData or CTxDB

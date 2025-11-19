@@ -35,8 +35,8 @@ typedef int pid_t; /* define for windows compatiblity */
 
 // Note: int64 and uint64 are defined in uint256.h (included above)
 
-static const int64 COIN = 100000000;
-static const int64 CENT = 1000000;
+constexpr int64 COIN = 100000000;
+constexpr int64 CENT = 1000000;
 
 #define loop                for (;;)
 #define BEGIN(a)            ((char*)&(a))

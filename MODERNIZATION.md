@@ -241,6 +241,213 @@ See README.md for updated build instructions with modern dependency versions.
 
 **Status:** All test code modernized and ready for execution with proper dependencies
 
+### Version 1.4.1.41 (2025-11-19) - Scoped Enums (enum class)
+
+**C++11 Scoped Enum Conversions (3 Qt enums):**
+- ✅ Converted traditional enums to type-safe enum class
+- ✅ Prevents implicit conversions and namespace pollution
+- ✅ Better type safety and clearer code intent
+
+**Qt Enums Converted:**
+
+**1. AddressTableModel::EditStatus**
+- Address book edit operation status codes
+- Values: OK, INVALID_ADDRESS, DUPLICATE_ADDRESS, WALLET_UNLOCK_FAILURE, KEY_GENERATION_FAILURE
+- Updated 5 uses with EditStatus:: qualifier
+
+**2. WalletModel::StatusCode**
+- Send coins operation result codes
+- Values: OK, InvalidAmount, InvalidAddress, AmountExceedsBalance, AmountWithFeeExceedsBalance, DuplicateAddress, TransactionCreationFailed, TransactionCommitFailed, Aborted
+- Updated 6 uses with StatusCode:: qualifier
+
+**3. WalletModel::EncryptionStatus**
+- Wallet encryption state
+- Values: Unencrypted, Locked, Unlocked
+- Updated 6 uses with EncryptionStatus:: qualifier
+
+**Files Modified:**
+- src/qt/addresstablemodel.h: EditStatus → enum class
+- src/qt/addresstablemodel.cpp: Updated 5 enum uses
+- src/qt/walletmodel.h: StatusCode and EncryptionStatus → enum class
+- src/qt/walletmodel.cpp: Updated 12 enum uses
+- src/version.h: Version updated to 1.4.1.41
+- corgicoin-qt.pro: Version updated to 1.4.1.41
+
+**Benefits:**
+- Type safety: Cannot implicitly convert to/from int
+- Namespace protection: Values don't pollute enclosing scope
+- Code clarity: Must use EnumName::Value syntax
+- Better compile-time error detection
+
+**Pattern:**
+```cpp
+// Before:
+enum Status { OK, Error };
+status = OK;
+
+// After:
+enum class Status { OK, Error };
+status = Status::OK;
+```
+
+### Version 1.4.1.40 (2025-11-19) - = delete, noexcept, and final
+
+**C++11 Safety and Optimization Features (13 improvements):**
+
+**1. Deleted Copy Operations (= delete) - 4 classes:**
+- CDB (db.h): Database wrapper - copy operations deleted
+- CTxDB (db.h): Transaction database - copy operations deleted
+- CWalletDB (walletdb.h): Wallet database - copy operations deleted
+- CNode (net.h): Network node - copy operations deleted
+
+**2. noexcept Specifications - 3 destructors:**
+- ~CAutoFile() (serialize.h): File handle cleanup
+- ~CAutoBN_CTX() (bignum.h): OpenSSL BN_CTX cleanup
+- ~CBigNum() (bignum.h): OpenSSL BIGNUM cleanup
+
+**3. final Keywords - 6 Qt dialog classes:**
+- AboutDialog, QRCodeDialog, EditAddressDialog
+- AskPassphraseDialog, TransactionDescDialog, OptionsDialog
+
+**Files Modified:**
+- src/db.h: 2 = delete conversions
+- src/walletdb.h: 1 = delete conversion
+- src/net.h: 1 = delete conversion
+- src/serialize.h: 1 noexcept destructor
+- src/bignum.h: 2 noexcept destructors
+- src/qt/aboutdialog.h, qrcodedialog.h, editaddressdialog.h: 3 final classes
+- src/qt/askpassphrasedialog.h, transactiondescdialog.h, optionsdialog.h: 3 final classes
+- src/version.h: Version updated to 1.4.1.40
+- corgicoin-qt.pro: Version updated to 1.4.1.40
+
+**Benefits:**
+- = delete: Clearer intent, better error messages
+- noexcept: Performance optimizations, better move semantics
+- final: Prevents unintended inheritance, enables devirtualization
+
+**Pattern:**
+```cpp
+// Before:
+private:
+    Class(const Class&);  // Not implemented
+
+// After:
+private:
+    Class(const Class&) = delete;
+```
+
+### Version 1.4.1.39 (2025-11-19) - Range-based for Loops
+
+**C++11 Range-based for Loop Conversions (16 loops across 8 files):**
+- ✅ Converted old-style iterator loops to modern range-based for
+- ✅ Only loops that don't modify container structure
+
+**Conversions by File:**
+- wallet.cpp (4): GetBalance, GetUnconfirmedBalance, GetImmatureBalance, AvailableCoins
+- bitcoinrpc.cpp (4): help, getbalance, listreceivedbyaccount, listtransactions
+- net.cpp (1): GetLocal address selection
+- main.cpp (1): ConnectBlock transaction index updates
+- qt/guiutil.cpp (1): parseBitcoinURI query items
+- qt/rpcconsole.cpp (1): Command tokenizer loop
+- qt/transactiontablemodel.cpp (1): refreshWallet
+- addrman.cpp (3): MakeTried, Check validation loops
+
+**Files Modified:**
+- src/wallet.cpp: 4 conversions
+- src/bitcoinrpc.cpp: 4 conversions
+- src/net.cpp: 1 conversion
+- src/main.cpp: 1 conversion
+- src/qt/guiutil.cpp: 1 conversion
+- src/qt/rpcconsole.cpp: 1 conversion
+- src/qt/transactiontablemodel.cpp: 1 conversion
+- src/addrman.cpp: 3 conversions
+- src/version.h: Version updated to 1.4.1.39
+- corgicoin-qt.pro: Version updated to 1.4.1.39
+
+**Benefits:**
+- Improved readability
+- Less error-prone (no manual iterator manipulation)
+- Safer (impossible to have off-by-one errors)
+
+**Pattern:**
+```cpp
+// Before:
+for (auto it = container.begin(); it != container.end(); ++it) {
+    const Type& value = (*it).second;
+}
+
+// After:
+for (const auto& item : container) {
+    const Type& value = item.second;
+}
+```
+
+### Version 1.4.1.38 (2025-11-19) - Override Keywords
+
+**C++11 override Specifiers (11 virtual methods across 7 Qt files):**
+- ✅ Added override to Qt virtual method declarations
+- ✅ Compile-time verification of overrides
+
+**Qt Classes Updated:**
+- bitcoinunits.h (2): rowCount, data
+- bitcoinaddressvalidator.h (1): validate
+- transactionfilterproxy.h (2): rowCount, filterAcceptsRow
+- qvalidatedlineedit.h (2): clear, focusInEvent
+- monitoreddatamapper.h (2): addMapping overloads
+- bitcoingui.h (4): changeEvent, closeEvent, dragEnterEvent, dropEvent
+
+**Files Modified:**
+- src/qt/bitcoinunits.h: 2 override
+- src/qt/bitcoinaddressvalidator.h: 1 override
+- src/qt/transactionfilterproxy.h: 2 override
+- src/qt/qvalidatedlineedit.h: 2 override
+- src/qt/monitoreddatamapper.h: 2 override
+- src/qt/bitcoingui.h: 4 override
+- src/version.h: Version updated to 1.4.1.38
+- corgicoin-qt.pro: Version updated to 1.4.1.38
+
+**Benefits:**
+- Compile-time safety: Verifies methods override base class
+- Prevents accidental hiding
+- Better documentation
+
+### Version 1.4.1.37 (2025-11-19) - Auto Type Deduction
+
+**C++11 auto Type Deduction (11 conversions):**
+- ✅ Replaced verbose iterator types with auto
+
+**Conversions:**
+- sync.cpp (2): std::pair<void*, void*> → auto
+- test/DoS_tests.cpp (1): std::map iterator → auto
+- bitcoinrpc.cpp (1): TxItems::reverse_iterator → auto
+- util.cpp (1): boost::program_options iterator → auto
+- script.cpp (6): CScript::const_iterator → auto
+
+**Files Modified:**
+- src/sync.cpp: 2 conversions
+- src/test/DoS_tests.cpp: 1 conversion
+- src/bitcoinrpc.cpp: 1 conversion
+- src/util.cpp: 1 conversion
+- src/script.cpp: 6 conversions
+- src/test/script_P2SH_tests.cpp: template spacing
+- src/qt/walletmodel.cpp: template spacing
+- src/version.h: Version updated to 1.4.1.37
+- corgicoin-qt.pro: Version updated to 1.4.1.37
+
+**Benefits:**
+- Improved readability
+- Reduced verbosity for complex types
+- Easier refactoring
+
+**Pattern:**
+```cpp
+// Before:
+std::map<uint256, CDataStream*>::iterator it = map.begin();
+
+// After:
+auto it = map.begin();
+```
+
 ### Version 1.4.1.34 (2025-11-19) - Explicitly Defaulted Special Member Functions
 
 **C++11 = default Conversions (5 occurrences across 2 files):**
