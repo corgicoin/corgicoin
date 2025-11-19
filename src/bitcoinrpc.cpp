@@ -2784,12 +2784,9 @@ static void RPCListen(std::shared_ptr< basic_socket_acceptor<Protocol, SocketAcc
     acceptor->async_accept(
             conn->sslStream.lowest_layer(),
             conn->peer,
-            boost::bind(&RPCAcceptHandler<Protocol, SocketAcceptorService>,
-                acceptor,
-                boost::ref(context),
-                fUseSSL,
-                conn,
-                boost::asio::placeholders::error));
+            [acceptor, &context, fUseSSL, conn](const boost::system::error_code& error) {
+                RPCAcceptHandler<Protocol, SocketAcceptorService>(acceptor, context, fUseSSL, conn, error);
+            });
 }
 
 /**
