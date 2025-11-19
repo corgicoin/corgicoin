@@ -565,7 +565,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
 
         // Don't accept it if it can't get into a block
-        if (nFees < tx.GetMinFee(1000, true, GMF_RELAY))
+        if (nFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
             return error("CTxMemPool::accept() : not enough fees");
 
         // Continuously rate-limit free transactions
@@ -2382,13 +2382,13 @@ bool CAlert::ProcessAlert()
             if (Cancels(alert))
             {
                 printf("cancelling alert %d\n", alert.nID);
-                uiInterface.NotifyAlertChanged((*mi).first, CT_DELETED);
+                uiInterface.NotifyAlertChanged((*mi).first, ChangeType::CT_DELETED);
                 mapAlerts.erase(mi++);
             }
             else if (!alert.IsInEffect())
             {
                 printf("expiring alert %d\n", alert.nID);
-                uiInterface.NotifyAlertChanged((*mi).first, CT_DELETED);
+                uiInterface.NotifyAlertChanged((*mi).first, ChangeType::CT_DELETED);
                 mapAlerts.erase(mi++);
             }
             else
@@ -2410,7 +2410,7 @@ bool CAlert::ProcessAlert()
         mapAlerts.insert({GetHash(), *this});
         // Notify UI if it applies to me
         if(AppliesToMe())
-            uiInterface.NotifyAlertChanged(GetHash(), CT_NEW);
+            uiInterface.NotifyAlertChanged(GetHash(), ChangeType::CT_NEW);
     }
 
     printf("accepted alert %d, AppliesToMe()=%d\n", nID, AppliesToMe());
@@ -2875,11 +2875,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             for (unsigned int i = 0; i < vWorkQueue.size(); i++)
             {
                 uint256 hashPrev = vWorkQueue[i];
-                for (auto mi = mapOrphanTransactionsByPrev[hashPrev].begin();
-                     mi != mapOrphanTransactionsByPrev[hashPrev].end();
-                     ++mi)
+                for (const auto& orphanItem : mapOrphanTransactionsByPrev[hashPrev])
                 {
-                    const CDataStream& vMsg = *((*mi).second);
+                    const CDataStream& vMsg = *orphanItem.second;
                     CTransaction tx;
                     CDataStream(vMsg) >> tx;
                     CInv inv(MSG_TX, tx.GetHash());
@@ -3550,7 +3548,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             // Transaction fee required depends on block size
             // CorgiCoind: Reduce the exempted free transactions to 500 bytes (from Bitcoin's 3000 bytes)
             bool fAllowFree = (nBlockSize + nTxSize < 1500 || CTransaction::AllowFree(dPriority));
-            int64 nMinFee = tx.GetMinFee(nBlockSize, fAllowFree, GMF_BLOCK);
+            int64 nMinFee = tx.GetMinFee(nBlockSize, fAllowFree, GetMinFee_mode::GMF_BLOCK);
 
             // Connecting shouldn't fail due to dependency on other memory pool transactions
             // because we're already processing them in order of dependency

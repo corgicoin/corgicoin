@@ -11,7 +11,6 @@
 
 #include <deque>
 #include <array>
-#include <boost/foreach.hpp>
 #include <openssl/rand.h>
 
 #ifndef WIN32
@@ -246,7 +245,7 @@ public:
             PushVersion();
     }
 
-    ~CNode()
+    ~CNode() noexcept
     {
         if (hSocket != INVALID_SOCKET)
         {

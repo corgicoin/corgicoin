@@ -75,7 +75,7 @@ extern int64 nTransactionFee;
 extern int64 nMinimumInputValue;
 
 // Minimum disk space required - used in CheckDiskSpace()
-static const uint64 nMinDiskSpace = 52428800;
+constexpr uint64 nMinDiskSpace = 52428800;
 
 class CReserveKey;
 class CTxDB;
@@ -362,7 +362,7 @@ public:
 
 
 
-enum GetMinFee_mode
+enum class GetMinFee_mode
 {
     GMF_BLOCK,
     GMF_RELAY,

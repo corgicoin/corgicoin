@@ -12,8 +12,8 @@
 #include "key.h"
 #include "serialize.h"
 
-const unsigned int WALLET_CRYPTO_KEY_SIZE = 32;
-const unsigned int WALLET_CRYPTO_SALT_SIZE = 8;
+constexpr unsigned int WALLET_CRYPTO_KEY_SIZE = 32;
+constexpr unsigned int WALLET_CRYPTO_SALT_SIZE = 8;
 
 /*
 Private key encryption is done based on a CMasterKey,
@@ -93,7 +93,7 @@ public:
         fKeySet = false;
     }
 
-    ~CCrypter()
+    ~CCrypter() noexcept
     {
         CleanKey();
     }

@@ -180,7 +180,7 @@ CKey& CKey::operator=(const CKey& b)
     return (*this);
 }
 
-CKey::~CKey()
+CKey::~CKey() noexcept
 {
     EC_KEY_free(pkey);
 }

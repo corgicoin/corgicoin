@@ -134,12 +134,12 @@ CDB::CDB(const char *pszFile, const char* pszMode) :
 
         strFile = pszFile;
         ++bitdb.mapFileUseCount[strFile];
-        pdb = bitdb.mapDb[strFile];
-        if (pdb == nullptr)
+        auto& dbptr = bitdb.mapDb[strFile];
+        if (!dbptr)
         {
-            pdb = new Db(&bitdb.dbenv, 0);
+            dbptr = std::make_shared<Db>(&bitdb.dbenv, 0);
 
-            ret = pdb->open(nullptr,      // Txn pointer
+            ret = dbptr->open(nullptr,      // Txn pointer
                             pszFile,   // Filename
                             "main",    // Logical db name
                             DB_BTREE,  // Database type
@@ -148,8 +148,7 @@ CDB::CDB(const char *pszFile, const char* pszMode) :
 
             if (ret > 0)
             {
-                delete pdb;
-                pdb = nullptr;
+                dbptr.reset();
                 {
                      LOCK(bitdb.cs_db);
                     --bitdb.mapFileUseCount[strFile];
@@ -165,9 +164,8 @@ CDB::CDB(const char *pszFile, const char* pszMode) :
                 WriteVersion(CLIENT_VERSION);
                 fReadOnly = fTmp;
             }
-
-            bitdb.mapDb[strFile] = pdb;
         }
+        pdb = dbptr.get();
     }
 }
 
@@ -209,13 +207,12 @@ void CDBEnv::CloseDb(const string& strFile)
 {
     {
         LOCK(cs_db);
-        if (mapDb[strFile] != nullptr)
+        auto it = mapDb.find(strFile);
+        if (it != mapDb.end() && it->second)
         {
             // Close the database handle
-            Db* pdb = mapDb[strFile];
-            pdb->close(0);
-            delete pdb;
-            mapDb[strFile] = nullptr;
+            it->second->close(0);
+            it->second.reset();
         }
     }
 }

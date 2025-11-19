@@ -665,9 +665,9 @@ bool AppInit2()
         int nMaxVersion = GetArg("-upgradewallet", 0);
         if (nMaxVersion == 0) // the -upgradewallet without argument case
         {
-            printf("Performing wallet upgrade to %i\n", FEATURE_LATEST);
+            printf("Performing wallet upgrade to %i\n", static_cast<int>(WalletFeature::FEATURE_LATEST));
             nMaxVersion = CLIENT_VERSION;
-            pwalletMain->SetMinVersion(FEATURE_LATEST); // permanently upgrade the wallet immediately
+            pwalletMain->SetMinVersion(WalletFeature::FEATURE_LATEST); // permanently upgrade the wallet immediately
         }
         else
             printf("Allowing wallet upgrade up to %i\n", nMaxVersion);

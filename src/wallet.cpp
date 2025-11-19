@@ -31,7 +31,7 @@ struct CompareValueOnly
 
 CPubKey CWallet::GenerateNewKey()
 {
-    bool fCompressed = CanSupportFeature(FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
+    bool fCompressed = CanSupportFeature(WalletFeature::FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
 
     RandAddSeedPerfmon();
     CKey key;
@@ -39,7 +39,7 @@ CPubKey CWallet::GenerateNewKey()
 
     // Compressed public keys were introduced in version 0.6.0
     if (fCompressed)
-        SetMinVersion(FEATURE_COMPRPUBKEY);
+        SetMinVersion(WalletFeature::FEATURE_COMPRPUBKEY);
 
     if (!AddKey(key))
         throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
@@ -169,23 +169,29 @@ public:
     )
 };
 
-bool CWallet::SetMinVersion(enum WalletFeature nVersion, CWalletDB* pwalletdbIn, bool fExplicit)
+bool CWallet::SetMinVersion(WalletFeature nVersion, CWalletDB* pwalletdbIn, bool fExplicit)
 {
-    if (nWalletVersion >= nVersion)
+    if (nWalletVersion >= static_cast<int>(nVersion))
         return true;
 
     // when doing an explicit upgrade, if we pass the max version permitted, upgrade all the way
-    if (fExplicit && nVersion > nWalletMaxVersion)
-            nVersion = FEATURE_LATEST;
+    if (fExplicit && static_cast<int>(nVersion) > nWalletMaxVersion)
+            nVersion = WalletFeature::FEATURE_LATEST;
 
-    nWalletVersion = nVersion;
+    nWalletVersion = static_cast<int>(nVersion);
 
-    if (nVersion > nWalletMaxVersion)
-        nWalletMaxVersion = nVersion;
+    if (static_cast<int>(nVersion) > nWalletMaxVersion)
+        nWalletMaxVersion = static_cast<int>(nVersion);
 
     if (fFileBacked)
     {
-        CWalletDB* pwalletdb = pwalletdbIn ? pwalletdbIn : new CWalletDB(strWalletFile);
+        std::unique_ptr<CWalletDB> ownedWalletdb;
+        CWalletDB* pwalletdb = pwalletdbIn;
+        if (!pwalletdbIn)
+        {
+            ownedWalletdb = std::make_unique<CWalletDB>(strWalletFile);
+            pwalletdb = ownedWalletdb.get();
+        }
         if (nWalletVersion >= 40000)
         {
             // Versions prior to 0.4.0 did not support the "minversion" record.
@@ -195,8 +201,6 @@ bool CWallet::SetMinVersion(enum WalletFeature nVersion, CWalletDB* pwalletdbIn,
         }
         if (nWalletVersion > 40000)
             pwalletdb->WriteMinVersion(nWalletVersion);
-        if (!pwalletdbIn)
-            delete pwalletdb;
     }
 
     return true;
@@ -254,7 +258,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         mapMasterKeys[++nMasterKeyMaxID] = kMasterKey;
         if (fFileBacked)
         {
-            pwalletdbEncryption = new CWalletDB(strWalletFile);
+            pwalletdbEncryption = std::make_unique<CWalletDB>(strWalletFile);
             if (!pwalletdbEncryption->TxnBegin())
                 return false;
             pwalletdbEncryption->WriteMasterKey(nMasterKeyMaxID, kMasterKey);
@@ -268,15 +272,14 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         }
 
         // Encryption was introduced in version 0.4.0
-        SetMinVersion(FEATURE_WALLETCRYPT, pwalletdbEncryption, true);
+        SetMinVersion(WalletFeature::FEATURE_WALLETCRYPT, pwalletdbEncryption.get(), true);
 
         if (fFileBacked)
         {
             if (!pwalletdbEncryption->TxnCommit())
                 exit(1); //We now have keys encrypted in memory, but no on disk...die to avoid confusion and let the user reload their unencrypted wallet.
 
-            delete pwalletdbEncryption;
-            pwalletdbEncryption = nullptr;
+            pwalletdbEncryption.reset();
         }
 
         Lock();
@@ -312,7 +315,7 @@ void CWallet::WalletUpdateSpent(const CTransaction &tx)
                     printf("WalletUpdateSpent found spent coin %sbc %s\n", FormatMoney(wtx.GetCredit()).c_str(), wtx.GetHash().ToString().c_str());
                     wtx.MarkSpent(txin.prevout.n);
                     wtx.WriteToDisk();
-                    NotifyTransactionChanged(this, txin.prevout.hash, CT_UPDATED);
+                    NotifyTransactionChanged(this, txin.prevout.hash, ChangeType::CT_UPDATED);
                 }
             }
         }
@@ -392,7 +395,7 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
         WalletUpdateSpent(wtx);
 
         // Notify UI of new or updated transaction
-        NotifyTransactionChanged(this, hash, fInsertedNew ? CT_NEW : CT_UPDATED);
+        NotifyTransactionChanged(this, hash, fInsertedNew ? ChangeType::CT_NEW : ChangeType::CT_UPDATED);
     }
     return true;
 }
@@ -1179,7 +1182,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 // Check that enough fee is included
                 int64 nPayFee = nTransactionFee * (1 + static_cast<int64>(nBytes) / 1000);
                 bool fAllowFree = CTransaction::AllowFree(dPriority);
-                int64 nMinFee = wtxNew.GetMinFee(1, fAllowFree, GMF_SEND);
+                int64 nMinFee = wtxNew.GetMinFee(1, fAllowFree, GetMinFee_mode::GMF_SEND);
                 if (nFeeRet < max(nPayFee, nMinFee))
                 {
                     nFeeRet = max(nPayFee, nMinFee);
@@ -1214,7 +1217,9 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
             // This is only to keep the database open to defeat the auto-flush for the
             // duration of this scope.  This is the only place where this optimization
             // maybe makes sense; please don't do it anywhere else.
-            CWalletDB* pwalletdb = fFileBacked ? new CWalletDB(strWalletFile,"r") : nullptr;
+            std::unique_ptr<CWalletDB> pwalletdb;
+            if (fFileBacked)
+                pwalletdb = std::make_unique<CWalletDB>(strWalletFile, "r");
 
             // Take key pair from key pool so it won't be used again
             reservekey.KeepKey();
@@ -1231,11 +1236,8 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
                 coin.BindWallet(this);
                 coin.MarkSpent(txin.prevout.n);
                 coin.WriteToDisk();
-                NotifyTransactionChanged(this, coin.GetHash(), CT_UPDATED);
+                NotifyTransactionChanged(this, coin.GetHash(), ChangeType::CT_UPDATED);
             }
-
-            if (fFileBacked)
-                delete pwalletdb;
         }
 
         // Track how many getdata requests our transaction gets
@@ -1338,7 +1340,7 @@ bool CWallet::SetAddressBookName(const CTxDestination& address, const string& st
 {
     auto mi = mapAddressBook.find(address);
     mapAddressBook[address] = strName;
-    NotifyAddressBookChanged(this, address, strName, ::IsMine(*this, address), (mi == mapAddressBook.end()) ? CT_NEW : CT_UPDATED);
+    NotifyAddressBookChanged(this, address, strName, ::IsMine(*this, address), (mi == mapAddressBook.end()) ? ChangeType::CT_NEW : ChangeType::CT_UPDATED);
     if (!fFileBacked)
         return false;
     return CWalletDB(strWalletFile).WriteName(CBitcoinAddress(address).ToString(), strName);
@@ -1347,7 +1349,7 @@ bool CWallet::SetAddressBookName(const CTxDestination& address, const string& st
 bool CWallet::DelAddressBookName(const CTxDestination& address)
 {
     mapAddressBook.erase(address);
-    NotifyAddressBookChanged(this, address, "", ::IsMine(*this, address), CT_DELETED);
+    NotifyAddressBookChanged(this, address, "", ::IsMine(*this, address), ChangeType::CT_DELETED);
     if (!fFileBacked)
         return false;
     return CWalletDB(strWalletFile).EraseName(CBitcoinAddress(address).ToString());
@@ -1613,6 +1615,6 @@ void CWallet::UpdatedTransaction(const uint256 &hashTx)
         // Only notify UI if this transaction is in this wallet
         auto mi = mapWallet.find(hashTx);
         if (mi != mapWallet.end())
-            NotifyTransactionChanged(this, hashTx, CT_UPDATED);
+            NotifyTransactionChanged(this, hashTx, ChangeType::CT_UPDATED);
     }
 }

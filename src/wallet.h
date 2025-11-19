@@ -9,6 +9,8 @@
 #ifndef BITCOIN_WALLET_H
 #define BITCOIN_WALLET_H
 
+#include <memory>
+
 #include "main.h"
 #include "key.h"
 #include "keystore.h"
@@ -21,7 +23,7 @@ class CWalletDB;
 class COutput;
 
 /** (client) version numbers for particular wallet features */
-enum WalletFeature
+enum class WalletFeature
 {
     FEATURE_BASE = 10500, // the earliest version new wallets supports (only useful for getinfo's clientversion output)
 
@@ -67,18 +69,18 @@ class CWallet : public CCryptoKeyStore
 private:
     bool SelectCoins(int64 nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
 
-    CWalletDB *pwalletdbEncryption;
+    std::unique_ptr<CWalletDB> pwalletdbEncryption;
 
     // the current wallet version: clients below this version are not able to load the wallet
-    int nWalletVersion;
+    int nWalletVersion = static_cast<int>(WalletFeature::FEATURE_BASE);
 
     // the maximum wallet format version: memory-only variable that specifies to what version this wallet may be upgraded
-    int nWalletMaxVersion;
+    int nWalletMaxVersion = static_cast<int>(WalletFeature::FEATURE_BASE);
 
 public:
     mutable CCriticalSection cs_wallet;
 
-    bool fFileBacked;
+    bool fFileBacked = false;
     std::string strWalletFile;
 
     std::set<int64> setKeyPool;
@@ -86,24 +88,13 @@ public:
 
     using MasterKeyMap = std::map<unsigned int, CMasterKey>;
     MasterKeyMap mapMasterKeys;
-    unsigned int nMasterKeyMaxID;
+    unsigned int nMasterKeyMaxID = 0;
 
-    CWallet()
-    {
-        nWalletVersion = FEATURE_BASE;
-        nWalletMaxVersion = FEATURE_BASE;
-        fFileBacked = false;
-        nMasterKeyMaxID = 0;
-        pwalletdbEncryption = nullptr;
-    }
+    CWallet() = default;
+
     CWallet(std::string strWalletFileIn)
+        : strWalletFile(std::move(strWalletFileIn)), fFileBacked(true)
     {
-        nWalletVersion = FEATURE_BASE;
-        nWalletMaxVersion = FEATURE_BASE;
-        strWalletFile = strWalletFileIn;
-        fFileBacked = true;
-        nMasterKeyMaxID = 0;
-        pwalletdbEncryption = nullptr;
     }
 
     std::map<uint256, CWalletTx> mapWallet;
@@ -114,7 +105,7 @@ public:
     CPubKey vchDefaultKey;
 
     // check whether we are allowed to upgrade (or already support) to the named feature
-    bool CanSupportFeature(enum WalletFeature wf) { return nWalletMaxVersion >= wf; }
+    bool CanSupportFeature(WalletFeature wf) { return nWalletMaxVersion >= static_cast<int>(wf); }
 
     void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true) const;
     bool SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
@@ -132,7 +123,7 @@ public:
     // Adds an encrypted key to the store, and saves it to disk.
     bool AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret) override;
     // Adds an encrypted key to the store, without saving it to disk (used by LoadWallet)
-    bool LoadCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret) { SetMinVersion(FEATURE_WALLETCRYPT); return CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret); }
+    bool LoadCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret) { SetMinVersion(WalletFeature::FEATURE_WALLETCRYPT); return CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret); }
     bool AddCScript(const CScript& redeemScript) override;
     bool LoadCScript(const CScript& redeemScript) { return CCryptoKeyStore::AddCScript(redeemScript); }
 
@@ -265,7 +256,7 @@ public:
     bool SetDefaultKey(const CPubKey &vchPubKey);
 
     // signify that a particular wallet feature is now used. this may change nWalletVersion and nWalletMaxVersion if those are lower
-    bool SetMinVersion(enum WalletFeature, CWalletDB* pwalletdbIn = nullptr, bool fExplicit = false);
+    bool SetMinVersion(WalletFeature, CWalletDB* pwalletdbIn = nullptr, bool fExplicit = false);
 
     // change which version we're allowed to upgrade to (note that this does not immediately imply upgrading to that format)
     bool SetMaxVersion(int nVersion);
@@ -289,16 +280,14 @@ class CReserveKey
 {
 protected:
     CWallet* pwallet;
-    int64 nIndex;
+    int64 nIndex = -1;
     CPubKey vchPubKey;
 public:
-    CReserveKey(CWallet* pwalletIn)
+    CReserveKey(CWallet* pwalletIn) : pwallet(pwalletIn)
     {
-        nIndex = -1;
-        pwallet = pwalletIn;
     }
 
-    ~CReserveKey()
+    ~CReserveKey() noexcept
     {
         if (!fShutdown)
             ReturnKey();
@@ -322,21 +311,21 @@ public:
     std::vector<CMerkleTx> vtxPrev;
     std::map<std::string, std::string> mapValue;
     std::vector<std::pair<std::string, std::string> > vOrderForm;
-    unsigned int fTimeReceivedIsTxTime;
-    unsigned int nTimeReceived;  // time received by this node
-    char fFromMe;
+    unsigned int fTimeReceivedIsTxTime = false;
+    unsigned int nTimeReceived = 0;  // time received by this node
+    char fFromMe = false;
     std::string strFromAccount;
     std::vector<char> vfSpent; // which outputs are already spent
 
     // memory only
-    mutable bool fDebitCached;
-    mutable bool fCreditCached;
-    mutable bool fAvailableCreditCached;
-    mutable bool fChangeCached;
-    mutable int64 nDebitCached;
-    mutable int64 nCreditCached;
-    mutable int64 nAvailableCreditCached;
-    mutable int64 nChangeCached;
+    mutable bool fDebitCached = false;
+    mutable bool fCreditCached = false;
+    mutable bool fAvailableCreditCached = false;
+    mutable bool fChangeCached = false;
+    mutable int64 nDebitCached = 0;
+    mutable int64 nCreditCached = 0;
+    mutable int64 nAvailableCreditCached = 0;
+    mutable int64 nChangeCached = 0;
 
     CWalletTx()
     {
@@ -364,19 +353,8 @@ public:
         vtxPrev.clear();
         mapValue.clear();
         vOrderForm.clear();
-        fTimeReceivedIsTxTime = false;
-        nTimeReceived = 0;
-        fFromMe = false;
         strFromAccount.clear();
         vfSpent.clear();
-        fDebitCached = false;
-        fCreditCached = false;
-        fAvailableCreditCached = false;
-        fChangeCached = false;
-        nDebitCached = 0;
-        nCreditCached = 0;
-        nAvailableCreditCached = 0;
-        nChangeCached = 0;
     }
 
     IMPLEMENT_SERIALIZE
