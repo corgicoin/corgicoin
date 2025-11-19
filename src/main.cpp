@@ -2875,11 +2875,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             for (unsigned int i = 0; i < vWorkQueue.size(); i++)
             {
                 uint256 hashPrev = vWorkQueue[i];
-                for (auto mi = mapOrphanTransactionsByPrev[hashPrev].begin();
-                     mi != mapOrphanTransactionsByPrev[hashPrev].end();
-                     ++mi)
+                for (const auto& orphanItem : mapOrphanTransactionsByPrev[hashPrev])
                 {
-                    const CDataStream& vMsg = *((*mi).second);
+                    const CDataStream& vMsg = *orphanItem.second;
                     CTransaction tx;
                     CDataStream(vMsg) >> tx;
                     CInv inv(MSG_TX, tx.GetHash());
