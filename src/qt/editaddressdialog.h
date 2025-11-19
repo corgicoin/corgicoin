@@ -14,7 +14,7 @@ class AddressTableModel;
 
 /** Dialog for editing an address and associated information.
  */
-class EditAddressDialog : public QDialog
+class EditAddressDialog final : public QDialog
 {
     Q_OBJECT
 

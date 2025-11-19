@@ -228,7 +228,7 @@ bool AddressTableModel::setData(const QModelIndex & index, const QVariant & valu
             // Refuse to set invalid address, set error status and return false
             if(!walletModel->validateAddress(value.toString()))
             {
-                editStatus = INVALID_ADDRESS;
+                editStatus = EditStatus::INVALID_ADDRESS;
                 return false;
             }
             // Double-check that we're not overwriting a receiving address
@@ -304,13 +304,13 @@ QString AddressTableModel::addRow(const QString &type, const QString &label, con
     std::string strLabel = label.toStdString();
     std::string strAddress = address.toStdString();
 
-    editStatus = OK;
+    editStatus = EditStatus::OK;
 
     if(type == Send)
     {
         if(!walletModel->validateAddress(address))
         {
-            editStatus = INVALID_ADDRESS;
+            editStatus = EditStatus::INVALID_ADDRESS;
             return QString();
         }
         // Check for duplicate addresses
@@ -318,7 +318,7 @@ QString AddressTableModel::addRow(const QString &type, const QString &label, con
             LOCK(wallet->cs_wallet);
             if(wallet->mapAddressBook.count(CBitcoinAddress(strAddress).Get()))
             {
-                editStatus = DUPLICATE_ADDRESS;
+                editStatus = EditStatus::DUPLICATE_ADDRESS;
                 return QString();
             }
         }
@@ -330,13 +330,13 @@ QString AddressTableModel::addRow(const QString &type, const QString &label, con
         if(!ctx.isValid())
         {
             // Unlock wallet failed or was cancelled
-            editStatus = WALLET_UNLOCK_FAILURE;
+            editStatus = EditStatus::WALLET_UNLOCK_FAILURE;
             return QString();
         }
         CPubKey newKey;
         if(!wallet->GetKeyFromPool(newKey, true))
         {
-            editStatus = KEY_GENERATION_FAILURE;
+            editStatus = EditStatus::KEY_GENERATION_FAILURE;
             return QString();
         }
         strAddress = CBitcoinAddress(newKey.GetID()).ToString();

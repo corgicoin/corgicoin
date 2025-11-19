@@ -233,10 +233,10 @@ string CRPCTable::help(string strCommand) const
 {
     string strRet;
     set<rpcfn_type> setDone;
-    for (auto mi = mapCommands.begin(); mi != mapCommands.end(); ++mi)
+    for (const auto& mi : mapCommands)
     {
-        const CRPCCommand *pcmd = mi->second;
-        string strMethod = mi->first;
+        const CRPCCommand *pcmd = mi.second;
+        string strMethod = mi.first;
         // We already filter duplicates, but these deprecated screw up the sort order
         if (strMethod.find("label") != string::npos)
             continue;
@@ -885,9 +885,9 @@ Value getbalance(const Array& params, bool fHelp)
         // (GetBalance() sums up all unspent TxOuts)
         // getbalance and getbalance '*' should always return the same number.
         int64 nBalance = 0;
-        for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+        for (const auto& item : pwalletMain->mapWallet)
         {
-            const CWalletTx& wtx = (*it).second;
+            const CWalletTx& wtx = item.second;
             if (!wtx.IsFinal())
                 continue;
 
@@ -1226,12 +1226,12 @@ Value ListReceived(const Array& params, bool fByAccounts)
 
     if (fByAccounts)
     {
-        for (auto it = mapAccountTally.begin(); it != mapAccountTally.end(); ++it)
+        for (const auto& item : mapAccountTally)
         {
-            int64 nAmount = (*it).second.nAmount;
-            int nConf = (*it).second.nConf;
+            int64 nAmount = item.second.nAmount;
+            int nConf = item.second.nConf;
             Object obj;
-            obj.emplace_back("account",       (*it).first);
+            obj.emplace_back("account",       item.first);
             obj.emplace_back("amount",        ValueFromAmount(nAmount));
             obj.emplace_back("confirmations", (nConf == std::numeric_limits<int>::max() ? 0 : nConf));
             ret.push_back(obj);
@@ -1392,9 +1392,9 @@ Value listtransactions(const Array& params, bool fHelp)
 
     // Note: maintaining indices in the database of (account,time) --> txid and (account, time) --> acentry
     // would make this much faster for applications that do this a lot.
-    for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    for (auto& item : pwalletMain->mapWallet)
     {
-        CWalletTx* wtx = &((*it).second);
+        CWalletTx* wtx = &item.second;
         txByTime.insert({wtx->GetTxTime(), TxPair(wtx, (CAccountingEntry*)0)});
     }
     list<CAccountingEntry> acentries;
@@ -1516,9 +1516,9 @@ Value listsinceblock(const Array& params, bool fHelp)
 
     Array transactions;
 
-    for (auto it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); it++)
+    for (const auto& item : pwalletMain->mapWallet)
     {
-        CWalletTx tx = (*it).second;
+        CWalletTx tx = item.second;
 
         if (depth == -1 || tx.GetDepthInMainChain() < depth)
             ListTransactions(tx, "*", 0, true, transactions);

@@ -90,25 +90,25 @@ bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
     rv.address = uri.path();
     rv.amount = 0;
     QList<QPair<QString, QString> > items = uri.queryItems();
-    for (auto i = items.begin(); i != items.end(); i++)
+    for (auto& i : items)
     {
         bool fShouldReturnFalse = false;
-        if (i->first.startsWith("req-"))
+        if (i.first.startsWith("req-"))
         {
-            i->first.remove(0, 4);
+            i.first.remove(0, 4);
             fShouldReturnFalse = true;
         }
 
-        if (i->first == "label")
+        if (i.first == "label")
         {
-            rv.label = i->second;
+            rv.label = i.second;
             fShouldReturnFalse = false;
         }
-        else if (i->first == "amount")
+        else if (i.first == "amount")
         {
-            if(!i->second.isEmpty())
+            if(!i.second.isEmpty())
             {
-                if(!BitcoinUnits::parse(BitcoinUnits::BTC, i->second, &rv.amount))
+                if(!BitcoinUnits::parse(BitcoinUnits::BTC, i.second, &rv.amount))
                 {
                     return false;
                 }

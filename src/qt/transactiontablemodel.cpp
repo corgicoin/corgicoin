@@ -71,10 +71,10 @@ public:
         cachedWallet.clear();
         {
             LOCK(wallet->cs_wallet);
-            for(auto it = wallet->mapWallet.begin(); it != wallet->mapWallet.end(); ++it)
+            for(const auto& item : wallet->mapWallet)
             {
-                if(TransactionRecord::showTransaction(it->second))
-                    cachedWallet.append(TransactionRecord::decomposeTransaction(wallet, it->second));
+                if(TransactionRecord::showTransaction(item.second))
+                    cachedWallet.append(TransactionRecord::decomposeTransaction(wallet, item.second));
             }
         }
     }

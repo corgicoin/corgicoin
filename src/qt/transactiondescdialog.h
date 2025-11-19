@@ -11,7 +11,7 @@ class QModelIndex;
 QT_END_NAMESPACE
 
 /** Dialog showing transaction details. */
-class TransactionDescDialog : public QDialog
+class TransactionDescDialog final : public QDialog
 {
     Q_OBJECT
 

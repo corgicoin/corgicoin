@@ -1087,7 +1087,7 @@ public:
         exceptmask = std::ios::badbit | std::ios::failbit;
     }
 
-    ~CAutoFile()
+    ~CAutoFile() noexcept
     {
         fclose();
     }
