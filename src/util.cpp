@@ -79,6 +79,8 @@ CMedianFilter<int64> vTimeOffsets(200,0);
 bool fReopenDebugLog = false;
 
 // Init openssl library multithreading support
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+// OpenSSL < 1.1.0 requires manual thread locking setup
 static std::vector<std::unique_ptr<CCriticalSection>> vpmutexOpenSSL;
 void locking_callback(int mode, int i, const char* file, int line)
 {
@@ -88,6 +90,8 @@ void locking_callback(int mode, int i, const char* file, int line)
         LEAVE_CRITICAL_SECTION(*vpmutexOpenSSL[i]);
     }
 }
+#endif
+// OpenSSL >= 1.1.0 handles threading automatically
 
 // Init
 class CInit
@@ -95,11 +99,14 @@ class CInit
 public:
     CInit()
     {
-        // Init openssl library multithreading support
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+        // Init openssl library multithreading support (OpenSSL < 1.1.0 only)
         vpmutexOpenSSL.resize(CRYPTO_num_locks());
         for (int i = 0; i < CRYPTO_num_locks(); i++)
             vpmutexOpenSSL[i] = std::make_unique<CCriticalSection>();
         CRYPTO_set_locking_callback(locking_callback);
+#endif
+        // OpenSSL >= 1.1.0 handles threading automatically
 
 #ifdef WIN32
         // Seed random number generator with screen scrape and other hardware sources
@@ -111,9 +118,12 @@ public:
     }
     ~CInit()
     {
-        // Shutdown openssl library multithreading support
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+        // Shutdown openssl library multithreading support (OpenSSL < 1.1.0 only)
         CRYPTO_set_locking_callback(nullptr);
         vpmutexOpenSSL.clear();  // unique_ptr automatically deletes
+#endif
+        // OpenSSL >= 1.1.0 cleanup is automatic
     }
 }
 instance_of_cinit;

@@ -81,7 +81,16 @@ int ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned ch
     x = BN_CTX_get(ctx);
     if (!BN_copy(x, order)) { ret=-1; goto err; }
     if (!BN_mul_word(x, i)) { ret=-1; goto err; }
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    // OpenSSL 1.1.0+: Use getter functions for ECDSA_SIG members
+    const BIGNUM *sig_r, *sig_s;
+    ECDSA_SIG_get0(ecsig, &sig_r, &sig_s);
+    if (!BN_add(x, x, sig_r)) { ret=-1; goto err; }
+#else
+    // OpenSSL 1.0.x: Direct member access
     if (!BN_add(x, x, ecsig->r)) { ret=-1; goto err; }
+#endif
     field = BN_CTX_get(ctx);
     if (!EC_GROUP_get_curve_GFp(group, field, nullptr, nullptr, ctx)) { ret=-2; goto err; }
     if (BN_cmp(x, field) >= 0) { ret=0; goto err; }
@@ -102,9 +111,18 @@ int ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned ch
     if (!BN_zero(zero)) { ret=-1; goto err; }
     if (!BN_mod_sub(e, zero, e, order, ctx)) { ret=-1; goto err; }
     rr = BN_CTX_get(ctx);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    // OpenSSL 1.1.0+: sig_r and sig_s already retrieved above
+    if (!BN_mod_inverse(rr, sig_r, order, ctx)) { ret=-1; goto err; }
+    sor = BN_CTX_get(ctx);
+    if (!BN_mod_mul(sor, sig_s, rr, order, ctx)) { ret=-1; goto err; }
+#else
+    // OpenSSL 1.0.x: Direct member access
     if (!BN_mod_inverse(rr, ecsig->r, order, ctx)) { ret=-1; goto err; }
     sor = BN_CTX_get(ctx);
     if (!BN_mod_mul(sor, ecsig->s, rr, order, ctx)) { ret=-1; goto err; }
+#endif
     eor = BN_CTX_get(ctx);
     if (!BN_mod_mul(eor, e, rr, order, ctx)) { ret=-1; goto err; }
     if (!EC_POINT_mul(group, Q, eor, R, sor, ctx)) { ret=-2; goto err; }
