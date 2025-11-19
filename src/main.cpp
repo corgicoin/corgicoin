@@ -2099,7 +2099,7 @@ bool LoadBlockIndex(bool fAllowNew)
         txNew.vout[0].nValue = 88 * COIN;
         txNew.vout[0].scriptPubKey = CScript() << ParseHex("040184710fa689ad5023690c80f3a49c8f13f8d45b8c857fbcbc8bc4a8e4d3eb4b10f4d4604fa08dce601aaf0f470216fe1b51850b4acf21b179c45070ac7b03a9") << OP_CHECKSIG;
         CBlock block;
-        block.vtx.push_back(txNew);
+        block.vtx.push_back(std::move(txNew));
         block.hashPrevBlock = 0;
         block.hashMerkleRoot = block.BuildMerkleTree();
         block.nVersion = 1;
@@ -3459,7 +3459,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
     txNew.vout[0].scriptPubKey << reservekey.GetReservedKey() << OP_CHECKSIG;
 
     // Add our coinbase tx as first transaction
-    pblock->vtx.push_back(txNew);
+    pblock->vtx.push_back(std::move(txNew));
 
     // Collect memory pool transactions into the block
     int64 nFees = 0;

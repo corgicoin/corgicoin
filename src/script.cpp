@@ -31,7 +31,7 @@ static const CBigNum bnZero(0);
 static const CBigNum bnOne(1);
 static const CBigNum bnFalse(0);
 static const CBigNum bnTrue(1);
-static const size_t nMaxNumSize = 4;
+static constexpr size_t nMaxNumSize = 4;
 
 
 CBigNum CastToBigNum(const valtype& vch)

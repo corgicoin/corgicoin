@@ -9,6 +9,7 @@
 #include "db.h"
 #include "util.h"
 #include "main.h"
+#include <memory>
 #include <boost/version.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
@@ -237,7 +238,7 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                 string strFileRes = strFile + ".rewrite";
                 { // surround usage of db with extra {}
                     CDB db(strFile.c_str(), "r");
-                    Db* pdbCopy = new Db(&bitdb.dbenv, 0);
+                    auto pdbCopy = std::make_unique<Db>(&bitdb.dbenv, 0);
 
                     int ret = pdbCopy->open(nullptr,                 // Txn pointer
                                             strFileRes.c_str(),   // Filename
@@ -290,7 +291,6 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                         bitdb.CloseDb(strFile);
                         if (pdbCopy->close(0))
                             fSuccess = false;
-                        delete pdbCopy;
                     }
                 }
                 if (fSuccess)
