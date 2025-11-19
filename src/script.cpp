@@ -242,9 +242,9 @@ const char* GetOpName(opcodetype opcode)
 bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType)
 {
     CAutoBN_CTX pctx;
-    CScript::const_iterator pc = script.begin();
-    CScript::const_iterator pend = script.end();
-    CScript::const_iterator pbegincodehash = script.begin();
+    auto pc = script.begin();
+    auto pend = script.end();
+    auto pbegincodehash = script.begin();
     opcodetype opcode;
     valtype vchPushValue;
     vector<bool> vfExec;
@@ -1240,8 +1240,8 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
         vector<unsigned char> vch1, vch2;
 
         // Compare
-        CScript::const_iterator pc1 = script1.begin();
-        CScript::const_iterator pc2 = script2.begin();
+        auto pc1 = script1.begin();
+        auto pc2 = script2.begin();
         while(true)
         {
             if (pc1 == script1.end() && pc2 == script2.end())
@@ -1803,7 +1803,7 @@ unsigned int CScript::GetSigOpCount(const CScript& scriptSig) const
     // This is a pay-to-script-hash scriptPubKey;
     // get the last item that the scriptSig
     // pushes onto the stack:
-    const_iterator pc = scriptSig.begin();
+    auto pc = scriptSig.begin();
     vector<unsigned char> data;
     while (pc < scriptSig.end())
     {

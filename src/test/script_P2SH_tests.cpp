@@ -239,7 +239,7 @@ BOOST_AUTO_TEST_CASE(switchover)
 
 BOOST_AUTO_TEST_CASE(AreInputsStandard)
 {
-    std::map<uint256, std::pair<CTxIndex, CTransaction> > mapInputs;
+    std::map<uint256, std::pair<CTxIndex, CTransaction>> mapInputs;
     CBasicKeyStore keystore;
     CKey key[3];
     vector<CKey> keys;

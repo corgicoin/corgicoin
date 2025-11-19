@@ -131,8 +131,7 @@ BOOST_AUTO_TEST_CASE(DoS_checknbits)
 
 CTransaction RandomOrphan()
 {
-    std::map<uint256, CDataStream*>::iterator it;
-    it = mapOrphanTransactions.lower_bound(GetRandHash());
+    auto it = mapOrphanTransactions.lower_bound(GetRandHash());
     if (it == mapOrphanTransactions.end())
         it = mapOrphanTransactions.begin();
     const CDataStream* pvMsg = it->second;
