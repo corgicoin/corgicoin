@@ -315,7 +315,7 @@ void CWallet::WalletUpdateSpent(const CTransaction &tx)
                     printf("WalletUpdateSpent found spent coin %sbc %s\n", FormatMoney(wtx.GetCredit()).c_str(), wtx.GetHash().ToString().c_str());
                     wtx.MarkSpent(txin.prevout.n);
                     wtx.WriteToDisk();
-                    NotifyTransactionChanged(this, txin.prevout.hash, CT_UPDATED);
+                    NotifyTransactionChanged(this, txin.prevout.hash, ChangeType::CT_UPDATED);
                 }
             }
         }
@@ -395,7 +395,7 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
         WalletUpdateSpent(wtx);
 
         // Notify UI of new or updated transaction
-        NotifyTransactionChanged(this, hash, fInsertedNew ? CT_NEW : CT_UPDATED);
+        NotifyTransactionChanged(this, hash, fInsertedNew ? ChangeType::CT_NEW : ChangeType::CT_UPDATED);
     }
     return true;
 }
@@ -1236,7 +1236,7 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
                 coin.BindWallet(this);
                 coin.MarkSpent(txin.prevout.n);
                 coin.WriteToDisk();
-                NotifyTransactionChanged(this, coin.GetHash(), CT_UPDATED);
+                NotifyTransactionChanged(this, coin.GetHash(), ChangeType::CT_UPDATED);
             }
         }
 
@@ -1340,7 +1340,7 @@ bool CWallet::SetAddressBookName(const CTxDestination& address, const string& st
 {
     auto mi = mapAddressBook.find(address);
     mapAddressBook[address] = strName;
-    NotifyAddressBookChanged(this, address, strName, ::IsMine(*this, address), (mi == mapAddressBook.end()) ? CT_NEW : CT_UPDATED);
+    NotifyAddressBookChanged(this, address, strName, ::IsMine(*this, address), (mi == mapAddressBook.end()) ? ChangeType::CT_NEW : ChangeType::CT_UPDATED);
     if (!fFileBacked)
         return false;
     return CWalletDB(strWalletFile).WriteName(CBitcoinAddress(address).ToString(), strName);
@@ -1349,7 +1349,7 @@ bool CWallet::SetAddressBookName(const CTxDestination& address, const string& st
 bool CWallet::DelAddressBookName(const CTxDestination& address)
 {
     mapAddressBook.erase(address);
-    NotifyAddressBookChanged(this, address, "", ::IsMine(*this, address), CT_DELETED);
+    NotifyAddressBookChanged(this, address, "", ::IsMine(*this, address), ChangeType::CT_DELETED);
     if (!fFileBacked)
         return false;
     return CWalletDB(strWalletFile).EraseName(CBitcoinAddress(address).ToString());
@@ -1615,6 +1615,6 @@ void CWallet::UpdatedTransaction(const uint256 &hashTx)
         // Only notify UI if this transaction is in this wallet
         auto mi = mapWallet.find(hashTx);
         if (mi != mapWallet.end())
-            NotifyTransactionChanged(this, hashTx, CT_UPDATED);
+            NotifyTransactionChanged(this, hashTx, ChangeType::CT_UPDATED);
     }
 }

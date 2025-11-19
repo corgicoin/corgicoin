@@ -72,15 +72,15 @@ private:
     std::unique_ptr<CWalletDB> pwalletdbEncryption;
 
     // the current wallet version: clients below this version are not able to load the wallet
-    int nWalletVersion;
+    int nWalletVersion = static_cast<int>(WalletFeature::FEATURE_BASE);
 
     // the maximum wallet format version: memory-only variable that specifies to what version this wallet may be upgraded
-    int nWalletMaxVersion;
+    int nWalletMaxVersion = static_cast<int>(WalletFeature::FEATURE_BASE);
 
 public:
     mutable CCriticalSection cs_wallet;
 
-    bool fFileBacked;
+    bool fFileBacked = false;
     std::string strWalletFile;
 
     std::set<int64> setKeyPool;
@@ -88,22 +88,13 @@ public:
 
     using MasterKeyMap = std::map<unsigned int, CMasterKey>;
     MasterKeyMap mapMasterKeys;
-    unsigned int nMasterKeyMaxID;
+    unsigned int nMasterKeyMaxID = 0;
 
-    CWallet()
-    {
-        nWalletVersion = FEATURE_BASE;
-        nWalletMaxVersion = FEATURE_BASE;
-        fFileBacked = false;
-        nMasterKeyMaxID = 0;
-    }
+    CWallet() = default;
+
     CWallet(std::string strWalletFileIn)
+        : strWalletFile(std::move(strWalletFileIn)), fFileBacked(true)
     {
-        nWalletVersion = FEATURE_BASE;
-        nWalletMaxVersion = FEATURE_BASE;
-        strWalletFile = strWalletFileIn;
-        fFileBacked = true;
-        nMasterKeyMaxID = 0;
     }
 
     std::map<uint256, CWalletTx> mapWallet;
@@ -289,13 +280,11 @@ class CReserveKey
 {
 protected:
     CWallet* pwallet;
-    int64 nIndex;
+    int64 nIndex = -1;
     CPubKey vchPubKey;
 public:
-    CReserveKey(CWallet* pwalletIn)
+    CReserveKey(CWallet* pwalletIn) : pwallet(pwalletIn)
     {
-        nIndex = -1;
-        pwallet = pwalletIn;
     }
 
     ~CReserveKey() noexcept
@@ -322,21 +311,21 @@ public:
     std::vector<CMerkleTx> vtxPrev;
     std::map<std::string, std::string> mapValue;
     std::vector<std::pair<std::string, std::string> > vOrderForm;
-    unsigned int fTimeReceivedIsTxTime;
-    unsigned int nTimeReceived;  // time received by this node
-    char fFromMe;
+    unsigned int fTimeReceivedIsTxTime = false;
+    unsigned int nTimeReceived = 0;  // time received by this node
+    char fFromMe = false;
     std::string strFromAccount;
     std::vector<char> vfSpent; // which outputs are already spent
 
     // memory only
-    mutable bool fDebitCached;
-    mutable bool fCreditCached;
-    mutable bool fAvailableCreditCached;
-    mutable bool fChangeCached;
-    mutable int64 nDebitCached;
-    mutable int64 nCreditCached;
-    mutable int64 nAvailableCreditCached;
-    mutable int64 nChangeCached;
+    mutable bool fDebitCached = false;
+    mutable bool fCreditCached = false;
+    mutable bool fAvailableCreditCached = false;
+    mutable bool fChangeCached = false;
+    mutable int64 nDebitCached = 0;
+    mutable int64 nCreditCached = 0;
+    mutable int64 nAvailableCreditCached = 0;
+    mutable int64 nChangeCached = 0;
 
     CWalletTx()
     {
@@ -364,19 +353,8 @@ public:
         vtxPrev.clear();
         mapValue.clear();
         vOrderForm.clear();
-        fTimeReceivedIsTxTime = false;
-        nTimeReceived = 0;
-        fFromMe = false;
         strFromAccount.clear();
         vfSpent.clear();
-        fDebitCached = false;
-        fCreditCached = false;
-        fAvailableCreditCached = false;
-        fChangeCached = false;
-        nDebitCached = 0;
-        nCreditCached = 0;
-        nAvailableCreditCached = 0;
-        nChangeCached = 0;
     }
 
     IMPLEMENT_SERIALIZE

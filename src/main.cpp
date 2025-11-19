@@ -2382,13 +2382,13 @@ bool CAlert::ProcessAlert()
             if (Cancels(alert))
             {
                 printf("cancelling alert %d\n", alert.nID);
-                uiInterface.NotifyAlertChanged((*mi).first, CT_DELETED);
+                uiInterface.NotifyAlertChanged((*mi).first, ChangeType::CT_DELETED);
                 mapAlerts.erase(mi++);
             }
             else if (!alert.IsInEffect())
             {
                 printf("expiring alert %d\n", alert.nID);
-                uiInterface.NotifyAlertChanged((*mi).first, CT_DELETED);
+                uiInterface.NotifyAlertChanged((*mi).first, ChangeType::CT_DELETED);
                 mapAlerts.erase(mi++);
             }
             else
@@ -2410,7 +2410,7 @@ bool CAlert::ProcessAlert()
         mapAlerts.insert({GetHash(), *this});
         // Notify UI if it applies to me
         if(AppliesToMe())
-            uiInterface.NotifyAlertChanged(GetHash(), CT_NEW);
+            uiInterface.NotifyAlertChanged(GetHash(), ChangeType::CT_NEW);
     }
 
     printf("accepted alert %d, AppliesToMe()=%d\n", nID, AppliesToMe());
