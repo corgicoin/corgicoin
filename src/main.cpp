@@ -904,9 +904,9 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
 
 
 
-static const int64 nTargetTimespan = 4 * 60 * 60; // CorgiCoin: every 4 hours
-static const int64 nTargetSpacing = 60; // CorgiCoin: 1 minutes
-static const int64 nInterval = nTargetTimespan / nTargetSpacing;
+static constexpr int64 nTargetTimespan = 4 * 60 * 60; // CorgiCoin: every 4 hours
+static constexpr int64 nTargetSpacing = 60; // CorgiCoin: 1 minutes
+static constexpr int64 nInterval = nTargetTimespan / nTargetSpacing;
 
 //
 // minimum amount of work that could possibly be required nTime after
