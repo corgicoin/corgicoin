@@ -11,10 +11,10 @@ class QValidatedLineEdit : public QLineEdit
     Q_OBJECT
 public:
     explicit QValidatedLineEdit(QWidget *parent = 0);
-    void clear();
+    void clear() override;
 
 protected:
-    void focusInEvent(QFocusEvent *evt);
+    void focusInEvent(QFocusEvent *evt) override;
 
 private:
     bool valid;

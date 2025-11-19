@@ -508,7 +508,7 @@ void ParseParameters(int argc, const char* const argv[])
     }
 
     // New 0.6 features:
-    for (const PAIRTYPE(string,string)& entry : mapArgs)
+    for (const std::pair<string,string>& entry : mapArgs)
     {
         string name = entry.first;
 
@@ -1052,7 +1052,7 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
     set<string> setOptions;
     setOptions.insert("*");
 
-    for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
+    for (auto it = boost::program_options::detail::config_file_iterator(streamConfig, setOptions), end = boost::program_options::detail::config_file_iterator(); it != end; ++it)
     {
         // Don't overwrite existing settings so command line settings override corgicoin.conf
         string strKey = string("-") + it->string_key;

@@ -2336,7 +2336,7 @@ string GetWarnings(string strFor)
     // Alerts
     {
         LOCK(cs_mapAlerts);
-        for (PAIRTYPE(const uint256, CAlert)& item : mapAlerts)
+        for (std::pair<const uint256, CAlert>& item : mapAlerts)
         {
             const CAlert& alert = item.second;
             if (alert.AppliesToMe() && alert.nPriority > nPriority)
@@ -2397,7 +2397,7 @@ bool CAlert::ProcessAlert()
         }
 
         // Check if this alert has been cancelled
-        for (PAIRTYPE(const uint256, CAlert)& item : mapAlerts)
+        for (std::pair<const uint256, CAlert>& item : mapAlerts)
         {
             const CAlert& alert = item.second;
             if (alert.Cancels(*this))
@@ -2577,7 +2577,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         // Relay alerts
         {
             LOCK(cs_mapAlerts);
-            for (PAIRTYPE(const uint256, CAlert)& item : mapAlerts)
+            for (std::pair<const uint256, CAlert>& item : mapAlerts)
                 item.second.RelayTo(pfrom);
         }
 

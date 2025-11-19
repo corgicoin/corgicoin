@@ -90,7 +90,7 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [x] Update build configs for modern dependencies (v1.4.1.3)
 - [x] Add version checking and warnings (v1.4.1.3)
 - [x] IRC disabled by default with deprecation warnings (v1.4.1.3)
-- [ ] Add CMake build system alongside qmake
+- [x] Add CMake build system alongside qmake (v1.4.1.29)
 - [x] Update compiler warning flags (v1.4.1.3)
 
 ### Phase 2: Dependency Updates (High Priority)
@@ -174,6 +174,277 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.29 (2025-11-18) - CMake Build System Implementation
+
+**Modern Build System:**
+- ✅ Added comprehensive CMake build system alongside existing qmake/make builds
+- ✅ Supports both daemon (corgicoind) and Qt GUI (corgicoin-qt) builds
+- ✅ Automatic dependency detection for OpenSSL, Boost, Berkeley DB, and Qt
+- ✅ Cross-platform support (Linux, macOS, Windows)
+- ✅ Configurable build options (UPnP, QR codes, D-Bus, hardening)
+- ✅ IDE integration (Visual Studio, CLion, Qt Creator, VS Code)
+- ✅ Security hardening flags enabled by default
+- ✅ Out-of-source builds for cleaner project structure
+
+**Files Added:**
+- CMakeLists.txt: Root build configuration with comprehensive options
+- cmake/Modules/FindBerkeleyDB.cmake: Custom module to find Berkeley DB
+- BUILD.cmake.md: Detailed CMake build instructions and troubleshooting
+
+**Files Modified:**
+- README.md: Added CMake as recommended build method
+- MODERNIZATION.md: Marked Phase 1 CMake task as complete
+
+**Benefits:**
+- Modern standard build system expected by developers
+- Better cross-platform and IDE support
+- Automatic dependency management
+- More maintainable than traditional makefiles
+- Completes Phase 1 of modernization roadmap
+
+**Status:** Phase 1: Build System Updates now 100% COMPLETE! ✅
+
+### Version 1.4.1.35 (2025-11-19) - Test Suite Modernization for Boost 1.70+
+
+**Deprecated Boost Library Removal:**
+- ✅ Removed all boost/assign/list_of.hpp includes from test files
+- ✅ Removed all boost/foreach.hpp includes from test files
+- ✅ Converted map_list_of() to C++11 initializer lists in DoS_tests.cpp
+- ✅ Tests now compatible with Boost 1.70+ (deprecated libraries removed)
+- ✅ Using modern C++11 range-based for loops instead of BOOST_FOREACH
+
+**Files Modified:**
+- src/test/DoS_tests.cpp: Converted BlockData map_list_of to initializer lists
+- src/test/Checkpoints_tests.cpp: Removed unused Boost includes
+- src/test/multisig_tests.cpp: Removed boost/assign includes
+- src/test/script_P2SH_tests.cpp: Removed boost/assign includes
+- src/version.h: Version updated to 1.4.1.35
+- corgicoin-qt.pro: Version updated to 1.4.1.35
+
+**Documentation Added:**
+- doc/build-tests.md: Comprehensive guide for building and running tests
+  - Prerequisites and dependency installation (Ubuntu, macOS, Windows)
+  - Build instructions using Make (CMake support coming soon)
+  - Running tests with various options
+  - Complete list of 25+ test suites
+  - Troubleshooting common issues
+  - CI/CD integration examples
+  - Test development guidelines with modern C++11 patterns
+
+**Benefits:**
+- Test suite compatible with modern Boost versions (1.70+)
+- No dependency on deprecated Boost libraries
+- Uses standard C++11 features exclusively
+- Complete testing infrastructure documentation
+- Ready for continuous integration pipelines
+
+**Status:** All test code modernized and ready for execution with proper dependencies
+
+### Version 1.4.1.34 (2025-11-19) - Explicitly Defaulted Special Member Functions
+
+**C++11 = default Conversions (5 occurrences across 2 files):**
+- ✅ Converted empty constructors/destructors to = default
+- ✅ Replaced deprecated throw() exception specifications with noexcept
+
+**allocators.h (4 occurrences):**
+- secure_allocator: Constructor and destructor → = default with noexcept
+- zero_after_free_allocator: Constructor and destructor → = default with noexcept
+
+**qt/transactiondesc.h (1 occurrence):**
+- TransactionDesc: Private default constructor → = default
+
+**Files Modified:**
+- src/allocators.h: Secure memory allocators (4 conversions)
+- src/qt/transactiondesc.h: Transaction description class (1 conversion)
+- src/version.h: Version updated to 1.4.1.34
+- corgicoin-qt.pro: Version updated to 1.4.1.34
+
+**Benefits:**
+- Compiler can optimize special member functions better
+- Explicit intent: clearly shows these functions are intentionally defaulted
+- Modern exception specifications (noexcept vs throw())
+- Enables trivial copyability where applicable
+- Better integration with move semantics
+
+**Pattern:**
+```cpp
+// Before:
+Constructor() throw() {}
+~Destructor() throw() {}
+
+// After:
+Constructor() noexcept = default;
+~Destructor() noexcept = default;
+```
+
+### Version 1.4.1.33 (2025-11-19) - Complete IRC Peer Discovery Removal
+
+**Deprecated Code Removal (421 lines deleted):**
+- ✅ Completely removed IRC peer discovery implementation
+- ✅ Deleted src/irc.cpp (380 lines) and src/irc.h (12 lines)
+- ✅ Removed IRC thread creation from network initialization
+- ✅ Removed -irc command line option
+- ✅ Removed from all build configurations
+
+**Files Deleted:**
+- src/irc.cpp: IRC peer discovery implementation (380 lines)
+- src/irc.h: IRC function declarations (12 lines)
+
+**Files Modified:**
+- src/net.cpp: Removed IRC include and ThreadIRCSeed thread creation
+- src/init.cpp: Removed -irc command line option and help text
+- src/makefile.unix: Removed obj/irc.o from OBJS
+- corgicoin-qt.pro: Removed src/irc.cpp and src/irc.h
+- src/version.h: Version updated to 1.4.1.33
+
+**Benefits:**
+- Reduced attack surface (IRC servers are security risks)
+- Removed deprecated Bitcoin protocol feature (abandoned circa 2014)
+- Cleaner codebase with 421 fewer lines to maintain
+- Reliance on modern peer discovery (DNS seeds, hardcoded peers)
+- Eliminates dependency on unreliable IRC server infrastructure
+
+**Context:** IRC peer discovery was deprecated in Bitcoin Core around 2014 due to unreliability and security concerns. Modern cryptocurrency nodes use DNS seeds and direct peer connections.
+
+### Version 1.4.1.32 (2025-11-19) - emplace_back Performance Optimizations
+
+**C++11 In-Place Construction (46 occurrences across 3 files):**
+- ✅ Converted push_back(Constructor(...)) to emplace_back(...)
+- ✅ Eliminates temporary object creation and copy operations
+- ✅ More efficient for complex types like json_spirit::Pair
+
+**rpcrawtransaction.cpp (33 occurrences):**
+- Converted all Pair object insertions in RPC result objects
+- Functions: getrawtransaction, listunspent, createrawtransaction, decoderawtransaction, decodescript, signrawtransaction
+
+**rpcnet.cpp (11 occurrences):**
+- Converted all Pair object insertions in network status RPC commands
+- Functions: getpeerinfo, addnode, getaddednodeinfo
+
+**netbase.cpp (2 occurrences):**
+- Converted CNetAddr constructions for IPv4 and IPv6 addresses
+- Function: LookupIntern DNS resolution
+
+**Files Modified:**
+- src/rpcrawtransaction.cpp: Raw transaction RPC (33 conversions)
+- src/rpcnet.cpp: Network RPC commands (11 conversions)
+- src/netbase.cpp: Network address handling (2 conversions)
+- src/version.h: Version updated to 1.4.1.32
+- corgicoin-qt.pro: Version updated to 1.4.1.32
+
+**Benefits:**
+- More efficient: constructs objects in-place in the container
+- No temporary objects created (eliminates copy/move operations)
+- Modern C++11 idiom for container insertion
+- Better performance in RPC command processing
+- Cleaner, more concise code
+
+**Pattern:**
+```cpp
+// Before: Creates temporary, then copies into container
+vec.push_back(Pair("key", value));
+vec.push_back(CNetAddr(addr));
+
+// After: Constructs directly in container
+vec.emplace_back("key", value);
+vec.emplace_back(addr);
+```
+
+### Version 1.4.1.31 (2025-11-19) - Modern Type Alias Conversions
+
+**C++11 using Declarations (5 occurrences across 3 files):**
+- ✅ Converted all user-defined typedef to modern using syntax
+- ✅ Removed duplicate type definitions
+
+**wallet.h (1 occurrence):**
+- MasterKeyMap: Map of encryption keys
+  ```cpp
+  // Before: typedef std::map<unsigned int, CMasterKey> MasterKeyMap;
+  // After:  using MasterKeyMap = std::map<unsigned int, CMasterKey>;
+  ```
+
+**bitcoinrpc.h (1 occurrence):**
+- rpcfn_type: RPC function pointer type
+  ```cpp
+  // Before: typedef json_spirit::Value(*rpcfn_type)(const json_spirit::Array&, bool);
+  // After:  using rpcfn_type = json_spirit::Value(*)(const json_spirit::Array&, bool);
+  ```
+
+**uint256.h (2 occurrences):**
+- uint160::basetype and uint256::basetype: Base type aliases
+  ```cpp
+  // Before: typedef base_uint160 basetype;
+  // After:  using basetype = base_uint160;
+  ```
+
+**util.h (removed duplicates):**
+- Removed duplicate int64/uint64 typedefs (already defined in uint256.h)
+
+**Files Modified:**
+- src/wallet.h: Wallet class (1 conversion)
+- src/bitcoinrpc.h: RPC definitions (1 conversion)
+- src/uint256.h: Integer types (2 conversions)
+- src/util.h: Removed duplicate typedefs
+- src/version.h: Version updated to 1.4.1.31
+- corgicoin-qt.pro: Version updated to 1.4.1.31
+
+**Benefits:**
+- Modern C++11 syntax (using is preferred over typedef)
+- More readable for complex types (especially function pointers)
+- Consistent with C++11/14/17 style guides
+- Template aliases possible with using (not with typedef)
+- Eliminates duplicate type definitions
+
+### Version 1.4.1.30 (2025-11-19) - PAIRTYPE Macro Removal
+
+**Non-Standard Macro Elimination (37 occurrences across 8 files):**
+- ✅ Replaced all PAIRTYPE(T1, T2) with standard std::pair<T1, T2>
+- ✅ Removed non-standard Boost workaround macro from util.h
+- ✅ More portable and standards-compliant code
+
+**Core Files (29 occurrences):**
+- db.cpp: Block index iteration (2 occurrences)
+- util.cpp: Map iteration (3 occurrences)
+- sync.cpp: Lock order tracking (2 occurrences)
+- script.cpp: Script signature checking (4 occurrences)
+- bitcoinrpc.cpp: RPC command map and blockchain iteration (10 occurrences)
+- wallet.cpp: Transaction ordering and wallet transactions (6 occurrences)
+- main.cpp: Orphan transaction management (2 occurrences)
+
+**Qt GUI Files (8 occurrences):**
+- qt/addresstablemodel.cpp: Address book management (8 occurrences)
+
+**Files Modified:**
+- src/db.cpp: Database operations (2 conversions)
+- src/util.cpp: Utility functions (3 conversions)
+- src/sync.cpp: Lock debugging (2 conversions)
+- src/script.cpp: Script validation (4 conversions)
+- src/bitcoinrpc.cpp: RPC handlers (10 conversions)
+- src/wallet.cpp: Wallet operations (6 conversions)
+- src/main.cpp: Blockchain core (2 conversions)
+- src/qt/addresstablemodel.cpp: Address table model (8 conversions)
+- src/util.h: Removed PAIRTYPE macro definition
+- src/version.h: Version updated to 1.4.1.30
+- corgicoin-qt.pro: Version updated to 1.4.1.30
+
+**Benefits:**
+- Standard C++ code (no non-standard Boost workarounds)
+- Better IDE support and code navigation
+- More portable across compilers
+- Easier for new developers to understand (no custom macros)
+- Consistent with modern C++ practices
+
+**Pattern:**
+```cpp
+// Before: Non-standard Boost workaround
+for (const PAIRTYPE(uint256, CBlockIndex*)& item : mapBlockIndex)
+
+// After: Standard C++11
+for (const std::pair<uint256, CBlockIndex*>& item : mapBlockIndex)
+```
+
+**Historical Context:** PAIRTYPE was a pre-C++11 Boost macro workaround for std::pair that is no longer needed with modern compilers.
 
 ### Version 1.4.1.18 (2025-11-18) - nullptr Conversions in Qt GUI Code (Part 2 - Complete)
 

@@ -1,9 +1,5 @@
 #include <boost/assert.hpp>
-#include <boost/assign/list_of.hpp>
-#include <boost/assign/list_inserter.hpp>
-#include <boost/assign/std/vector.hpp>
 #include <boost/test/unit_test.hpp>
-#include <boost/foreach.hpp>
 #include <boost/tuple/tuple.hpp>
 
 #include <openssl/ec.h>

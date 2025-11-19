@@ -39,7 +39,7 @@ void RPCTypeCheck(const json_spirit::Array& params,
 void RPCTypeCheck(const json_spirit::Object& o,
                   const std::map<std::string, json_spirit::Value_type>& typesExpected);
 
-typedef json_spirit::Value(*rpcfn_type)(const json_spirit::Array& params, bool fHelp);
+using rpcfn_type = json_spirit::Value(*)(const json_spirit::Array& params, bool fHelp);
 
 class CRPCCommand
 {

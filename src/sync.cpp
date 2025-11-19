@@ -61,14 +61,14 @@ static void potential_deadlock_detected(const std::pair<void*, void*>& mismatch,
 {
     printf("POTENTIAL DEADLOCK DETECTED\n");
     printf("Previous lock order was:\n");
-    for (const PAIRTYPE(void*, CLockLocation)& i : s2)
+    for (const std::pair<void*, CLockLocation>& i : s2)
     {
         if (i.first == mismatch.first) printf(" (1)");
         if (i.first == mismatch.second) printf(" (2)");
         printf(" %s\n", i.second.ToString().c_str());
     }
     printf("Current lock order is:\n");
-    for (const PAIRTYPE(void*, CLockLocation)& i : s1)
+    for (const std::pair<void*, CLockLocation>& i : s1)
     {
         if (i.first == mismatch.first) printf(" (1)");
         if (i.first == mismatch.second) printf(" (2)");
@@ -87,15 +87,15 @@ static void push_lock(void* c, const CLockLocation& locklocation, bool fTry)
     (*lockstack).emplace_back(c, locklocation);
 
     if (!fTry) {
-        for (const PAIRTYPE(void*, CLockLocation)& i : (*lockstack)) {
+        for (const std::pair<void*, CLockLocation>& i : (*lockstack)) {
             if (i.first == c) break;
 
-            std::pair<void*, void*> p1 = {i.first, c};
+            auto p1 = std::make_pair(i.first, c);
             if (lockorders.count(p1))
                 continue;
             lockorders[p1] = (*lockstack);
 
-            std::pair<void*, void*> p2 = {c, i.first};
+            auto p2 = std::make_pair(c, i.first);
             if (lockorders.count(p2))
             {
                 potential_deadlock_detected(p1, lockorders[p2], lockorders[p1]);

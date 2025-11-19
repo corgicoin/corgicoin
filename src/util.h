@@ -33,8 +33,7 @@ typedef int pid_t; /* define for windows compatiblity */
 
 #include "netbase.h" // for AddTimeData
 
-typedef long long  int64;
-typedef unsigned long long  uint64;
+// Note: int64 and uint64 are defined in uint256.h (included above)
 
 static const int64 COIN = 100000000;
 static const int64 CENT = 1000000;
@@ -58,9 +57,6 @@ static const int64 CENT = 1000000;
 #define PRI64x  "llx"
 #endif
 #endif
-
-// This is needed because the foreach macro can't get over the comma in pair<t1, t2>
-#define PAIRTYPE(t1, t2)    std::pair<t1, t2>
 
 // Align by increasing pointer, must have extra space at end of buffer
 template <size_t nBytes, typename T>

@@ -1,9 +1,5 @@
 #include <boost/assert.hpp>
-#include <boost/assign/list_of.hpp>
-#include <boost/assign/list_inserter.hpp>
-#include <boost/assign/std/vector.hpp>
 #include <boost/test/unit_test.hpp>
-#include <boost/foreach.hpp>
 
 #include "../main.h"
 #include "../script.h"
@@ -243,7 +239,7 @@ BOOST_AUTO_TEST_CASE(switchover)
 
 BOOST_AUTO_TEST_CASE(AreInputsStandard)
 {
-    std::map<uint256, std::pair<CTxIndex, CTransaction> > mapInputs;
+    std::map<uint256, std::pair<CTxIndex, CTransaction>> mapInputs;
     CBasicKeyStore keystore;
     CKey key[3];
     vector<CKey> keys;

@@ -59,7 +59,7 @@ public:
         cachedAddressTable.clear();
         {
             LOCK(wallet->cs_wallet);
-            for (const PAIRTYPE(CTxDestination, std::string)& item : wallet->mapAddressBook)
+            for (const std::pair<CTxDestination, std::string>& item : wallet->mapAddressBook)
             {
                 const CBitcoinAddress& address = item.first;
                 const std::string& strName = item.second;

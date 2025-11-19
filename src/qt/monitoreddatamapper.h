@@ -16,8 +16,8 @@ class MonitoredDataMapper : public QDataWidgetMapper
 public:
     explicit MonitoredDataMapper(QObject *parent=0);
 
-    void addMapping(QWidget *widget, int section);
-    void addMapping(QWidget *widget, int section, const QByteArray &propertyName);
+    void addMapping(QWidget *widget, int section) override;
+    void addMapping(QWidget *widget, int section, const QByteArray &propertyName) override;
 private:
     void addChangeMonitor(QWidget *widget);
 
