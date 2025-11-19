@@ -1690,7 +1690,7 @@ bool BindListenPort(const CService &addrBind, string& strError)
 
 #ifdef WIN32
     // Set to nonblocking, incoming connections will also inherit this
-    if (ioctlsocket(hListenSocket, FIONBIO, (u_long*)&nOne) == SOCKET_ERROR)
+    if (ioctlsocket(hListenSocket, FIONBIO, reinterpret_cast<u_long*>(&nOne)) == SOCKET_ERROR)
 #else
     if (fcntl(hListenSocket, F_SETFL, O_NONBLOCK) == SOCKET_ERROR)
 #endif

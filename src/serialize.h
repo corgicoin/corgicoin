@@ -109,8 +109,8 @@ enum
 //
 // Basic types
 //
-#define WRITEDATA(s, obj)   s.write((char*)&(obj), sizeof(obj))
-#define READDATA(s, obj)    s.read((char*)&(obj), sizeof(obj))
+#define WRITEDATA(s, obj)   s.write(reinterpret_cast<char*>(&(obj)), sizeof(obj))
+#define READDATA(s, obj)    s.read(reinterpret_cast<char*>(&(obj)), sizeof(obj))
 
 inline unsigned int GetSerializeSize(char a,           int, int=0) { return sizeof(a); }
 inline unsigned int GetSerializeSize(signed char a,    int, int=0) { return sizeof(a); }
@@ -245,7 +245,7 @@ uint64 ReadCompactSize(Stream& is)
 
 
 
-#define FLATDATA(obj)   REF(CFlatData((char*)&(obj), (char*)&(obj) + sizeof(obj)))
+#define FLATDATA(obj)   REF(CFlatData(reinterpret_cast<char*>(&(obj)), reinterpret_cast<char*>(&(obj)) + sizeof(obj)))
 
 /** Wrapper for serializing arrays and POD.
  * There's a clever template way to make arrays serialize normally, but MSVC6 doesn't support it.

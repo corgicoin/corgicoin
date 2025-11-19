@@ -732,7 +732,7 @@ bool CAddrDB::Write(const CAddrMan& addr)
 {
     // Generate random temporary filename
     unsigned short randv = 0;
-    RAND_bytes((unsigned char *)&randv, sizeof(randv));
+    RAND_bytes(reinterpret_cast<unsigned char*>(&randv), sizeof(randv));
     std::string tmpfn = strprintf("peers.dat.%04x", randv);
 
     // serialize addresses, checksum data up to that point, then append csum
@@ -783,7 +783,7 @@ bool CAddrDB::Read(CAddrMan& addr)
 
     // read data and checksum from file
     try {
-        filein.read((char *)&vchData[0], dataSize);
+        filein.read(reinterpret_cast<char*>(&vchData[0]), dataSize);
         filein >> hashIn;
     }
     catch (std::exception &e) {

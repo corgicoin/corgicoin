@@ -100,14 +100,14 @@ bool static LookupIntern(const char *pszName, std::vector<CNetAddr>& vIP, unsign
         if (aiTrav->ai_family == AF_INET)
         {
             assert(aiTrav->ai_addrlen >= sizeof(sockaddr_in));
-            vIP.emplace_back(((struct sockaddr_in*)(aiTrav->ai_addr))->sin_addr);
+            vIP.emplace_back(reinterpret_cast<struct sockaddr_in*>(aiTrav->ai_addr)->sin_addr);
         }
 
 #ifdef USE_IPV6
         if (aiTrav->ai_family == AF_INET6)
         {
             assert(aiTrav->ai_addrlen >= sizeof(sockaddr_in6));
-            vIP.emplace_back(((struct sockaddr_in6*)(aiTrav->ai_addr))->sin6_addr);
+            vIP.emplace_back(reinterpret_cast<struct sockaddr_in6*>(aiTrav->ai_addr)->sin6_addr);
         }
 #endif
 
@@ -184,7 +184,7 @@ bool static Socks4(const CService &addrDest, SOCKET& hSocket)
     char pszSocks4IP[] = "\4\1\0\0\0\0\0\0user";
     struct sockaddr_in addr;
     socklen_t len = sizeof(addr);
-    if (!addrDest.GetSockAddr((struct sockaddr*)&addr, &len) || addr.sin_family != AF_INET)
+    if (!addrDest.GetSockAddr(reinterpret_cast<struct sockaddr*>(&addr), &len) || addr.sin_family != AF_INET)
     {
         closesocket(hSocket);
         return error("Cannot get proxy destination address");
@@ -330,12 +330,12 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
     struct sockaddr sockaddr;
 #endif
     socklen_t len = sizeof(sockaddr);
-    if (!addrConnect.GetSockAddr((struct sockaddr*)&sockaddr, &len)) {
+    if (!addrConnect.GetSockAddr(reinterpret_cast<struct sockaddr*>(&sockaddr), &len)) {
         printf("Cannot connect to %s: unsupported network\n", addrConnect.ToString().c_str());
         return false;
     }
 
-    SOCKET hSocket = socket(((struct sockaddr*)&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    SOCKET hSocket = socket(reinterpret_cast<struct sockaddr*>(&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
     if (hSocket == INVALID_SOCKET)
         return false;
 #ifdef SO_NOSIGPIPE
@@ -355,7 +355,7 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
         return false;
     }
 
-    if (connect(hSocket, (struct sockaddr*)&sockaddr, len) == SOCKET_ERROR)
+    if (connect(hSocket, reinterpret_cast<struct sockaddr*>(&sockaddr), len) == SOCKET_ERROR)
     {
         // WSAEINVAL is here because some legacy version of winsock uses it
         if (WSAGetLastError() == WSAEINPROGRESS || WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINVAL)
@@ -774,9 +774,9 @@ std::string CNetAddr::ToStringIP() const
     struct sockaddr sockaddr;
 #endif
     socklen_t socklen = sizeof(sockaddr);
-    if (serv.GetSockAddr((struct sockaddr*)&sockaddr, &socklen)) {
+    if (serv.GetSockAddr(reinterpret_cast<struct sockaddr*>(&sockaddr), &socklen)) {
         char name[1025] = "";
-        if (!getnameinfo((const struct sockaddr*)&sockaddr, socklen, name, sizeof(name), nullptr, 0, NI_NUMERICHOST))
+        if (!getnameinfo(reinterpret_cast<const struct sockaddr*>(&sockaddr), socklen, name, sizeof(name), nullptr, 0, NI_NUMERICHOST))
             return std::string(name);
     }
     if (IsIPv4())
@@ -1101,7 +1101,7 @@ bool CService::GetSockAddr(struct sockaddr* paddr, socklen_t *addrlen) const
         if (*addrlen < (socklen_t)sizeof(struct sockaddr_in))
             return false;
         *addrlen = sizeof(struct sockaddr_in);
-        struct sockaddr_in *paddrin = (struct sockaddr_in*)paddr;
+        struct sockaddr_in *paddrin = reinterpret_cast<struct sockaddr_in*>(paddr);
         memset(paddrin, 0, *addrlen);
         if (!GetInAddr(&paddrin->sin_addr))
             return false;
@@ -1114,7 +1114,7 @@ bool CService::GetSockAddr(struct sockaddr* paddr, socklen_t *addrlen) const
         if (*addrlen < (socklen_t)sizeof(struct sockaddr_in6))
             return false;
         *addrlen = sizeof(struct sockaddr_in6);
-        struct sockaddr_in6 *paddrin6 = (struct sockaddr_in6*)paddr;
+        struct sockaddr_in6 *paddrin6 = reinterpret_cast<struct sockaddr_in6*>(paddr);
         memset(paddrin6, 0, *addrlen);
         if (!GetIn6Addr(&paddrin6->sin6_addr))
             return false;

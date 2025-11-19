@@ -46,7 +46,7 @@ public:
     {
         if (!lock.owns_lock())
         {
-            EnterCritical(pszName, pszFile, nLine, (void*)(lock.mutex()));
+            EnterCritical(pszName, pszFile, nLine, static_cast<void*>(lock.mutex()));
 #ifdef DEBUG_LOCKCONTENTION
             if (!lock.try_lock())
             {
@@ -72,7 +72,7 @@ public:
     {
         if (!lock.owns_lock())
         {
-            EnterCritical(pszName, pszFile, nLine, (void*)(lock.mutex()), true);
+            EnterCritical(pszName, pszFile, nLine, static_cast<void*>(lock.mutex()), true);
             lock.try_lock();
             if (!lock.owns_lock())
                 LeaveCritical();
@@ -114,7 +114,7 @@ using CCriticalBlock = CMutexLock<CCriticalSection>;
 
 #define ENTER_CRITICAL_SECTION(cs) \
     { \
-        EnterCritical(#cs, __FILE__, __LINE__, (void*)(&cs)); \
+        EnterCritical(#cs, __FILE__, __LINE__, static_cast<void*>(&cs)); \
         (cs).lock(); \
     }
 

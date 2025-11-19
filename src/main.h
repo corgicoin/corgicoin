@@ -715,7 +715,7 @@ public:
 
     IMPLEMENT_SERIALIZE
     (
-        nSerSize += SerReadWrite(s, *(CTransaction*)this, nType, nVersion, ser_action);
+        nSerSize += SerReadWrite(s, *static_cast<CTransaction*>(this), nType, nVersion, ser_action);
         nVersion = this->nVersion;
         READWRITE(hashBlock);
         READWRITE(vMerkleBranch);
@@ -1578,7 +1578,7 @@ public:
 
         // Now unserialize the data
         CDataStream sMsg(vchMsg, SER_NETWORK, PROTOCOL_VERSION);
-        sMsg >> *(CUnsignedAlert*)this;
+        sMsg >> *static_cast<CUnsignedAlert*>(this);
         return true;
     }
 

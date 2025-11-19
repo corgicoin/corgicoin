@@ -204,7 +204,7 @@ protected:
 
     void SetData(int nVersionIn, const unsigned char *pbegin, const unsigned char *pend)
     {
-        SetData(nVersionIn, (void*)pbegin, pend - pbegin);
+        SetData(nVersionIn, static_cast<const void*>(pbegin), pend - pbegin);
     }
 
 public:
