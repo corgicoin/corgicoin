@@ -142,7 +142,13 @@ bool parseBitcoinURI(QString uri, SendCoinsRecipient *out)
 
 QString HtmlEscape(const QString& str, bool fMultiLine)
 {
+#if QT_VERSION >= 0x050000
+    // Qt 5+: Use QString::toHtmlEscaped()
+    QString escaped = str.toHtmlEscaped();
+#else
+    // Qt 4: Use Qt::escape()
     QString escaped = Qt::escape(str);
+#endif
     if(fMultiLine)
     {
         escaped = escaped.replace("\n", "<br>\n");

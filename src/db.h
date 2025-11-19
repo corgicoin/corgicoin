@@ -10,6 +10,7 @@
 #define BITCOIN_DB_H
 
 #include "main.h"
+#include "compat_bdb.h"
 
 #include <map>
 #include <string>
