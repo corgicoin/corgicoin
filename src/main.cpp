@@ -1483,9 +1483,9 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     }
 
     // Write queued txindex changes
-    for (auto mi = mapQueuedChanges.begin(); mi != mapQueuedChanges.end(); ++mi)
+    for (const auto& mi : mapQueuedChanges)
     {
-        if (!txdb.UpdateTxIndex((*mi).first, (*mi).second))
+        if (!txdb.UpdateTxIndex(mi.first, mi.second))
             return error("ConnectBlock() : UpdateTxIndex failed");
     }
 

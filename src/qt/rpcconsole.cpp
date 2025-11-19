@@ -65,12 +65,13 @@ void RPCExecutor::request(const QString &command)
         boost::tokenizer<boost::escaped_list_separator<char> > tok(strCommand, els);
 
         int n = 0;
-        for(auto beg=tok.begin(); beg!=tok.end();++beg,++n)
+        for(const auto& item : tok)
         {
             if(n == 0) // First parameter is the command
-                strMethod = *beg;
+                strMethod = item;
             else
-                strParams.push_back(*beg);
+                strParams.push_back(item);
+            ++n;
         }
     }
     catch(boost::escaped_list_error &e)

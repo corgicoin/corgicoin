@@ -207,9 +207,9 @@ void CAddrMan::MakeTried(CAddrInfo& info, int nId, int nOrigin)
     assert(vvNew[nOrigin].count(nId) == 1);
 
     // remove the entry from all new buckets
-    for (auto it = vvNew.begin(); it != vvNew.end(); it++)
+    for (auto& bucket : vvNew)
     {
-        if ((*it).erase(nId))
+        if (bucket.erase(nId))
             info.nRefCount--;
     }
     nNew--;
@@ -440,10 +440,10 @@ int CAddrMan::Check_()
 
     if (vRandom.size() != nTried + nNew) return -7;
 
-    for (auto it = mapInfo.begin(); it != mapInfo.end(); it++)
+    for (auto& item : mapInfo)
     {
-        int n = (*it).first;
-        CAddrInfo &info = (*it).second;
+        int n = item.first;
+        CAddrInfo &info = item.second;
         if (info.fInTried)
         {
 
@@ -467,21 +467,21 @@ int CAddrMan::Check_()
     for (int n=0; n<vvTried.size(); n++)
     {
         std::vector<int> &vTried = vvTried[n];
-        for (auto it = vTried.begin(); it != vTried.end(); it++)
+        for (int id : vTried)
         {
-            if (!setTried.count(*it)) return -11;
-            setTried.erase(*it);
+            if (!setTried.count(id)) return -11;
+            setTried.erase(id);
         }
     }
 
     for (int n=0; n<vvNew.size(); n++)
     {
         std::set<int> &vNew = vvNew[n];
-        for (auto it = vNew.begin(); it != vNew.end(); it++)
+        for (int id : vNew)
         {
-            if (!mapNew.count(*it)) return -12;
-            if (--mapNew[*it] == 0)
-                mapNew.erase(*it);
+            if (!mapNew.count(id)) return -12;
+            if (--mapNew[id] == 0)
+                mapNew.erase(id);
         }
     }
 

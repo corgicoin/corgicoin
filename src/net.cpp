@@ -108,13 +108,13 @@ bool GetLocal(CService& addr, const CNetAddr *paddrPeer)
     int nBestReachability = -1;
     {
         LOCK(cs_mapLocalHost);
-        for (auto it = mapLocalHost.begin(); it != mapLocalHost.end(); it++)
+        for (const auto& item : mapLocalHost)
         {
-            int nScore = (*it).second.nScore;
-            int nReachability = (*it).first.GetReachabilityFrom(paddrPeer);
+            int nScore = item.second.nScore;
+            int nReachability = item.first.GetReachabilityFrom(paddrPeer);
             if (nReachability > nBestReachability || (nReachability == nBestReachability && nScore > nBestScore))
             {
-                addr = CService((*it).first, (*it).second.nPort);
+                addr = CService(item.first, item.second.nPort);
                 nBestReachability = nReachability;
                 nBestScore = nScore;
             }

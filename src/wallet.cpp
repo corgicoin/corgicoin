@@ -860,9 +860,9 @@ int64 CWallet::GetBalance() const
     int64 nTotal = 0;
     {
         LOCK(cs_wallet);
-        for (auto it = mapWallet.begin(); it != mapWallet.end(); ++it)
+        for (const auto& item : mapWallet)
         {
-            const CWalletTx* pcoin = &(*it).second;
+            const CWalletTx* pcoin = &item.second;
             if (pcoin->IsFinal() && pcoin->IsConfirmed())
                 nTotal += pcoin->GetAvailableCredit();
         }
@@ -876,9 +876,9 @@ int64 CWallet::GetUnconfirmedBalance() const
     int64 nTotal = 0;
     {
         LOCK(cs_wallet);
-        for (auto it = mapWallet.begin(); it != mapWallet.end(); ++it)
+        for (const auto& item : mapWallet)
         {
-            const CWalletTx* pcoin = &(*it).second;
+            const CWalletTx* pcoin = &item.second;
             if (!pcoin->IsFinal() || !pcoin->IsConfirmed())
                 nTotal += pcoin->GetAvailableCredit();
         }
@@ -891,9 +891,9 @@ int64 CWallet::GetImmatureBalance() const
     int64 nTotal = 0;
     {
         LOCK(cs_wallet);
-        for (auto it = mapWallet.begin(); it != mapWallet.end(); ++it)
+        for (const auto& item : mapWallet)
         {
-            const CWalletTx& pcoin = (*it).second;
+            const CWalletTx& pcoin = item.second;
             if (pcoin.IsCoinBase() && pcoin.GetBlocksToMaturity() > 0 && pcoin.GetDepthInMainChain() >= 2)
                 nTotal += GetCredit(pcoin);
         }
@@ -908,9 +908,9 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
 
     {
         LOCK(cs_wallet);
-        for (auto it = mapWallet.begin(); it != mapWallet.end(); ++it)
+        for (const auto& item : mapWallet)
         {
-            const CWalletTx* pcoin = &(*it).second;
+            const CWalletTx* pcoin = &item.second;
 
             if (!pcoin->IsFinal())
                 continue;
