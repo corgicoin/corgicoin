@@ -460,6 +460,7 @@ bool AppInit2()
     // Print dependency versions and security warnings
     PrintBoostVersion();
     PrintOpenSSLVersion();
+    PrintBerkeleyDBVersion();
 
 #ifdef OPENSSL_1_0_LEGACY
     printf("\n");
