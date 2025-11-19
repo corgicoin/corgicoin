@@ -17,6 +17,9 @@ http://corgicoin.com/
 - ✅ **Berkeley DB modernized** (v1.4.1.56): Compatible with BDB 4.8-6.2+
   - Wallet file compatibility maintained across versions
   - Safe upgrade path to modern BDB releases
+- ✅ **Qt 5 compatible** (v1.4.1.57): Dual Qt 4/5 support, ready for Qt 6
+  - Build with either Qt 4.8+ or Qt 5.6+/Qt 5.15 LTS
+  - Backward compatible API updates with conditional compilation
 - ✅ IRC peer discovery removed (v1.4.1.33)
 
 **Before using this code:**
@@ -96,14 +99,14 @@ addnode=162.243.123.79
 - Boost 1.55.0+ (outdated, upgrade to 1.70+ recommended)
 - OpenSSL 1.0.1f+ (CRITICAL: upgrade to OpenSSL 3.x required)
 - Berkeley DB 5.3+ (5.3.28+ recommended)
-- Qt 4.8+ (Qt 5.15 LTS or Qt 6.x recommended)
+- Qt 4.8+ or Qt 5.6+ (Qt 5.15 LTS recommended)
 - C++11 compatible compiler (GCC 4.8+, Clang 3.3+, or MSVC 2015+)
 
 **Recommended Modern Versions:**
 - Boost 1.70 or newer
 - OpenSSL 3.0 or newer
 - Berkeley DB 5.3.28 or 6.x
-- Qt 5.15 LTS
+- Qt 5.15 LTS (Qt 4.8+ still supported)
 - GCC 9+ or Clang 10+
 
 ### Build Instructions
@@ -175,13 +178,10 @@ This codebase has been substantially modernized with C++11/14 features:
 - 70% Boost dependency reduction through C++11/14 modernization
 - Backward compatible with older versions (upgrade strongly recommended)
 
-**⚠️ Still Recommended:**
-- Qt 5 migration (Qt 4 is EOL - GUI framework only)
-
 **Modernization Stats:**
-- 15 major modernization releases (v1.4.1.42-56)
-- ~640+ individual modernizations
-- **All critical dependencies modernized** - OpenSSL, Boost, Berkeley DB ✅
+- 16 major modernization releases (v1.4.1.42-57)
+- ~645+ individual modernizations
+- **All critical dependencies modernized** - OpenSSL, Boost, Berkeley DB, Qt ✅
 - 70% Boost dependency reduction achieved
 - C++17-ready (deprecated features removed)
 - Memory leak fixes and performance optimizations
