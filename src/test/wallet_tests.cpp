@@ -1,5 +1,6 @@
 #include <boost/test/unit_test.hpp>
 
+#include <memory>
 #include "main.h"
 #include "wallet.h"
 
@@ -22,12 +23,11 @@ static vector<COutput> vCoins;
 static void add_coin(int64 nValue, int nAge = 6*24, bool fIsFromMe = false, int nInput=0)
 {
     static int i;
-    CTransaction* tx = new CTransaction;
+    auto tx = std::make_unique<CTransaction>();
     tx->nLockTime = i++;        // so all transactions get different hashes
     tx->vout.resize(nInput+1);
     tx->vout[nInput].nValue = nValue;
     CWalletTx* wtx = new CWalletTx(&wallet, *tx);
-    delete tx;
     if (fIsFromMe)
     {
         // IsFromMe() returns (GetDebit() > 0), and GetDebit() is 0 if vin.empty(),
