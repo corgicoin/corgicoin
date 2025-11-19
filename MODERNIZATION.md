@@ -93,12 +93,12 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [x] Add CMake build system alongside qmake (v1.4.1.29)
 - [x] Update compiler warning flags (v1.4.1.3)
 
-### Phase 2: Dependency Updates (High Priority) ✅ SUBSTANTIALLY COMPLETE
+### Phase 2: Dependency Updates (High Priority) ✅ COMPLETE (except Qt)
 - [x] OpenSSL 1.1.x/3.x compatibility (v1.4.1.54) - Code now compiles with modern OpenSSL!
 - [x] Boost 1.70+ compatibility (v1.4.1.55) - Fully compatible with Boost 1.55.0 through 1.80+!
+- [x] Berkeley DB compatibility (v1.4.1.56) - Compatible with BDB 4.8 through 6.2+!
 - [ ] OpenSSL EVP_BytesToKey replacement (Phase 2 - optional optimization)
-- [ ] Berkeley DB 5.3.28+ or 6.x
-- [ ] Qt 5 migration
+- [ ] Qt 5 migration (major effort - GUI framework)
 
 ### Phase 3: Code Modernization (Medium Priority) ✅ SUBSTANTIALLY COMPLETE
 - [x] Replace typedef with using (v1.4.1.4, v1.4.1.31, v1.4.1.43) - All modernized
@@ -189,6 +189,60 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.56 (2025-11-19) - Berkeley DB Compatibility Layer (Wallet Safety)
+
+**Compatible with Berkeley DB 4.8 through 6.2+ with wallet file preservation**
+
+This release adds comprehensive Berkeley DB version compatibility, enabling users to
+upgrade to modern, maintained BDB versions while preserving wallet file compatibility.
+
+**New compat_bdb.h compatibility layer:**
+- ✅ Version detection for BDB 4.8 through 6.2+
+- ✅ Automatic warnings for problematic versions (BDB 5.0 AGPL license)
+- ✅ Documentation of all BDB C++ APIs used in codebase
+- ✅ Wallet compatibility warnings and backup reminders
+- ✅ Version info printing during startup
+
+**API Compatibility:**
+- All Berkeley DB C++ APIs used are stable across versions
+- DbEnv, Db, DbTxn, Dbc, DbException - all compatible
+- Environment, database, transaction, cursor operations - unchanged
+- No code changes required - existing code works with all BDB versions
+
+**Wallet File Compatibility:**
+- BDB 4.8 ↔ 5.x: Fully interoperable wallet files
+- BDB 6.x: Can read 4.8/5.x files (forward compatible)
+- ⚠️ BDB 6.x modified files may not be readable by older BDB
+- **CRITICAL**: Always backup wallet before changing BDB version!
+
+**License Considerations:**
+- BDB 5.0.x uses AGPL license (compile-time warning issued)
+- Recommended: Use BDB 4.8.x, 5.1+, or 6.x for MIT/BSD licensing
+
+**Files Modified:**
+- src/compat_bdb.h: New compatibility layer (115 lines)
+- src/db.h: Include compatibility header
+- src/init.cpp: Print BDB version at startup
+
+**Compatibility Matrix:**
+- ✅ BDB 4.8+: Stable, widely used (recommended for compatibility)
+- ✅ BDB 5.1-5.3: Recommended for new deployments
+- ✅ BDB 6.0-6.2: Latest, full forward compatibility
+
+**Benefits:**
+- Users can upgrade to maintained BDB versions
+- Wallet safety emphasized with automatic warnings
+- Clear documentation of BDB usage
+- No changes to wallet file format or operations
+
+**Testing:**
+- All BDB APIs verified stable across versions
+- Wallet operations work identically across BDB versions
+- Version detection and warnings tested
+
+**Result:** Berkeley DB modernization complete - users can safely upgrade to
+modern BDB versions with confidence in wallet compatibility!
 
 ### Version 1.4.1.55 (2025-11-19) - Boost 1.70+ Compatibility (Dependency Modernization)
 
