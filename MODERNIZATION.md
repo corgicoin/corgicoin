@@ -99,16 +99,29 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [ ] Berkeley DB 5.3.28+ or 6.x
 - [ ] Investigate Qt 5 migration
 
-### Phase 3: Code Modernization (Medium Priority) ✅ PARTIALLY COMPLETE
-- [x] Replace typedef with using (v1.4.1.4) - All core headers modernized
-- [x] Use nullptr instead of NULL (v1.4.1.4) - Critical headers updated
+### Phase 3: Code Modernization (Medium Priority) ✅ SUBSTANTIALLY COMPLETE
+- [x] Replace typedef with using (v1.4.1.4, v1.4.1.31, v1.4.1.43) - All modernized
+- [x] Use nullptr instead of NULL (v1.4.1.4-18) - Complete: 202 conversions
 - [x] Enable C++11/14 features (v1.4.1.3) - Compiler flags set
-- [ ] Replace raw pointers with smart pointers (requires more extensive testing)
+- [x] Replace raw pointers with smart pointers (v1.4.1.46, v1.4.1.50) - Core allocations modernized
 - [x] Add override/final keywords to virtual functions (v1.4.1.5) - Keystore and wallet classes
-- [x] Use auto for complex iterator types (v1.4.1.5) - Iterator loops simplified
+- [x] Use auto for complex iterator types (v1.4.1.5-6) - Iterator loops simplified
+- [x] Replace C-style casts with C++ casts (v1.4.1.44) - ~80 instances modernized
+- [x] Migrate Boost to C++11 standard library (v1.4.1.45-49) - Major reduction in Boost dependency
+  - [x] boost::shared_ptr → std::shared_ptr (v1.4.1.45)
+  - [x] auto_ptr → unique_ptr (v1.4.1.46 - CRITICAL for C++17)
+  - [x] boost::array → std::array (v1.4.1.47)
+  - [x] Boost threading → std::thread/mutex (v1.4.1.48)
+  - [x] boost::bind → C++11 lambdas (v1.4.1.49)
+- [x] Qt signal/slot modernization (v1.4.1.42) - ~130 instances to function pointer syntax
+- [x] PAIRTYPE macro elimination (v1.4.1.30) - 37 instances to std::pair
+- [x] emplace_back optimizations (v1.4.1.32) - 46 conversions for in-place construction
+- [x] = default for special members (v1.4.1.34) - 5 conversions with noexcept
+- [x] IRC peer discovery removal (v1.4.1.33) - 421 lines of deprecated code removed
+- [ ] Additional constexpr for compile-time constants (low priority)
 
-### Phase 4: Protocol Updates (Low Priority)
-- [ ] Remove/disable IRC peer discovery
+### Phase 4: Protocol Updates (Low Priority) ✅ PARTIALLY COMPLETE
+- [x] Remove/disable IRC peer discovery (v1.4.1.33) - Completely removed
 - [ ] Update to modern Bitcoin P2P protocol features
 - [ ] Add IPv6 support improvements
 - [ ] Implement modern node discovery mechanisms
@@ -174,6 +187,168 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.50 (2025-11-19) - Smart Pointer Migration for RAII
+
+**Modern Memory Management (39 deletions, 17 insertions across 2 files):**
+- ✅ Converted OpenSSL mutex array: `CCriticalSection**` → `std::vector<std::unique_ptr<CCriticalSection>>`
+- ✅ Converted orphan maps: `CDataStream*` → `std::shared_ptr<CDataStream>`
+- ✅ Converted orphan maps: `CBlock*` → `std::shared_ptr<CBlock>`
+- ✅ Removed 5 manual delete statements
+- ✅ Updated GetOrphanRoot signature to accept shared_ptr
+
+**Files Modified:**
+- src/util.cpp: OpenSSL mutex management with unique_ptr
+- src/main.cpp: Orphan transaction/block maps with shared_ptr
+
+**Benefits:**
+- RAII: Automatic resource cleanup and leak prevention
+- Memory safety: Prevents double-free bugs
+- Exception safety: Proper cleanup even with exceptions
+- Shared ownership: Safe multi-map references
+- Modern C++ idioms for resource management
+
+### Version 1.4.1.49 (2025-11-19) - Lambda Expression Migration
+
+**C++11 Lambda Conversions (13 instances across 3 files):**
+- ✅ Replaced all `boost::bind` with modern lambda expressions
+- ✅ Converted `_1`, `_2` placeholders to named lambda parameters
+- ✅ Eliminated `boost::ref` with lambda reference captures
+
+**Files Modified:**
+- src/qt/clientmodel.cpp: Signal connections (6 conversions)
+- src/qt/walletmodel.cpp: Signal connections (6 conversions)
+- src/bitcoinrpc.cpp: Async callback (1 conversion)
+
+**Benefits:**
+- Reduces Boost dependency
+- More explicit and readable code with named parameters
+- Type-safe captures with C++11 lambda syntax
+- Better compiler optimization opportunities
+- Cleaner async callback code
+
+### Version 1.4.1.48 (2025-11-19) - Boost Threading Elimination
+
+**C++11 Threading Migration (32 insertions, 31 deletions across 5 files):**
+- ✅ boost::recursive_mutex → std::recursive_mutex
+- ✅ boost::mutex → std::mutex
+- ✅ boost::unique_lock → std::unique_lock
+- ✅ boost::condition_variable → std::condition_variable
+- ✅ boost::thread → std::thread
+- ✅ boost::thread_specific_ptr → thread_local std::unique_ptr
+- ✅ boost::thread::sleep → std::this_thread::sleep_for
+
+**Files Modified:**
+- src/sync.h: Synchronization primitives (all Boost removed)
+- src/sync.cpp: Thread-local storage and deadlock detection
+- src/util.h: Sleep function and includes
+- src/util.cpp: Debug logging mutex
+- src/main.cpp: Thread creation and hardware_concurrency
+
+**Benefits:**
+- Significantly reduces Boost dependency
+- Uses C++11 standard library threading
+- Improves portability and maintainability
+- Same semantics and thread safety guarantees
+- Modern exception specifications (noexcept)
+
+### Version 1.4.1.47 (2025-11-19) - boost::array Migration
+
+**C++11 Container Migration (2 instances):**
+- ✅ Replaced `boost::array` with `std::array`
+- ✅ Updated includes: `<boost/array.hpp>` → `<array>`
+
+**Files Modified:**
+- src/net.h: Thread counter declaration
+- src/net.cpp: Thread counter definition
+
+**Benefits:**
+- Standard C++11 container (no Boost dependency)
+- Identical semantics and performance
+- Better IDE support and tooling
+
+### Version 1.4.1.46 (2025-11-19) - Critical auto_ptr Deprecation Fix
+
+**C++11 Smart Pointer Migration (2 instances):**
+- ✅ Replaced deprecated `auto_ptr` with `std::unique_ptr`
+- ✅ Added `#include <memory>` header
+
+**Files Modified:**
+- src/main.cpp: CreateNewBlock() and BitcoinMiner() block pointers
+
+**Benefits:**
+- **CRITICAL**: Fixes C++17 incompatibility (auto_ptr removed in C++17)
+- Modern C++11 unique ownership semantics
+- Prevents compilation errors with modern compilers
+
+### Version 1.4.1.45 (2025-11-19) - Boost Smart Pointer Migration
+
+**C++11 Smart Pointer Migration (5 instances):**
+- ✅ Replaced `boost::shared_ptr` with `std::shared_ptr`
+- ✅ Replaced `#include <boost/shared_ptr.hpp>` with `<memory>`
+- ✅ Used `std::make_shared` for efficient allocation
+
+**Files Modified:**
+- src/bitcoinrpc.cpp: RPC acceptor and handler signatures
+
+**Benefits:**
+- Reduces Boost dependency
+- C++11 standard shared ownership
+- Improved type safety
+- Efficient make_shared allocation
+
+### Version 1.4.1.44 (2025-11-19) - C-Style Cast Elimination
+
+**Modern C++ Cast Conversions (~80 instances across 17 files):**
+- ✅ C-style casts → `static_cast` (for related types)
+- ✅ C-style casts → `reinterpret_cast` (for unrelated pointers)
+- ✅ C-style casts → `const_cast` (for const qualification)
+
+**Key Files Modified:**
+- src/serialize.h: WRITEDATA, READDATA, FLATDATA macros
+- src/util.h: BEGIN, END, UBEGIN, UEND macros
+- src/netbase.cpp: sockaddr* conversions (10 instances)
+- src/bitcoinrpc.cpp: Pointer casts (9 instances)
+- src/main.cpp, src/wallet.cpp: Type hierarchy casts
+
+**Benefits:**
+- Type safety: Compile-time checking
+- Explicit intent: Clear what kind of cast is being performed
+- Searchable: Easy to find casts with grep
+- Modern C++ best practices
+
+### Version 1.4.1.43 (2025-11-19) - Template Type Alias Completion
+
+**C++11 using Declarations (33 instances across 3 files):**
+- ✅ Converted all remaining template typedef to modern using syntax
+
+**Files Modified:**
+- src/allocators.h: secure_allocator and zero_after_free_allocator (18 conversions)
+- src/serialize.h: CDataStream type aliases (10 conversions)
+- src/mruset.h: mruset type aliases (5 conversions)
+
+**Benefits:**
+- Consistent modern C++11 syntax throughout codebase
+- Better readability for template type aliases
+- Template alias support (not possible with typedef)
+
+### Version 1.4.1.42 (2025-11-19) - Qt Signal/Slot Modernization
+
+**C++11 Function Pointer Syntax (~130 instances across 17 Qt files):**
+- ✅ Replaced old SIGNAL()/SLOT() macros with modern function pointer syntax
+- ✅ Used QOverload<>::of() for overloaded signals
+- ✅ Compile-time checking of signal/slot connections
+
+**Key Files Modified:**
+- src/qt/bitcoingui.cpp: 54 conversions
+- src/qt/transactionview.cpp: 13 conversions
+- 15 additional Qt GUI files
+
+**Benefits:**
+- Compile-time type checking (old macros were runtime checked)
+- Better IDE support and refactoring
+- Modern Qt best practices (Qt 5+ style)
+- Catches typos and signature mismatches at compile time
 
 ### Version 1.4.1.29 (2025-11-18) - CMake Build System Implementation
 
@@ -1085,5 +1260,5 @@ This modernization guide is released under the same MIT license as CorgiCoin.
 
 ---
 
-Last Updated: 2025-11-18
-Status: Initial assessment and documentation phase
+Last Updated: 2025-11-19
+Status: Phase 1 Complete, Phase 3 Substantially Complete (major C++11/14 modernization)
