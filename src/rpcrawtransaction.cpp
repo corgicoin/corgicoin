@@ -34,77 +34,77 @@ ScriptPubKeyToJSON(const CScript& scriptPubKey, Object& out)
     vector<CTxDestination> addresses;
     int nRequired;
 
-    out.push_back(Pair("asm", scriptPubKey.ToString()));
-    out.push_back(Pair("hex", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
+    out.emplace_back("asm", scriptPubKey.ToString());
+    out.emplace_back("hex", HexStr(scriptPubKey.begin(), scriptPubKey.end()));
 
     if (!ExtractDestinations(scriptPubKey, type, addresses, nRequired))
     {
-        out.push_back(Pair("type", GetTxnOutputType(TX_NONSTANDARD)));
+        out.emplace_back("type", GetTxnOutputType(TX_NONSTANDARD));
         return;
     }
 
-    out.push_back(Pair("reqSigs", nRequired));
-    out.push_back(Pair("type", GetTxnOutputType(type)));
+    out.emplace_back("reqSigs", nRequired);
+    out.emplace_back("type", GetTxnOutputType(type));
 
     Array a;
     for (const CTxDestination& addr : addresses)
         a.push_back(CBitcoinAddress(addr).ToString());
-    out.push_back(Pair("addresses", a));
+    out.emplace_back("addresses", a);
 }
 
 void
 TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
 {
-    entry.push_back(Pair("txid", tx.GetHash().GetHex()));
-    entry.push_back(Pair("version", tx.nVersion));
-    entry.push_back(Pair("locktime", (boost::int64_t)tx.nLockTime));
+    entry.emplace_back("txid", tx.GetHash().GetHex());
+    entry.emplace_back("version", tx.nVersion);
+    entry.emplace_back("locktime", (boost::int64_t)tx.nLockTime);
     Array vin;
     for (const CTxIn& txin : tx.vin)
     {
         Object in;
         if (tx.IsCoinBase())
-            in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
+            in.emplace_back("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
         else
         {
-            in.push_back(Pair("txid", txin.prevout.hash.GetHex()));
-            in.push_back(Pair("vout", (boost::int64_t)txin.prevout.n));
+            in.emplace_back("txid", txin.prevout.hash.GetHex());
+            in.emplace_back("vout", (boost::int64_t)txin.prevout.n);
             Object o;
-            o.push_back(Pair("asm", txin.scriptSig.ToString()));
-            o.push_back(Pair("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
-            in.push_back(Pair("scriptSig", o));
+            o.emplace_back("asm", txin.scriptSig.ToString());
+            o.emplace_back("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
+            in.emplace_back("scriptSig", o);
         }
-        in.push_back(Pair("sequence", (boost::int64_t)txin.nSequence));
+        in.emplace_back("sequence", (boost::int64_t)txin.nSequence);
         vin.push_back(in);
     }
-    entry.push_back(Pair("vin", vin));
+    entry.emplace_back("vin", vin);
     Array vout;
     for (unsigned int i = 0; i < tx.vout.size(); i++)
     {
         const CTxOut& txout = tx.vout[i];
         Object out;
-        out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
-        out.push_back(Pair("n", (boost::int64_t)i));
+        out.emplace_back("value", ValueFromAmount(txout.nValue));
+        out.emplace_back("n", (boost::int64_t)i);
         Object o;
         ScriptPubKeyToJSON(txout.scriptPubKey, o);
-        out.push_back(Pair("scriptPubKey", o));
+        out.emplace_back("scriptPubKey", o);
         vout.push_back(out);
     }
-    entry.push_back(Pair("vout", vout));
+    entry.emplace_back("vout", vout);
 
     if (hashBlock != 0)
     {
-        entry.push_back(Pair("blockhash", hashBlock.GetHex()));
+        entry.emplace_back("blockhash", hashBlock.GetHex());
         auto mi = mapBlockIndex.find(hashBlock);
         if (mi != mapBlockIndex.end() && (*mi).second)
         {
             CBlockIndex* pindex = (*mi).second;
             if (pindex->IsInMainChain())
             {
-                entry.push_back(Pair("confirmations", 1 + nBestHeight - pindex->nHeight));
-                entry.push_back(Pair("time", (boost::int64_t)pindex->nTime));
+                entry.emplace_back("confirmations", 1 + nBestHeight - pindex->nHeight);
+                entry.emplace_back("time", (boost::int64_t)pindex->nTime);
             }
             else
-                entry.push_back(Pair("confirmations", 0));
+                entry.emplace_back("confirmations", 0);
         }
     }
 }
@@ -139,7 +139,7 @@ Value getrawtransaction(const Array& params, bool fHelp)
         return strHex;
 
     Object result;
-    result.push_back(Pair("hex", strHex));
+    result.emplace_back("hex", strHex);
     TxToJSON(tx, hashBlock, result);
     return result;
 }
@@ -175,11 +175,11 @@ Value listunspent(const Array& params, bool fHelp)
         int64 nValue = out.tx->vout[out.i].nValue;
         const CScript& pk = out.tx->vout[out.i].scriptPubKey;
         Object entry;
-        entry.push_back(Pair("txid", out.tx->GetHash().GetHex()));
-        entry.push_back(Pair("vout", out.i));
-        entry.push_back(Pair("scriptPubKey", HexStr(pk.begin(), pk.end())));
-        entry.push_back(Pair("amount",ValueFromAmount(nValue)));
-        entry.push_back(Pair("confirmations",out.nDepth));
+        entry.emplace_back("txid", out.tx->GetHash().GetHex());
+        entry.emplace_back("vout", out.i);
+        entry.emplace_back("scriptPubKey", HexStr(pk.begin(), pk.end()));
+        entry.emplace_back("amount",ValueFromAmount(nValue));
+        entry.emplace_back("confirmations",out.nDepth);
         results.push_back(entry);
     }
 
@@ -451,8 +451,8 @@ Value signrawtransaction(const Array& params, bool fHelp)
     Object result;
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
     ssTx << mergedTx;
-    result.push_back(Pair("hex", HexStr(ssTx.begin(), ssTx.end())));
-    result.push_back(Pair("complete", fComplete));
+    result.emplace_back("hex", HexStr(ssTx.begin(), ssTx.end()));
+    result.emplace_back("complete", fComplete);
 
     return result;
 }
