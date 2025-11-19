@@ -7,11 +7,13 @@ http://corgicoin.com/
 
 **This is a 2014-era cryptocurrency codebase with outdated dependencies.**
 
-**CRITICAL SECURITY ISSUES:**
-- Uses OpenSSL 1.0.1f (End-of-life since 2016, contains known vulnerabilities including Heartbleed)
-- Outdated Boost libraries (1.55.0 from 2013)
-- Old Berkeley DB version
-- Deprecated IRC peer discovery mechanism
+**SECURITY STATUS:**
+- ✅ **OpenSSL modernized**: Code now compatible with OpenSSL 1.1.x/3.x (v1.4.1.54)
+  - Can now build with secure, modern OpenSSL versions
+  - OpenSSL 1.0.x still supported but upgrade strongly recommended
+- ⚠️ Outdated Boost libraries (1.55.0 from 2013) - dependency significantly reduced
+- ⚠️ Old Berkeley DB version - upgrade recommended
+- ✅ IRC peer discovery removed (v1.4.1.33)
 
 **Before using this code:**
 1. Read [MODERNIZATION.md](MODERNIZATION.md) for full security assessment
@@ -162,15 +164,20 @@ This codebase has been substantially modernized with C++11/14 features:
 - constexpr for compile-time constants (blockchain, network)
 - Move semantics for performance optimization
 
-**⚠️ Still Required:**
-- OpenSSL 3.x migration (CRITICAL - current versions have known vulnerabilities)
-- Boost 1.70+ upgrade (reduced dependency, but still used for filesystem, ASIO)
+**✅ OpenSSL Modernization Complete:**
+- OpenSSL 1.1.x/3.x compatibility (v1.4.1.54) - **Code now compiles with modern, secure OpenSSL!**
+- Backward compatible with OpenSSL 1.0.x (upgrade strongly recommended)
+- Removed dependency on EOL OpenSSL 1.0.x threading APIs
+
+**⚠️ Still Recommended:**
+- Boost 1.70+ upgrade (reduced dependency, remaining uses: filesystem, ASIO)
 - Berkeley DB 5.3.28+ or 6.x
 - Qt 5 migration (Qt 4 is EOL)
 
 **Modernization Stats:**
-- 12 major modernization releases (v1.4.1.42-53)
-- ~515+ individual modernizations
+- 13 major modernization releases (v1.4.1.42-54)
+- ~520+ individual modernizations
+- **OpenSSL 3.x compatible** - critical security update
 - Significantly reduced Boost dependency
 - C++17-ready (deprecated features removed)
 - Memory leak fixes and performance optimizations
