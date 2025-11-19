@@ -221,8 +221,8 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
         if (fileout)
         {
             static bool fStartedNewLine = true;
-            static boost::mutex mutexDebugLog;
-            boost::mutex::scoped_lock scoped_lock(mutexDebugLog);
+            static std::mutex mutexDebugLog;
+            std::lock_guard<std::mutex> scoped_lock(mutexDebugLog);
 
             // reopen the log file, if requested
             if (fReopenDebugLog) {

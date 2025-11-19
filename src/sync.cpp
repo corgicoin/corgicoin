@@ -9,6 +9,7 @@
 #include "util.h"
 
 #include <boost/foreach.hpp>
+#include <memory>
 
 #ifdef DEBUG_LOCKCONTENTION
 void PrintLockContention(const char* pszName, const char* pszFile, int nLine)
@@ -52,9 +53,9 @@ private:
 
 using LockStack = std::vector< std::pair<void*, CLockLocation> >;
 
-static boost::mutex dd_mutex;
+static std::mutex dd_mutex;
 static std::map<std::pair<void*, void*>, LockStack> lockorders;
-static boost::thread_specific_ptr<LockStack> lockstack;
+static thread_local std::unique_ptr<LockStack> lockstack;
 
 
 static void potential_deadlock_detected(const std::pair<void*, void*>& mismatch, const LockStack& s1, const LockStack& s2)
@@ -78,8 +79,8 @@ static void potential_deadlock_detected(const std::pair<void*, void*>& mismatch,
 
 static void push_lock(void* c, const CLockLocation& locklocation, bool fTry)
 {
-    if (lockstack.get() == nullptr)
-        lockstack.reset(new LockStack);
+    if (lockstack == nullptr)
+        lockstack = std::make_unique<LockStack>();
 
     if (fDebug) printf("Locking: %s\n", locklocation.ToString().c_str());
     dd_mutex.lock();

@@ -22,7 +22,8 @@ typedef int pid_t; /* define for windows compatiblity */
 #include <vector>
 #include <string>
 
-#include <boost/thread.hpp>
+#include <thread>
+#include <chrono>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/date_time/gregorian/gregorian_types.hpp>
@@ -88,9 +89,9 @@ T* alignup(T* p)
 #define MAX_PATH            1024
 inline void Sleep(int64 n)
 {
-    /*Boost has a year 2038 problem— if the request sleep time is past epoch+2^31 seconds the sleep returns instantly.
-      So we clamp our sleeps here to 10 years and hope that boost is fixed by 2028.*/
-    boost::thread::sleep(boost::get_system_time() + boost::posix_time::milliseconds(n>315576000000LL?315576000000LL:n));
+    // Clamp sleep time to 10 years to avoid potential overflow issues
+    int64 clampedTime = (n > 315576000000LL) ? 315576000000LL : n;
+    std::this_thread::sleep_for(std::chrono::milliseconds(clampedTime));
 }
 #endif
 
@@ -549,8 +550,8 @@ public:
 
 
 
-// Note: It turns out we might have been able to use boost::thread
-// by using TerminateThread(boost::thread.native_handle(), 0);
+// Note: It turns out we might have been able to use std::thread
+// by using TerminateThread(std::thread.native_handle(), 0);
 #ifdef WIN32
 typedef HANDLE pthread_thread;
 
