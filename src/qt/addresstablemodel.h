@@ -28,7 +28,7 @@ public:
     };
 
     /** Return status of edit/insert operation */
-    enum EditStatus {
+    enum class EditStatus {
         OK,
         INVALID_ADDRESS,   /**< Unparseable address */
         DUPLICATE_ADDRESS,  /**< Address already in address book */

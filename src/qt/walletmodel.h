@@ -30,7 +30,7 @@ public:
     explicit WalletModel(CWallet *wallet, OptionsModel *optionsModel, QObject *parent = 0);
     ~WalletModel();
 
-    enum StatusCode // Returned by sendCoins
+    enum class StatusCode // Returned by sendCoins
     {
         OK,
         InvalidAmount,
@@ -43,7 +43,7 @@ public:
         Aborted
     };
 
-    enum EncryptionStatus
+    enum class EncryptionStatus
     {
         Unencrypted,  // !wallet->IsCrypted()
         Locked,       // wallet->IsCrypted() && wallet->IsLocked()

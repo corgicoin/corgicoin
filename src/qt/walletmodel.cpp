@@ -17,7 +17,7 @@ WalletModel::WalletModel(CWallet *wallet, OptionsModel *optionsModel, QObject *p
     transactionTableModel(0),
     cachedBalance(0), cachedUnconfirmedBalance(0), cachedImmatureBalance(0),
     cachedNumTransactions(0),
-    cachedEncryptionStatus(Unencrypted),
+    cachedEncryptionStatus(EncryptionStatus::Unencrypted),
     cachedNumBlocks(0)
 {
     addressTableModel = new AddressTableModel(wallet, this);
@@ -138,30 +138,30 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
     {
         if(!validateAddress(rcp.address))
         {
-            return InvalidAddress;
+            return StatusCode::InvalidAddress;
         }
         setAddress.insert(rcp.address);
 
         if(rcp.amount <= 0)
         {
-            return InvalidAmount;
+            return StatusCode::InvalidAmount;
         }
         total += rcp.amount;
     }
 
     if(recipients.size() > setAddress.size())
     {
-        return DuplicateAddress;
+        return StatusCode::DuplicateAddress;
     }
 
     if(total > getBalance())
     {
-        return AmountExceedsBalance;
+        return StatusCode::AmountExceedsBalance;
     }
 
     if((total + nTransactionFee) > getBalance())
     {
-        return SendCoinsReturn(AmountWithFeeExceedsBalance, nTransactionFee);
+        return SendCoinsReturn(StatusCode::AmountWithFeeExceedsBalance, nTransactionFee);
     }
 
     {
@@ -241,15 +241,15 @@ WalletModel::EncryptionStatus WalletModel::getEncryptionStatus() const
 {
     if(!wallet->IsCrypted())
     {
-        return Unencrypted;
+        return EncryptionStatus::Unencrypted;
     }
     else if(wallet->IsLocked())
     {
-        return Locked;
+        return EncryptionStatus::Locked;
     }
     else
     {
-        return Unlocked;
+        return EncryptionStatus::Unlocked;
     }
 }
 
@@ -341,14 +341,14 @@ void WalletModel::unsubscribeFromCoreSignals()
 // WalletModel::UnlockContext implementation
 WalletModel::UnlockContext WalletModel::requestUnlock()
 {
-    bool was_locked = getEncryptionStatus() == Locked;
+    bool was_locked = getEncryptionStatus() == EncryptionStatus::Locked;
     if(was_locked)
     {
         // Request UI to unlock wallet
         emit requireUnlock();
     }
     // If wallet is still locked, unlock was failed or cancelled, mark context as invalid
-    bool valid = getEncryptionStatus() != Locked;
+    bool valid = getEncryptionStatus() != EncryptionStatus::Locked;
 
     return UnlockContext(this, valid, was_locked);
 }
