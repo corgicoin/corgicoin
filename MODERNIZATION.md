@@ -103,7 +103,7 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [x] Replace typedef with using (v1.4.1.4, v1.4.1.31, v1.4.1.43) - All modernized
 - [x] Use nullptr instead of NULL (v1.4.1.4-18) - Complete: 202 conversions
 - [x] Enable C++11/14 features (v1.4.1.3) - Compiler flags set
-- [x] Replace raw pointers with smart pointers (v1.4.1.46, v1.4.1.50) - Core allocations modernized
+- [x] Replace raw pointers with smart pointers (v1.4.1.46, v1.4.1.50, v1.4.1.53) - Core allocations modernized, memory leak fixed
 - [x] Add override/final keywords to virtual functions (v1.4.1.5) - Keystore and wallet classes
 - [x] Use auto for complex iterator types (v1.4.1.5-6) - Iterator loops simplified
 - [x] Replace C-style casts with C++ casts (v1.4.1.44) - ~80 instances modernized
@@ -118,7 +118,8 @@ Note: Wallet compatibility must be maintained during upgrades.
 - [x] emplace_back optimizations (v1.4.1.32) - 46 conversions for in-place construction
 - [x] = default for special members (v1.4.1.34) - 5 conversions with noexcept
 - [x] IRC peer discovery removal (v1.4.1.33) - 421 lines of deprecated code removed
-- [ ] Additional constexpr for compile-time constants (low priority)
+- [x] constexpr for compile-time constants (v1.4.1.51) - 12 conversions for blockchain/network constants
+- [x] Move semantics for large objects (v1.4.1.52) - 2 conversions for transaction insertions
 
 ### Phase 4: Protocol Updates (Low Priority) ✅ PARTIALLY COMPLETE
 - [x] Remove/disable IRC peer discovery (v1.4.1.33) - Completely removed
@@ -187,6 +188,59 @@ After each modernization phase:
 See README.md for updated build instructions with modern dependency versions.
 
 ## Changelog
+
+### Version 1.4.1.53 (2025-11-19) - Additional Smart Pointer Migration and Memory Leak Fix
+
+**Local Pointer Conversions (2 instances + critical bug fix):**
+- ✅ Converted `Db* pdbCopy` → `std::unique_ptr<Db>` in db.cpp
+- ✅ Converted `CTransaction* tx` → `std::unique_ptr<CTransaction>` in test code
+- ✅ **Fixed memory leak**: pdbCopy was never deleted on error paths (lines 251, 269, 285, 292)
+- ✅ Removed 2 manual delete statements
+
+**Files Modified:**
+- src/db.cpp: Database rewrite operation (production code)
+- src/test/wallet_tests.cpp: Test helper function
+
+**Benefits:**
+- Bug fix: Eliminated memory leak in database rewrite operation
+- RAII: Automatic cleanup on all code paths (success and error)
+- Exception safety: Proper resource cleanup even with exceptions
+- Cleaner code: Removed manual memory management
+
+### Version 1.4.1.52 (2025-11-19) - Move Semantics for Large Objects
+
+**Move Semantics Optimization (2 instances):**
+- ✅ Added `std::move` for transaction insertions in main.cpp
+- ✅ Genesis block transaction push_back (line 2102)
+- ✅ Coinbase transaction in CreateNewBlock (line 3462)
+
+**Files Modified:**
+- src/main.cpp: Transaction vector insertions
+
+**Benefits:**
+- Performance: Avoids copying CTransaction objects containing vectors
+- Modern C++11: Move semantics for rvalue references
+- Efficiency: Transfers ownership instead of deep copying
+
+### Version 1.4.1.51 (2025-11-19) - Compile-Time Constants with constexpr
+
+**constexpr Additions (12 instances across 4 files):**
+- ✅ Added constexpr to compile-time constant declarations
+- ✅ Blockchain parameters: nTargetTimespan, nTargetSpacing, nInterval
+- ✅ Network constants: MAX_OUTBOUND_CONNECTIONS, nMaxNumSize
+- ✅ Network prefixes: IPv4, IPv6, OnionCat, GarliCat, RFC constants
+
+**Files Modified:**
+- src/main.cpp: Blockchain difficulty constants (3 conversions)
+- src/net.cpp: Network connection limit (1 conversion)
+- src/script.cpp: Script validation constant (1 conversion)
+- src/netbase.cpp: Network address prefixes (7 conversions)
+
+**Benefits:**
+- Compile-time evaluation: Values computed at compile time
+- Type safety: constexpr enforces compile-time constants
+- Modern C++11: Better than #define macros
+- Performance: No runtime overhead
 
 ### Version 1.4.1.50 (2025-11-19) - Smart Pointer Migration for RAII
 

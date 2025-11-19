@@ -151,7 +151,7 @@ This codebase has been substantially modernized with C++11/14 features:
 - C++11 compiler flags and build system (CMake + qmake)
 - nullptr throughout codebase (202 conversions)
 - Modern type aliases with `using` (all typedef converted)
-- Smart pointers (unique_ptr, shared_ptr) for RAII
+- Smart pointers (unique_ptr, shared_ptr) for RAII with memory leak fixes
 - C++11 threading (std::thread, std::mutex, std::condition_variable)
 - Modern C++ casts (static_cast, reinterpret_cast, const_cast)
 - Lambda expressions (replaced boost::bind)
@@ -159,6 +159,8 @@ This codebase has been substantially modernized with C++11/14 features:
 - Standard library containers (std::array, std::vector)
 - Deprecated code removal (IRC, auto_ptr)
 - **Major Boost dependency reduction** - Most Boost usage replaced with C++11 STL
+- constexpr for compile-time constants (blockchain, network)
+- Move semantics for performance optimization
 
 **⚠️ Still Required:**
 - OpenSSL 3.x migration (CRITICAL - current versions have known vulnerabilities)
@@ -167,10 +169,11 @@ This codebase has been substantially modernized with C++11/14 features:
 - Qt 5 migration (Qt 4 is EOL)
 
 **Modernization Stats:**
-- 9 major modernization releases (v1.4.1.42-50)
-- ~500+ individual modernizations
+- 12 major modernization releases (v1.4.1.42-53)
+- ~515+ individual modernizations
 - Significantly reduced Boost dependency
 - C++17-ready (deprecated features removed)
+- Memory leak fixes and performance optimizations
 
 See [MODERNIZATION.md](MODERNIZATION.md) for complete details and changelog.
 
