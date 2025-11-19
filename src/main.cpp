@@ -565,7 +565,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
 
         // Don't accept it if it can't get into a block
-        if (nFees < tx.GetMinFee(1000, true, GMF_RELAY))
+        if (nFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
             return error("CTxMemPool::accept() : not enough fees");
 
         // Continuously rate-limit free transactions
@@ -3548,7 +3548,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             // Transaction fee required depends on block size
             // CorgiCoind: Reduce the exempted free transactions to 500 bytes (from Bitcoin's 3000 bytes)
             bool fAllowFree = (nBlockSize + nTxSize < 1500 || CTransaction::AllowFree(dPriority));
-            int64 nMinFee = tx.GetMinFee(nBlockSize, fAllowFree, GMF_BLOCK);
+            int64 nMinFee = tx.GetMinFee(nBlockSize, fAllowFree, GetMinFee_mode::GMF_BLOCK);
 
             // Connecting shouldn't fail due to dependency on other memory pool transactions
             // because we're already processing them in order of dependency

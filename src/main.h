@@ -362,7 +362,7 @@ public:
 
 
 
-enum GetMinFee_mode
+enum class GetMinFee_mode
 {
     GMF_BLOCK,
     GMF_RELAY,

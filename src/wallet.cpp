@@ -31,7 +31,7 @@ struct CompareValueOnly
 
 CPubKey CWallet::GenerateNewKey()
 {
-    bool fCompressed = CanSupportFeature(FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
+    bool fCompressed = CanSupportFeature(WalletFeature::FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
 
     RandAddSeedPerfmon();
     CKey key;
@@ -39,7 +39,7 @@ CPubKey CWallet::GenerateNewKey()
 
     // Compressed public keys were introduced in version 0.6.0
     if (fCompressed)
-        SetMinVersion(FEATURE_COMPRPUBKEY);
+        SetMinVersion(WalletFeature::FEATURE_COMPRPUBKEY);
 
     if (!AddKey(key))
         throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
@@ -169,19 +169,19 @@ public:
     )
 };
 
-bool CWallet::SetMinVersion(enum WalletFeature nVersion, CWalletDB* pwalletdbIn, bool fExplicit)
+bool CWallet::SetMinVersion(WalletFeature nVersion, CWalletDB* pwalletdbIn, bool fExplicit)
 {
-    if (nWalletVersion >= nVersion)
+    if (nWalletVersion >= static_cast<int>(nVersion))
         return true;
 
     // when doing an explicit upgrade, if we pass the max version permitted, upgrade all the way
-    if (fExplicit && nVersion > nWalletMaxVersion)
-            nVersion = FEATURE_LATEST;
+    if (fExplicit && static_cast<int>(nVersion) > nWalletMaxVersion)
+            nVersion = WalletFeature::FEATURE_LATEST;
 
-    nWalletVersion = nVersion;
+    nWalletVersion = static_cast<int>(nVersion);
 
-    if (nVersion > nWalletMaxVersion)
-        nWalletMaxVersion = nVersion;
+    if (static_cast<int>(nVersion) > nWalletMaxVersion)
+        nWalletMaxVersion = static_cast<int>(nVersion);
 
     if (fFileBacked)
     {
@@ -272,7 +272,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         }
 
         // Encryption was introduced in version 0.4.0
-        SetMinVersion(FEATURE_WALLETCRYPT, pwalletdbEncryption.get(), true);
+        SetMinVersion(WalletFeature::FEATURE_WALLETCRYPT, pwalletdbEncryption.get(), true);
 
         if (fFileBacked)
         {
@@ -1182,7 +1182,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 // Check that enough fee is included
                 int64 nPayFee = nTransactionFee * (1 + static_cast<int64>(nBytes) / 1000);
                 bool fAllowFree = CTransaction::AllowFree(dPriority);
-                int64 nMinFee = wtxNew.GetMinFee(1, fAllowFree, GMF_SEND);
+                int64 nMinFee = wtxNew.GetMinFee(1, fAllowFree, GetMinFee_mode::GMF_SEND);
                 if (nFeeRet < max(nPayFee, nMinFee))
                 {
                     nFeeRet = max(nPayFee, nMinFee);
