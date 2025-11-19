@@ -13,6 +13,8 @@
 #include "addrman.h"
 #include "ui_interface.h"
 
+#include <memory>
+
 #ifdef WIN32
 #include <string.h>
 #endif
@@ -55,7 +57,7 @@ static CCriticalSection cs_mapLocalHost;
 static map<CNetAddr, LocalServiceInfo> mapLocalHost;
 static bool vfReachable[NET_MAX] = {};
 static bool vfLimited[NET_MAX] = {};
-static CNode* pnodeLocalHost = nullptr;
+static std::unique_ptr<CNode> pnodeLocalHost;
 uint64 nLocalHostNonce = 0;
 std::array<int, THREAD_MAX> vnThreadsRunning;
 static std::vector<SOCKET> vhListenSocket;
@@ -74,7 +76,7 @@ CCriticalSection cs_vOneShots;
 set<CNetAddr> setservAddNodeAddresses;
 CCriticalSection cs_setservAddNodeAddresses;
 
-static CSemaphore *semOutbound = nullptr;
+static std::unique_ptr<CSemaphore> semOutbound;
 
 void AddOneShot(string strDest)
 {
@@ -1803,14 +1805,14 @@ void StartNode(void* parg)
     // Make this thread recognisable as the startup thread
     RenameThread("corgicoin-start");
 
-    if (semOutbound == nullptr) {
+    if (!semOutbound) {
         // initialize semaphore
         int nMaxOutbound = min(MAX_OUTBOUND_CONNECTIONS, static_cast<int>(GetArg("-maxconnections", 125)));
-        semOutbound = new CSemaphore(nMaxOutbound);
+        semOutbound = std::make_unique<CSemaphore>(nMaxOutbound);
     }
 
-    if (pnodeLocalHost == nullptr)
-        pnodeLocalHost = new CNode(INVALID_SOCKET, CAddress(CService("127.0.0.1", 0), nLocalServices));
+    if (!pnodeLocalHost)
+        pnodeLocalHost = std::make_unique<CNode>(INVALID_SOCKET, CAddress(CService("127.0.0.1", 0), nLocalServices));
 
     Discover();
 

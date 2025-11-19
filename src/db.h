@@ -13,6 +13,7 @@
 #include "compat_bdb.h"
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -48,7 +49,7 @@ public:
     mutable CCriticalSection cs_db;
     DbEnv dbenv;
     std::map<std::string, int> mapFileUseCount;
-    std::map<std::string, Db*> mapDb;
+    std::map<std::string, std::shared_ptr<Db>> mapDb;
 
     CDBEnv();
     ~CDBEnv();

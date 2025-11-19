@@ -9,6 +9,8 @@
 #ifndef BITCOIN_WALLET_H
 #define BITCOIN_WALLET_H
 
+#include <memory>
+
 #include "main.h"
 #include "key.h"
 #include "keystore.h"
@@ -67,7 +69,7 @@ class CWallet : public CCryptoKeyStore
 private:
     bool SelectCoins(int64 nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
 
-    CWalletDB *pwalletdbEncryption;
+    std::unique_ptr<CWalletDB> pwalletdbEncryption;
 
     // the current wallet version: clients below this version are not able to load the wallet
     int nWalletVersion;
@@ -94,7 +96,6 @@ public:
         nWalletMaxVersion = FEATURE_BASE;
         fFileBacked = false;
         nMasterKeyMaxID = 0;
-        pwalletdbEncryption = nullptr;
     }
     CWallet(std::string strWalletFileIn)
     {
@@ -103,7 +104,6 @@ public:
         strWalletFile = strWalletFileIn;
         fFileBacked = true;
         nMasterKeyMaxID = 0;
-        pwalletdbEncryption = nullptr;
     }
 
     std::map<uint256, CWalletTx> mapWallet;
