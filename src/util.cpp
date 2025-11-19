@@ -79,13 +79,13 @@ CMedianFilter<int64> vTimeOffsets(200,0);
 bool fReopenDebugLog = false;
 
 // Init openssl library multithreading support
-static CCriticalSection** ppmutexOpenSSL;
+static std::vector<std::unique_ptr<CCriticalSection>> vpmutexOpenSSL;
 void locking_callback(int mode, int i, const char* file, int line)
 {
     if (mode & CRYPTO_LOCK) {
-        ENTER_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
+        ENTER_CRITICAL_SECTION(*vpmutexOpenSSL[i]);
     } else {
-        LEAVE_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
+        LEAVE_CRITICAL_SECTION(*vpmutexOpenSSL[i]);
     }
 }
 
@@ -96,9 +96,9 @@ public:
     CInit()
     {
         // Init openssl library multithreading support
-        ppmutexOpenSSL = reinterpret_cast<CCriticalSection**>(OPENSSL_malloc(CRYPTO_num_locks() * sizeof(CCriticalSection*)));
+        vpmutexOpenSSL.resize(CRYPTO_num_locks());
         for (int i = 0; i < CRYPTO_num_locks(); i++)
-            ppmutexOpenSSL[i] = new CCriticalSection();
+            vpmutexOpenSSL[i] = std::make_unique<CCriticalSection>();
         CRYPTO_set_locking_callback(locking_callback);
 
 #ifdef WIN32
@@ -113,9 +113,7 @@ public:
     {
         // Shutdown openssl library multithreading support
         CRYPTO_set_locking_callback(nullptr);
-        for (int i = 0; i < CRYPTO_num_locks(); i++)
-            delete ppmutexOpenSSL[i];
-        OPENSSL_free(ppmutexOpenSSL);
+        vpmutexOpenSSL.clear();  // unique_ptr automatically deletes
     }
 }
 instance_of_cinit;

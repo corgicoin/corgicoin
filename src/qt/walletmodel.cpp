@@ -325,17 +325,25 @@ static void NotifyTransactionChanged(WalletModel *walletmodel, CWallet *wallet, 
 void WalletModel::subscribeToCoreSignals()
 {
     // Connect signals to wallet
-    wallet->NotifyStatusChanged.connect(boost::bind(&NotifyKeyStoreStatusChanged, this, _1));
-    wallet->NotifyAddressBookChanged.connect(boost::bind(NotifyAddressBookChanged, this, _1, _2, _3, _4, _5));
-    wallet->NotifyTransactionChanged.connect(boost::bind(NotifyTransactionChanged, this, _1, _2, _3));
+    wallet->NotifyStatusChanged.connect([this](ChangeType status) { NotifyKeyStoreStatusChanged(this, status); });
+    wallet->NotifyAddressBookChanged.connect([this](CWallet* wallet, const CTxDestination& address, const std::string& label, bool isMine, ChangeType status) {
+        NotifyAddressBookChanged(this, wallet, address, label, isMine, status);
+    });
+    wallet->NotifyTransactionChanged.connect([this](CWallet* wallet, const uint256& hash, ChangeType status) {
+        NotifyTransactionChanged(this, wallet, hash, status);
+    });
 }
 
 void WalletModel::unsubscribeFromCoreSignals()
 {
     // Disconnect signals from wallet
-    wallet->NotifyStatusChanged.disconnect(boost::bind(&NotifyKeyStoreStatusChanged, this, _1));
-    wallet->NotifyAddressBookChanged.disconnect(boost::bind(NotifyAddressBookChanged, this, _1, _2, _3, _4, _5));
-    wallet->NotifyTransactionChanged.disconnect(boost::bind(NotifyTransactionChanged, this, _1, _2, _3));
+    wallet->NotifyStatusChanged.disconnect([this](ChangeType status) { NotifyKeyStoreStatusChanged(this, status); });
+    wallet->NotifyAddressBookChanged.disconnect([this](CWallet* wallet, const CTxDestination& address, const std::string& label, bool isMine, ChangeType status) {
+        NotifyAddressBookChanged(this, wallet, address, label, isMine, status);
+    });
+    wallet->NotifyTransactionChanged.disconnect([this](CWallet* wallet, const uint256& hash, ChangeType status) {
+        NotifyTransactionChanged(this, wallet, hash, status);
+    });
 }
 
 // WalletModel::UnlockContext implementation
