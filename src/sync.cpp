@@ -8,7 +8,6 @@
 #include "sync.h"
 #include "util.h"
 
-#include <boost/foreach.hpp>
 #include <memory>
 
 #ifdef DEBUG_LOCKCONTENTION

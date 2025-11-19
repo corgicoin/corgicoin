@@ -11,7 +11,6 @@
 
 #include <deque>
 #include <array>
-#include <boost/foreach.hpp>
 #include <openssl/rand.h>
 
 #ifndef WIN32
