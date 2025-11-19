@@ -24,15 +24,15 @@ MiningPage::MiningPage(QWidget *parent) :
 
     initThreads = 0;
 
-    connect(readTimer, SIGNAL(timeout()), this, SLOT(readProcessOutput()));
+    connect(readTimer, &QTimer::timeout, this, &MiningPage::readProcessOutput);
 
-    connect(ui->startButton, SIGNAL(pressed()), this, SLOT(startPressed()));
-    connect(ui->typeBox, SIGNAL(currentIndexChanged(int)), this, SLOT(typeChanged(int)));
-    connect(ui->debugCheckBox, SIGNAL(toggled(bool)), this, SLOT(debugToggled(bool)));
-    connect(minerProcess, SIGNAL(started()), this, SLOT(minerStarted()));
-    connect(minerProcess, SIGNAL(error(QProcess::ProcessError)), this, SLOT(minerError(QProcess::ProcessError)));
-    connect(minerProcess, SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(minerFinished()));
-    connect(minerProcess, SIGNAL(readyRead()), this, SLOT(readProcessOutput()));
+    connect(ui->startButton, &QPushButton::pressed, this, &MiningPage::startPressed);
+    connect(ui->typeBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MiningPage::typeChanged);
+    connect(ui->debugCheckBox, &QCheckBox::toggled, this, &MiningPage::debugToggled);
+    connect(minerProcess, &QProcess::started, this, &MiningPage::minerStarted);
+    connect(minerProcess, &QProcess::errorOccurred, this, &MiningPage::minerError);
+    connect(minerProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &MiningPage::minerFinished);
+    connect(minerProcess, &QProcess::readyRead, this, &MiningPage::readProcessOutput);
 }
 
 MiningPage::~MiningPage()

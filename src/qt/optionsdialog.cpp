@@ -47,9 +47,9 @@ OptionsDialog::OptionsDialog(QWidget *parent) :
     ui->proxyPort->setEnabled(false);
     ui->proxyPort->setValidator(new QIntValidator(0, 65535, this));
 
-    connect(ui->connectSocks, SIGNAL(toggled(bool)), ui->socksVersion, SLOT(setEnabled(bool)));
-    connect(ui->connectSocks, SIGNAL(toggled(bool)), ui->proxyIp, SLOT(setEnabled(bool)));
-    connect(ui->connectSocks, SIGNAL(toggled(bool)), ui->proxyPort, SLOT(setEnabled(bool)));
+    connect(ui->connectSocks, &QCheckBox::toggled, ui->socksVersion, &QComboBox::setEnabled);
+    connect(ui->connectSocks, &QCheckBox::toggled, ui->proxyIp, &QLineEdit::setEnabled);
+    connect(ui->connectSocks, &QCheckBox::toggled, ui->proxyPort, &QLineEdit::setEnabled);
 
     ui->proxyIp->installEventFilter(this);
 
@@ -90,8 +90,8 @@ OptionsDialog::OptionsDialog(QWidget *parent) :
 
     ui->unit->setModel(new BitcoinUnits(this));
 
-    connect(ui->connectSocks, SIGNAL(clicked(bool)), this, SLOT(showRestartWarning_Proxy()));
-    connect(ui->lang, SIGNAL(activated(int)), this, SLOT(showRestartWarning_Lang()));
+    connect(ui->connectSocks, &QCheckBox::clicked, this, &OptionsDialog::showRestartWarning_Proxy);
+    connect(ui->lang, QOverload<int>::of(&QComboBox::activated), this, &OptionsDialog::showRestartWarning_Lang);
 
     /* Widget-to-option mapper */
     mapper = new MonitoredDataMapper(this);
@@ -99,11 +99,11 @@ OptionsDialog::OptionsDialog(QWidget *parent) :
     mapper->setOrientation(Qt::Vertical);
 
     /* enable save buttons when data modified */
-    connect(mapper, SIGNAL(viewModified()), this, SLOT(enableSaveButtons()));
+    connect(mapper, &MonitoredDataMapper::viewModified, this, &OptionsDialog::enableSaveButtons);
     /* disable save buttons when new data loaded */
-    connect(mapper, SIGNAL(currentIndexChanged(int)), this, SLOT(disableSaveButtons()));
+    connect(mapper, &MonitoredDataMapper::currentIndexChanged, this, &OptionsDialog::disableSaveButtons);
     /* disable/enable save buttons when proxy IP is invalid/valid */
-    connect(this, SIGNAL(proxyIpValid(bool)), this, SLOT(setSaveButtonState(bool)));
+    connect(this, &OptionsDialog::proxyIpValid, this, &OptionsDialog::setSaveButtonState);
 }
 
 OptionsDialog::~OptionsDialog()
@@ -117,7 +117,7 @@ void OptionsDialog::setModel(OptionsModel *model)
 
     if(model)
     {
-        connect(model, SIGNAL(displayUnitChanged(int)), this, SLOT(updateDisplayUnit()));
+        connect(model, &OptionsModel::displayUnitChanged, this, &OptionsDialog::updateDisplayUnit);
 
         mapper->setModel(model);
         setMapper();

@@ -49,7 +49,7 @@ ClientModel::ClientModel(OptionsModel *optionsModel, QObject *parent) :
 
     pollTimer->setInterval(MODEL_UPDATE_DELAY);
     pollTimer->start();
-    connect(pollTimer, SIGNAL(timeout()), this, SLOT(updateTimer()));
+    connect(pollTimer, &QTimer::timeout, this, &ClientModel::updateTimer);
 
     subscribeToCoreSignals();
 }
