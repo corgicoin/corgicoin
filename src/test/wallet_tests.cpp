@@ -27,7 +27,7 @@ static void add_coin(int64 nValue, int nAge = 6*24, bool fIsFromMe = false, int 
     tx->nLockTime = i++;        // so all transactions get different hashes
     tx->vout.resize(nInput+1);
     tx->vout[nInput].nValue = nValue;
-    CWalletTx* wtx = new CWalletTx(&wallet, *tx);
+    auto wtx = std::make_unique<CWalletTx>(&wallet, *tx);
     if (fIsFromMe)
     {
         // IsFromMe() returns (GetDebit() > 0), and GetDebit() is 0 if vin.empty(),
@@ -36,7 +36,7 @@ static void add_coin(int64 nValue, int nAge = 6*24, bool fIsFromMe = false, int 
         wtx->fDebitCached = true;
         wtx->nDebitCached = 1;
     }
-    COutput output(wtx, nInput, nAge);
+    COutput output(wtx.release(), nInput, nAge);  // Transfer ownership to vCoins
     vCoins.push_back(output);
 }
 

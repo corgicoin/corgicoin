@@ -28,7 +28,7 @@
 using namespace std;
 using namespace boost;
 
-CWallet* pwalletMain;
+std::unique_ptr<CWallet> pwalletMain;
 CClientUIInterface uiInterface;
 
 //////////////////////////////////////////////////////////////////////////////
@@ -81,8 +81,8 @@ void Shutdown(void* parg)
         StopNode();
         bitdb.Flush(true);
         boost::filesystem::remove(GetPidFile());
-        UnregisterWallet(pwalletMain);
-        delete pwalletMain;
+        UnregisterWallet(pwalletMain.get());
+        pwalletMain.reset();  // Explicit cleanup before exit
         CreateThread(ExitTimeout, nullptr);
         Sleep(50);
         printf("CorgiCoin exited\n\n");
@@ -642,7 +642,7 @@ bool AppInit2()
     printf("Loading wallet...\n");
     nStart = GetTimeMillis();
     bool fFirstRun;
-    pwalletMain = new CWallet("wallet.dat");
+    pwalletMain = std::make_unique<CWallet>("wallet.dat");
     int nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
     if (nLoadWalletRet != DB_LOAD_OK)
     {

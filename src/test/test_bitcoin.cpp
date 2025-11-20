@@ -3,8 +3,9 @@
 
 #include "main.h"
 #include "wallet.h"
+#include <memory>
 
-CWallet* pwalletMain;
+std::unique_ptr<CWallet> pwalletMain;
 CClientUIInterface uiInterface;
 
 extern bool fPrintToConsole;
@@ -14,13 +15,12 @@ struct TestingSetup {
     TestingSetup() {
         fPrintToConsole = true; // don't want to write to debug.log file
         noui_connect();
-        pwalletMain = new CWallet();
-        RegisterWallet(pwalletMain);
+        pwalletMain = std::make_unique<CWallet>();
+        RegisterWallet(pwalletMain.get());
     }
     ~TestingSetup()
     {
-        delete pwalletMain;
-        pwalletMain = nullptr;
+        pwalletMain.reset();  // Automatic cleanup
     }
 };
 
