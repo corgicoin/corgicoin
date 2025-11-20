@@ -1903,7 +1903,7 @@ bool CBlock::AcceptBlock()
         LOCK(cs_vNodes);
         for (CNode* pnode : vNodes)
             if (nBestHeight > (pnode->nStartingHeight != -1 ? pnode->nStartingHeight - 2000 : nBlockEstimate))
-                pnode->PushInventory(CInv(MSG_BLOCK, hash));
+                pnode->PushInventory(CInv(static_cast<int>(MsgType::Block), hash));
     }
 
     return true;
@@ -2433,7 +2433,7 @@ bool static AlreadyHave(CTxDB& txdb, const CInv& inv)
 {
     switch (inv.type)
     {
-    case MSG_TX:
+    case static_cast<int>(MsgType::Tx):
         {
         bool txInMap = false;
             {
@@ -2445,7 +2445,7 @@ bool static AlreadyHave(CTxDB& txdb, const CInv& inv)
                txdb.ContainsTx(inv.hash);
         }
 
-    case MSG_BLOCK:
+    case static_cast<int>(MsgType::Block):
         return mapBlockIndex.count(inv.hash) ||
                mapOrphanBlocks.count(inv.hash);
     }
@@ -2681,7 +2681,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         // find last block in inv vector
         unsigned int nLastBlock = static_cast<unsigned int>(-1);
         for (unsigned int nInv = 0; nInv < vInv.size(); nInv++) {
-            if (vInv[vInv.size() - 1 - nInv].type == MSG_BLOCK) {
+            if (vInv[vInv.size() - 1 - nInv].type == static_cast<int>(MsgType::Block)) {
                 nLastBlock = vInv.size() - 1 - nInv;
                 break;
             }
@@ -2701,7 +2701,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
             if (!fAlreadyHave)
                 pfrom->AskFor(inv);
-            else if (inv.type == MSG_BLOCK && mapOrphanBlocks.count(inv.hash)) {
+            else if (inv.type == static_cast<int>(MsgType::Block) && mapOrphanBlocks.count(inv.hash)) {
                 pfrom->PushGetBlocks(pindexBest, GetOrphanRoot(mapOrphanBlocks[inv.hash]));
             } else if (nInv == nLastBlock) {
                 // In case we are on a very long side-chain, it is possible that we already have
@@ -2739,7 +2739,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             if (fDebugNet || (vInv.size() == 1))
                 printf("received getdata for: %s\n", inv.ToString().c_str());
 
-            if (inv.type == MSG_BLOCK)
+            if (inv.type == static_cast<int>(MsgType::Block))
             {
                 // Send block from disk
                 auto mi = mapBlockIndex.find(inv.hash);
@@ -2756,7 +2756,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                         // and we want it right after the last block so they don't
                         // wait for other stuff first.
                         vector<CInv> vInv;
-                        vInv.emplace_back(MSG_BLOCK, hashBestChain);
+                        vInv.emplace_back(static_cast<int>(MsgType::Block), hashBestChain);
                         pfrom->PushMessage("inv", vInv);
                         pfrom->hashContinue = 0;
                     }
@@ -2800,7 +2800,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                 printf("  getblocks stopping at %d %s\n", pindex->nHeight, pindex->GetBlockHash().ToString().substr(0,20).c_str());
                 break;
             }
-            pfrom->PushInventory(CInv(MSG_BLOCK, pindex->GetBlockHash()));
+            pfrom->PushInventory(CInv(static_cast<int>(MsgType::Block), pindex->GetBlockHash()));
             if (--nLimit <= 0)
             {
                 // When this block is requested, we'll send an inv that'll make them
@@ -2858,7 +2858,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CTransaction tx;
         vRecv >> tx;
 
-        CInv inv(MSG_TX, tx.GetHash());
+        CInv inv(static_cast<int>(MsgType::Tx), tx.GetHash());
         pfrom->AddInventoryKnown(inv);
 
         bool fMissingInputs = false;
@@ -2879,7 +2879,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                     const CDataStream& vMsg = *orphanItem.second;
                     CTransaction tx;
                     CDataStream(vMsg) >> tx;
-                    CInv inv(MSG_TX, tx.GetHash());
+                    CInv inv(static_cast<int>(MsgType::Tx), tx.GetHash());
                     bool fMissingInputs2 = false;
 
                     if (tx.AcceptToMemoryPool(txdb, true, &fMissingInputs2))
@@ -2924,7 +2924,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         printf("received block %s\n", block.GetHash().ToString().substr(0,20).c_str());
         // block.print();
 
-        CInv inv(MSG_BLOCK, block.GetHash());
+        CInv inv(static_cast<int>(MsgType::Block), block.GetHash());
         pfrom->AddInventoryKnown(inv);
 
         if (ProcessBlock(pfrom, &block))
@@ -3253,7 +3253,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                     continue;
 
                 // trickle out tx inv to protect privacy
-                if (inv.type == MSG_TX && !fSendTrickle)
+                if (inv.type == static_cast<int>(MsgType::Tx) && !fSendTrickle)
                 {
                     // 1/4 of tx invs blast to all immediately
                     static uint256 hashSalt;
@@ -3826,7 +3826,7 @@ void static BitcoinMiner(CWallet *pwallet)
                         {
                             nLogTime = GetTime();
                             printf("%s ", DateTimeStrFormat("%x %H:%M", GetTime()).c_str());
-                            printf("hashmeter %3d CPUs %6.0f khash/s\n", vnThreadsRunning[THREAD_MINER], dHashesPerSec/1000.0);
+                            printf("hashmeter %3d CPUs %6.0f khash/s\n", vnThreadsRunning[static_cast<int>(ThreadId::Miner)], dHashesPerSec/1000.0);
                         }
                     }
                 }
@@ -3837,7 +3837,7 @@ void static BitcoinMiner(CWallet *pwallet)
                 return;
             if (!fGenerateBitcoins)
                 return;
-            if (fLimitProcessors && vnThreadsRunning[THREAD_MINER] > nLimitProcessors)
+            if (fLimitProcessors && vnThreadsRunning[static_cast<int>(ThreadId::Miner)] > nLimitProcessors)
                 return;
             if (vNodes.empty())
                 break;
@@ -3866,21 +3866,21 @@ void static ThreadBitcoinMiner(void* parg)
     CWallet* pwallet = (CWallet*)parg;
     try
     {
-        vnThreadsRunning[THREAD_MINER]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::Miner)]++;
         BitcoinMiner(pwallet);
-        vnThreadsRunning[THREAD_MINER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::Miner)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_MINER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::Miner)]--;
         PrintException(&e, "ThreadBitcoinMiner()");
     } catch (...) {
-        vnThreadsRunning[THREAD_MINER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::Miner)]--;
         PrintException(nullptr, "ThreadBitcoinMiner()");
     }
     nHPSTimerStart = 0;
-    if (vnThreadsRunning[THREAD_MINER] == 0)
+    if (vnThreadsRunning[static_cast<int>(ThreadId::Miner)] == 0)
         dHashesPerSec = 0;
-    printf("ThreadBitcoinMiner exiting, %d threads remaining\n", vnThreadsRunning[THREAD_MINER]);
+    printf("ThreadBitcoinMiner exiting, %d threads remaining\n", vnThreadsRunning[static_cast<int>(ThreadId::Miner)]);
 }
 
 
@@ -3900,7 +3900,7 @@ void GenerateBitcoins(bool fGenerate, CWallet* pwallet)
             nProcessors = 1;
         if (fLimitProcessors && nProcessors > nLimitProcessors)
             nProcessors = nLimitProcessors;
-        int nAddThreads = nProcessors - vnThreadsRunning[THREAD_MINER];
+        int nAddThreads = nProcessors - vnThreadsRunning[static_cast<int>(ThreadId::Miner)];
         printf("Starting %d BitcoinMiner threads\n", nAddThreads);
         for (int i = 0; i < nAddThreads; i++)
         {

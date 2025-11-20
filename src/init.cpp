@@ -574,7 +574,7 @@ bool AppInit2()
             CService addrLocal(strAddr, GetListenPort(), fNameLookup);
             if (!addrLocal.IsValid())
                 return InitError(strprintf(_("Cannot resolve -externalip address: '%s'"), strAddr.c_str()));
-            AddLocal(CService(strAddr, GetListenPort(), fNameLookup), LOCAL_MANUAL);
+            AddLocal(CService(strAddr, GetListenPort(), fNameLookup), static_cast<int>(Local::Manual));
         }
     }
 

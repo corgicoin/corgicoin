@@ -59,7 +59,7 @@ static bool vfReachable[NET_MAX] = {};
 static bool vfLimited[NET_MAX] = {};
 static std::unique_ptr<CNode> pnodeLocalHost;
 uint64 nLocalHostNonce = 0;
-std::array<int, THREAD_MAX> vnThreadsRunning;
+std::array<int, static_cast<int>(ThreadId::Max)> vnThreadsRunning;
 static std::vector<SOCKET> vhListenSocket;
 CAddrMan addrman;
 
@@ -223,7 +223,7 @@ bool AddLocal(const CService& addr, int nScore)
     if (!addr.IsRoutable())
         return false;
 
-    if (!fDiscover && nScore < LOCAL_MANUAL)
+    if (!fDiscover && nScore < static_cast<int>(Local::Manual))
         return false;
 
     if (IsLimited(addr))
@@ -417,7 +417,7 @@ void ThreadGetMyExternalIP(void* parg)
     if (GetMyExternalIP(addrLocalHost))
     {
         printf("GetMyExternalIP() returned %s\n", addrLocalHost.ToStringIP().c_str());
-        AddLocal(addrLocalHost, LOCAL_HTTP);
+        AddLocal(addrLocalHost, static_cast<int>(Local::Http));
     }
 }
 
@@ -648,15 +648,15 @@ void ThreadSocketHandler(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_SOCKETHANDLER]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::SocketHandler)]++;
         ThreadSocketHandler2(parg);
-        vnThreadsRunning[THREAD_SOCKETHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::SocketHandler)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_SOCKETHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::SocketHandler)]--;
         PrintException(&e, "ThreadSocketHandler()");
     } catch (...) {
-        vnThreadsRunning[THREAD_SOCKETHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::SocketHandler)]--;
         throw; // support pthread_cancel()
     }
     printf("ThreadSocketHandler exited\n");
@@ -776,9 +776,9 @@ void ThreadSocketHandler2(void* parg)
             }
         }
 
-        vnThreadsRunning[THREAD_SOCKETHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::SocketHandler)]--;
         int nSelect = select(hSocketMax + 1, &fdsetRecv, &fdsetSend, &fdsetError, &timeout);
-        vnThreadsRunning[THREAD_SOCKETHANDLER]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::SocketHandler)]++;
         if (fShutdown)
             return;
         if (nSelect == SOCKET_ERROR)
@@ -1004,15 +1004,15 @@ void ThreadMapPort(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_UPNP]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::Upnp)]++;
         ThreadMapPort2(parg);
-        vnThreadsRunning[THREAD_UPNP]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::Upnp)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_UPNP]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::Upnp)]--;
         PrintException(&e, "ThreadMapPort()");
     } catch (...) {
-        vnThreadsRunning[THREAD_UPNP]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::Upnp)]--;
         PrintException(nullptr, "ThreadMapPort()");
     }
     printf("ThreadMapPort exited\n");
@@ -1056,7 +1056,7 @@ void ThreadMapPort2(void* parg)
                 if(externalIPAddress[0])
                 {
                     printf("UPnP: ExternalIPAddress = %s\n", externalIPAddress);
-                    AddLocal(CNetAddr(externalIPAddress), LOCAL_UPNP);
+                    AddLocal(CNetAddr(externalIPAddress), static_cast<int>(Local::Upnp));
                 }
                 else
                     printf("UPnP: GetExternalIPAddress failed.\n");
@@ -1125,7 +1125,7 @@ void ThreadMapPort2(void* parg)
 
 void MapPort()
 {
-    if (fUseUPnP && vnThreadsRunning[THREAD_UPNP] < 1)
+    if (fUseUPnP && vnThreadsRunning[static_cast<int>(ThreadId::Upnp)] < 1)
     {
         if (!CreateThread(ThreadMapPort, nullptr))
             printf("Error: ThreadMapPort(ThreadMapPort) failed\n");
@@ -1158,15 +1158,15 @@ void ThreadDNSAddressSeed(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_DNSSEED]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)]++;
         ThreadDNSAddressSeed2(parg);
-        vnThreadsRunning[THREAD_DNSSEED]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_DNSSEED]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)]--;
         PrintException(&e, "ThreadDNSAddressSeed()");
     } catch (...) {
-        vnThreadsRunning[THREAD_DNSSEED]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)]--;
         throw; // support pthread_cancel()
     }
     printf("ThreadDNSAddressSeed exited\n");
@@ -1235,15 +1235,15 @@ void DumpAddresses()
 
 void ThreadDumpAddress2(void* parg)
 {
-    vnThreadsRunning[THREAD_DUMPADDRESS]++;
+    vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)]++;
     while (!fShutdown)
     {
         DumpAddresses();
-        vnThreadsRunning[THREAD_DUMPADDRESS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)]--;
         Sleep(100000);
-        vnThreadsRunning[THREAD_DUMPADDRESS]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)]++;
     }
-    vnThreadsRunning[THREAD_DUMPADDRESS]--;
+    vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)]--;
 }
 
 void ThreadDumpAddress(void* parg)
@@ -1272,15 +1272,15 @@ void ThreadOpenConnections(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]++;
         ThreadOpenConnections2(parg);
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]--;
         PrintException(&e, "ThreadOpenConnections()");
     } catch (...) {
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]--;
         PrintException(nullptr, "ThreadOpenConnections()");
     }
     printf("ThreadOpenConnections exited\n");
@@ -1334,16 +1334,16 @@ void ThreadOpenConnections2(void* parg)
     {
         ProcessOneShot();
 
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]--;
         Sleep(500);
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]++;
         if (fShutdown)
             return;
 
 
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]--;
         CSemaphoreGrant grant(*semOutbound);
-        vnThreadsRunning[THREAD_OPENCONNECTIONS]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]++;
         if (fShutdown)
             return;
 
@@ -1429,15 +1429,15 @@ void ThreadOpenAddedConnections(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_ADDEDCONNECTIONS]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]++;
         ThreadOpenAddedConnections2(parg);
-        vnThreadsRunning[THREAD_ADDEDCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_ADDEDCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]--;
         PrintException(&e, "ThreadOpenAddedConnections()");
     } catch (...) {
-        vnThreadsRunning[THREAD_ADDEDCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]--;
         PrintException(nullptr, "ThreadOpenAddedConnections()");
     }
     printf("ThreadOpenAddedConnections exited\n");
@@ -1458,9 +1458,9 @@ void ThreadOpenAddedConnections2(void* parg)
                 OpenNetworkConnection(addr, &grant, strAddNode.c_str());
                 Sleep(500);
             }
-            vnThreadsRunning[THREAD_ADDEDCONNECTIONS]--;
+            vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]--;
             Sleep(120000); // Retry every 2 minutes
-            vnThreadsRunning[THREAD_ADDEDCONNECTIONS]++;
+            vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]++;
         }
         return;
     }
@@ -1506,9 +1506,9 @@ void ThreadOpenAddedConnections2(void* parg)
         }
         if (fShutdown)
             return;
-        vnThreadsRunning[THREAD_ADDEDCONNECTIONS]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]--;
         Sleep(120000); // Retry every 2 minutes
-        vnThreadsRunning[THREAD_ADDEDCONNECTIONS]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]++;
         if (fShutdown)
             return;
     }
@@ -1530,9 +1530,9 @@ bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOu
     if (strDest && FindNode(strDest))
         return false;
 
-    vnThreadsRunning[THREAD_OPENCONNECTIONS]--;
+    vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]--;
     CNode* pnode = ConnectNode(addrConnect, strDest);
-    vnThreadsRunning[THREAD_OPENCONNECTIONS]++;
+    vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]++;
     if (fShutdown)
         return false;
     if (!pnode)
@@ -1562,15 +1562,15 @@ void ThreadMessageHandler(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_MESSAGEHANDLER]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)]++;
         ThreadMessageHandler2(parg);
-        vnThreadsRunning[THREAD_MESSAGEHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_MESSAGEHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)]--;
         PrintException(&e, "ThreadMessageHandler()");
     } catch (...) {
-        vnThreadsRunning[THREAD_MESSAGEHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)]--;
         PrintException(nullptr, "ThreadMessageHandler()");
     }
     printf("ThreadMessageHandler exited\n");
@@ -1624,11 +1624,11 @@ void ThreadMessageHandler2(void* parg)
         // Wait and allow messages to bunch up.
         // Reduce vnThreadsRunning so StopNode has permission to exit while
         // we're sleeping, but we must always check fShutdown after doing this.
-        vnThreadsRunning[THREAD_MESSAGEHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)]--;
         Sleep(100);
         if (fRequestShutdown)
             StartShutdown();
-        vnThreadsRunning[THREAD_MESSAGEHANDLER]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)]++;
         if (fShutdown)
             return;
     }
@@ -1741,7 +1741,7 @@ bool BindListenPort(const CService &addrBind, string& strError)
     vhListenSocket.push_back(hListenSocket);
 
     if (addrBind.IsRoutable() && fDiscover)
-        AddLocal(addrBind, LOCAL_BIND);
+        AddLocal(addrBind, static_cast<int>(Local::Bind));
 
     return true;
 }
@@ -1761,7 +1761,7 @@ void static Discover()
         {
             for (const CNetAddr &addr : vaddr)
             {
-                AddLocal(addr, LOCAL_IF);
+                AddLocal(addr, static_cast<int>(Local::If));
             }
         }
     }
@@ -1780,7 +1780,7 @@ void static Discover()
             {
                 struct sockaddr_in* s4 = (struct sockaddr_in*)(ifa->ifa_addr);
                 CNetAddr addr(s4->sin_addr);
-                if (AddLocal(addr, LOCAL_IF))
+                if (AddLocal(addr, static_cast<int>(Local::If)))
                     printf("IPv4 %s: %s\n", ifa->ifa_name, addr.ToString().c_str());
             }
 #ifdef USE_IPV6
@@ -1788,7 +1788,7 @@ void static Discover()
             {
                 struct sockaddr_in6* s6 = (struct sockaddr_in6*)(ifa->ifa_addr);
                 CNetAddr addr(s6->sin6_addr);
-                if (AddLocal(addr, LOCAL_IF))
+                if (AddLocal(addr, static_cast<int>(Local::If)))
                     printf("IPv6 %s: %s\n", ifa->ifa_name, addr.ToString().c_str());
             }
 #endif
@@ -1866,7 +1866,7 @@ bool StopNode()
     do
     {
         int nThreadsRunning = 0;
-        for (int n = 0; n < THREAD_MAX; n++)
+        for (int n = 0; n < static_cast<int>(ThreadId::Max); n++)
             nThreadsRunning += vnThreadsRunning[n];
         if (nThreadsRunning == 0)
             break;
@@ -1874,19 +1874,19 @@ bool StopNode()
             break;
         Sleep(20);
     } while(true);
-    if (vnThreadsRunning[THREAD_SOCKETHANDLER] > 0) printf("ThreadSocketHandler still running\n");
-    if (vnThreadsRunning[THREAD_OPENCONNECTIONS] > 0) printf("ThreadOpenConnections still running\n");
-    if (vnThreadsRunning[THREAD_MESSAGEHANDLER] > 0) printf("ThreadMessageHandler still running\n");
-    if (vnThreadsRunning[THREAD_MINER] > 0) printf("ThreadBitcoinMiner still running\n");
-    if (vnThreadsRunning[THREAD_RPCLISTENER] > 0) printf("ThreadRPCListener still running\n");
-    if (vnThreadsRunning[THREAD_RPCHANDLER] > 0) printf("ThreadsRPCServer still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::SocketHandler)] > 0) printf("ThreadSocketHandler still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)] > 0) printf("ThreadOpenConnections still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)] > 0) printf("ThreadMessageHandler still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::Miner)] > 0) printf("ThreadBitcoinMiner still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)] > 0) printf("ThreadRPCListener still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] > 0) printf("ThreadsRPCServer still running\n");
 #ifdef USE_UPNP
-    if (vnThreadsRunning[THREAD_UPNP] > 0) printf("ThreadMapPort still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::Upnp)] > 0) printf("ThreadMapPort still running\n");
 #endif
-    if (vnThreadsRunning[THREAD_DNSSEED] > 0) printf("ThreadDNSAddressSeed still running\n");
-    if (vnThreadsRunning[THREAD_ADDEDCONNECTIONS] > 0) printf("ThreadOpenAddedConnections still running\n");
-    if (vnThreadsRunning[THREAD_DUMPADDRESS] > 0) printf("ThreadDumpAddresses still running\n");
-    while (vnThreadsRunning[THREAD_MESSAGEHANDLER] > 0 || vnThreadsRunning[THREAD_RPCHANDLER] > 0)
+    if (vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)] > 0) printf("ThreadDNSAddressSeed still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)] > 0) printf("ThreadOpenAddedConnections still running\n");
+    if (vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)] > 0) printf("ThreadDumpAddresses still running\n");
+    while (vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)] > 0 || vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] > 0)
         Sleep(20);
     Sleep(50);
     DumpAddresses();

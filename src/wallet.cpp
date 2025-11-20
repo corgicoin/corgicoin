@@ -785,7 +785,7 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
         {
             uint256 hash = tx.GetHash();
             if (!txdb.ContainsTx(hash))
-                RelayMessage(CInv(MSG_TX, hash), (CTransaction)tx);
+                RelayMessage(CInv(static_cast<int>(MsgType::Tx), hash), (CTransaction)tx);
         }
     }
     if (!IsCoinBase())
@@ -794,7 +794,7 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
         if (!txdb.ContainsTx(hash))
         {
             printf("Relaying wtx %s\n", hash.ToString().substr(0,10).c_str());
-            RelayMessage(CInv(MSG_TX, hash), (CTransaction)*this);
+            RelayMessage(CInv(static_cast<int>(MsgType::Tx), hash), (CTransaction)*this);
         }
     }
 }
