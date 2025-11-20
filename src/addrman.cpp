@@ -464,9 +464,8 @@ int CAddrMan::Check_()
     if (setTried.size() != nTried) return -9;
     if (mapNew.size() != nNew) return -10;
 
-    for (int n=0; n<vvTried.size(); n++)
+    for (auto& vTried : vvTried)
     {
-        std::vector<int> &vTried = vvTried[n];
         for (int id : vTried)
         {
             if (!setTried.count(id)) return -11;
@@ -474,9 +473,8 @@ int CAddrMan::Check_()
         }
     }
 
-    for (int n=0; n<vvNew.size(); n++)
+    for (auto& vNew : vvNew)
     {
-        std::set<int> &vNew = vvNew[n];
         for (int id : vNew)
         {
             if (!mapNew.count(id)) return -12;

@@ -660,8 +660,8 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     if (stack.size() < 1)
                         return false;
                     valtype& vch = stacktop(-1);
-                    for (unsigned int i = 0; i < vch.size(); i++)
-                        vch[i] = ~vch[i];
+                    for (auto& byte : vch)
+                        byte = ~byte;
                 }
                 break;
 
