@@ -148,6 +148,12 @@ qmake && make
 
 Use Qt Creator or MinGW-w64 with updated dependency paths.
 
+**⚠️ IMPORTANT:** The `release/` folder contains outdated 2014-era Qt 4 DLLs and MinGW libraries.
+See [RELEASE_FOLDER_MODERNIZATION.md](RELEASE_FOLDER_MODERNIZATION.md) for:
+- How to build with Qt 5 and collect modern DLLs
+- Security implications of outdated dependencies
+- Step-by-step Windows release packaging guide
+
 ### Testing
 
 After building, backup any existing wallets and test in an isolated environment first.

@@ -10,8 +10,9 @@
 #define BITCOIN_INIT_H
 
 #include "wallet.h"
+#include <memory>
 
-extern CWallet* pwalletMain;
+extern std::unique_ptr<CWallet> pwalletMain;
 
 void StartShutdown();
 void Shutdown(void* parg);
