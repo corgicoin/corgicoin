@@ -636,9 +636,8 @@ void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
             LOCK(pwallet->cs_wallet);
             map<uint256, const CMerkleTx*> mapWalletPrev;
             set<uint256> setAlreadyDone;
-            for (unsigned int i = 0; i < vWorkQueue.size(); i++)
+            for (const auto& hash : vWorkQueue)
             {
-                uint256 hash = vWorkQueue[i];
                 if (setAlreadyDone.count(hash))
                     continue;
                 setAlreadyDone.insert(hash);
@@ -1017,10 +1016,10 @@ bool CWallet::SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfThe
 
     if (nTotalLower == nTargetValue)
     {
-        for (unsigned int i = 0; i < vValue.size(); ++i)
+        for (const auto& value : vValue)
         {
-            setCoinsRet.insert(vValue[i].second);
-            nValueRet += vValue[i].first;
+            setCoinsRet.insert(value.second);
+            nValueRet += value.first;
         }
         return true;
     }

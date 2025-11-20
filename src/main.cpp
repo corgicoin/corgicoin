@@ -309,9 +309,9 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
     if (IsCoinBase())
         return true; // Coinbases don't use vin normally
 
-    for (unsigned int i = 0; i < vin.size(); i++)
+    for (const auto& input : vin)
     {
-        const CTxOut& prev = GetOutputFor(vin[i], mapInputs);
+        const CTxOut& prev = GetOutputFor(input, mapInputs);
 
         vector<vector<unsigned char> > vSolutions;
         txnouttype whichType;
@@ -1140,9 +1140,9 @@ bool CTransaction::FetchInputs(CTxDB& txdb, const map<uint256, CTxIndex>& mapTes
     if (IsCoinBase())
         return true; // Coinbase transactions have no inputs to fetch.
 
-    for (unsigned int i = 0; i < vin.size(); i++)
+    for (const auto& input : vin)
     {
-        COutPoint prevout = vin[i].prevout;
+        COutPoint prevout = input.prevout;
         if (inputsRet.count(prevout.hash))
             continue; // Got it already
 
@@ -1185,9 +1185,9 @@ bool CTransaction::FetchInputs(CTxDB& txdb, const map<uint256, CTxIndex>& mapTes
     }
 
     // Make sure all prevout.n's are valid:
-    for (unsigned int i = 0; i < vin.size(); i++)
+    for (const auto& input : vin)
     {
-        const COutPoint prevout = vin[i].prevout;
+        const COutPoint prevout = input.prevout;
         assert(inputsRet.count(prevout.hash) != 0);
         const CTxIndex& txindex = inputsRet[prevout.hash].first;
         const CTransaction& txPrev = inputsRet[prevout.hash].second;
@@ -1222,9 +1222,9 @@ int64 CTransaction::GetValueIn(const MapPrevTx& inputs) const
         return 0;
 
     int64 nResult = 0;
-    for (unsigned int i = 0; i < vin.size(); i++)
+    for (const auto& input : vin)
     {
-        nResult += GetOutputFor(vin[i], inputs).nValue;
+        nResult += GetOutputFor(input, inputs).nValue;
     }
     return nResult;
 
@@ -1236,11 +1236,11 @@ unsigned int CTransaction::GetP2SHSigOpCount(const MapPrevTx& inputs) const
         return 0;
 
     unsigned int nSigOps = 0;
-    for (unsigned int i = 0; i < vin.size(); i++)
+    for (const auto& input : vin)
     {
-        const CTxOut& prevout = GetOutputFor(vin[i], inputs);
+        const CTxOut& prevout = GetOutputFor(input, inputs);
         if (prevout.scriptPubKey.IsPayToScriptHash())
-            nSigOps += prevout.scriptPubKey.GetSigOpCount(vin[i].scriptSig);
+            nSigOps += prevout.scriptPubKey.GetSigOpCount(input.scriptSig);
     }
     return nSigOps;
 }
@@ -1257,9 +1257,9 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
     {
         int64 nValueIn = 0;
         int64 nFees = 0;
-        for (unsigned int i = 0; i < vin.size(); i++)
+        for (const auto& input : vin)
         {
-            COutPoint prevout = vin[i].prevout;
+            COutPoint prevout = input.prevout;
             assert(inputs.count(prevout.hash) > 0);
             CTxIndex& txindex = inputs[prevout.hash].first;
             CTransaction& txPrev = inputs[prevout.hash].second;
@@ -1564,9 +1564,8 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
 
     // Connect longer branch
     vector<CTransaction> vDelete;
-    for (unsigned int i = 0; i < vConnect.size(); i++)
+    for (CBlockIndex* pindex : vConnect)
     {
-        CBlockIndex* pindex = vConnect[i];
         CBlock block;
         if (!block.ReadFromDisk(pindex))
             return error("Reorganize() : ReadFromDisk for connect failed");

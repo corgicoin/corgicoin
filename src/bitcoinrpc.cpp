@@ -3014,8 +3014,8 @@ static Object JSONRPCExecOne(const Value& req)
 static string JSONRPCExecBatch(const Array& vReq)
 {
     Array ret;
-    for (unsigned int reqIdx = 0; reqIdx < vReq.size(); reqIdx++)
-        ret.push_back(JSONRPCExecOne(vReq[reqIdx]));
+    for (const auto& req : vReq)
+        ret.push_back(JSONRPCExecOne(req));
 
     return write_string(Value(ret), false) + "\n";
 }
