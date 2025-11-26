@@ -2747,15 +2747,15 @@ void ThreadRPCServer(void* parg)
 
     try
     {
-        vnThreadsRunning[THREAD_RPCLISTENER]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]++;
         ThreadRPCServer2(parg);
-        vnThreadsRunning[THREAD_RPCLISTENER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
     }
     catch (std::exception& e) {
-        vnThreadsRunning[THREAD_RPCLISTENER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
         PrintException(&e, "ThreadRPCServer()");
     } catch (...) {
-        vnThreadsRunning[THREAD_RPCLISTENER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
         PrintException(nullptr, "ThreadRPCServer()");
     }
     printf("ThreadRPCServer exited\n");
@@ -2798,7 +2798,7 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol, So
                              AcceptedConnection* conn,
                              const boost::system::error_code& error)
 {
-    vnThreadsRunning[THREAD_RPCLISTENER]++;
+    vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]++;
 
     // Immediately start accepting new connections, except when we're canceled or our socket is closed.
     if (error != asio::error::operation_aborted
@@ -2831,7 +2831,7 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol, So
         delete conn;
     }
 
-    vnThreadsRunning[THREAD_RPCLISTENER]--;
+    vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
 }
 
 void ThreadRPCServer2(void* parg)
@@ -2939,10 +2939,10 @@ void ThreadRPCServer2(void* parg)
         return;
     }
 
-    vnThreadsRunning[THREAD_RPCLISTENER]--;
+    vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
     while (!fShutdown)
         io_service.run_one();
-    vnThreadsRunning[THREAD_RPCLISTENER]++;
+    vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]++;
     StopRequests();
 }
 
@@ -3031,7 +3031,7 @@ void ThreadRPCServer3(void* parg)
 
     {
         LOCK(cs_THREAD_RPCHANDLER);
-        vnThreadsRunning[THREAD_RPCHANDLER]++;
+        vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]++;
     }
     AcceptedConnection *conn = static_cast<AcceptedConnection*>(parg);
 
@@ -3043,7 +3043,7 @@ void ThreadRPCServer3(void* parg)
             delete conn;
             {
                 LOCK(cs_THREAD_RPCHANDLER);
-                --vnThreadsRunning[THREAD_RPCHANDLER];
+                --vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)];
             }
             return;
         }
@@ -3115,7 +3115,7 @@ void ThreadRPCServer3(void* parg)
     delete conn;
     {
         LOCK(cs_THREAD_RPCHANDLER);
-        vnThreadsRunning[THREAD_RPCHANDLER]--;
+        vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]--;
     }
 }
 

@@ -74,11 +74,9 @@ public:
         setAddress.clear();
         {
             LOCK(cs_KeyStore);
-            auto mi = mapKeys.begin();
-            while (mi != mapKeys.end())
+            for (const auto& [keyID, keyData] : mapKeys)
             {
-                setAddress.insert((*mi).first);
-                mi++;
+                setAddress.insert(keyID);
             }
         }
     }
@@ -172,11 +170,9 @@ public:
             return;
         }
         setAddress.clear();
-        auto mi = mapCryptedKeys.begin();
-        while (mi != mapCryptedKeys.end())
+        for (const auto& [keyID, cryptedKey] : mapCryptedKeys)
         {
-            setAddress.insert((*mi).first);
-            mi++;
+            setAddress.insert(keyID);
         }
     }
 

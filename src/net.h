@@ -45,24 +45,24 @@ bool BindListenPort(const CService &bindAddr, std::string& strError=REF(std::str
 void StartNode(void* parg);
 bool StopNode();
 
-enum
+enum class Local
 {
-    LOCAL_NONE,   // unknown
-    LOCAL_IF,     // address a local interface listens on
-    LOCAL_BIND,   // address explicit bound to
-    LOCAL_UPNP,   // address reported by UPnP
-    LOCAL_IRC,    // address reported by IRC (deprecated)
-    LOCAL_HTTP,   // address reported by whatismyip.com and similars
-    LOCAL_MANUAL, // address explicitly specified (-externalip=)
+    None,    // unknown
+    If,      // address a local interface listens on
+    Bind,    // address explicit bound to
+    Upnp,    // address reported by UPnP
+    Irc,     // address reported by IRC (deprecated)
+    Http,    // address reported by whatismyip.com and similars
+    Manual,  // address explicitly specified (-externalip=)
 
-    LOCAL_MAX
+    Max
 };
 
 void SetLimited(enum Network net, bool fLimited = true);
 bool IsLimited(enum Network net);
 bool IsLimited(const CNetAddr& addr);
-bool AddLocal(const CService& addr, int nScore = LOCAL_NONE);
-bool AddLocal(const CNetAddr& addr, int nScore = LOCAL_NONE);
+bool AddLocal(const CService& addr, int nScore = static_cast<int>(Local::None));
+bool AddLocal(const CNetAddr& addr, int nScore = static_cast<int>(Local::None));
 bool SeenLocal(const CService& addr);
 bool IsLocal(const CService& addr);
 bool GetLocal(CService &addr, const CNetAddr *paddrPeer = nullptr);
@@ -71,10 +71,10 @@ void SetReachable(enum Network net, bool fFlag = true);
 CAddress GetLocalAddress(const CNetAddr *paddrPeer = nullptr);
 
 
-enum
+enum class MsgType : unsigned int
 {
-    MSG_TX = 1,
-    MSG_BLOCK,
+    Tx = 1,
+    Block = 2
 };
 
 class CRequestTracker
@@ -97,20 +97,20 @@ public:
 
 
 /** Thread types */
-enum threadId
+enum class ThreadId
 {
-    THREAD_SOCKETHANDLER,
-    THREAD_OPENCONNECTIONS,
-    THREAD_MESSAGEHANDLER,
-    THREAD_MINER,
-    THREAD_RPCLISTENER,
-    THREAD_UPNP,
-    THREAD_DNSSEED,
-    THREAD_ADDEDCONNECTIONS,
-    THREAD_DUMPADDRESS,
-    THREAD_RPCHANDLER,
+    SocketHandler,
+    OpenConnections,
+    MessageHandler,
+    Miner,
+    RpcListener,
+    Upnp,
+    DnsSeed,
+    AddedConnections,
+    DumpAddress,
+    RpcHandler,
 
-    THREAD_MAX
+    Max
 };
 
 extern bool fClient;
@@ -118,7 +118,7 @@ extern bool fDiscover;
 extern bool fUseUPnP;
 extern uint64 nLocalServices;
 extern uint64 nLocalHostNonce;
-extern std::array<int, THREAD_MAX> vnThreadsRunning;
+extern std::array<int, static_cast<int>(ThreadId::Max)> vnThreadsRunning;
 extern CAddrMan addrman;
 
 extern std::vector<CNode*> vNodes;
