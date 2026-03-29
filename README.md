@@ -1,5 +1,5 @@
 # CorgiCoin [CORG, Ç]
-http://corgicoin.com/
+http://corgicoin.co/
 
 ![CorgiCoin](http://i.imgur.com/jx5vexy.png)
 
