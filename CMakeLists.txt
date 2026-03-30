@@ -483,6 +483,10 @@ if(BUILD_TESTS)
         src/test/uint256_tests.cpp
         src/test/util_tests.cpp
         src/test/wallet_tests.cpp
+        src/test/scrypt_tests.cpp
+        src/test/address_tests.cpp
+        src/test/blockreward_tests.cpp
+        src/test/serialize_tests.cpp
     )
 
     # Tests use the daemon sources minus init.cpp (test_bitcoin.cpp provides its own main/setup)
