@@ -4,7 +4,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "../checkpoints.h"
-#include "../util.h"
+#include "../main.h"
 
 using namespace std;
 
@@ -12,21 +12,19 @@ BOOST_AUTO_TEST_SUITE(Checkpoints_tests)
 
 BOOST_AUTO_TEST_CASE(sanity)
 {
-    uint256 p1500 = uint256("0x841a2965955dd288cfa707a755d05a54e45f8bd476835ec9af4402a2b59a2967");
-    uint256 p120000 = uint256("0xbd9d26924f05f6daa7f0155f32828ec89e8e29cee9e7121b026a7a3552ac6131");
-    BOOST_CHECK(Checkpoints::CheckBlock(1500, p1500));
-    BOOST_CHECK(Checkpoints::CheckBlock(120000, p120000));
+    // CorgiCoin only has a genesis block checkpoint (block 0)
+    BOOST_CHECK(Checkpoints::CheckBlock(0, hashGenesisBlockOfficial));
 
-    
-    // Wrong hashes at checkpoints should fail:
-    BOOST_CHECK(!Checkpoints::CheckBlock(1500, p120000));
-    BOOST_CHECK(!Checkpoints::CheckBlock(120000, p1500));
+    // Any hash at a non-checkpoint height should succeed:
+    uint256 dummyHash = uint256("0x0000000000000000000000000000000000000000000000000000000000000001");
+    BOOST_CHECK(Checkpoints::CheckBlock(1, dummyHash));
+    BOOST_CHECK(Checkpoints::CheckBlock(1000, dummyHash));
 
-    // ... but any hash not at a checkpoint should succeed:
-    BOOST_CHECK(Checkpoints::CheckBlock(1500+1, p120000));
-    BOOST_CHECK(Checkpoints::CheckBlock(120000+1, p1500));
+    // Wrong hash at checkpoint 0 should fail:
+    BOOST_CHECK(!Checkpoints::CheckBlock(0, dummyHash));
 
-    BOOST_CHECK(Checkpoints::GetTotalBlocksEstimate() >= 120000);
-}    
+    // Total blocks estimate should be at least 0 (genesis)
+    BOOST_CHECK(Checkpoints::GetTotalBlocksEstimate() >= 0);
+}
 
 BOOST_AUTO_TEST_SUITE_END()

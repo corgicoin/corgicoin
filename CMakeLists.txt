@@ -486,6 +486,9 @@ if(BUILD_TESTS)
 
     add_executable(test_corgicoin ${TEST_SOURCES} ${TEST_DAEMON_SOURCES} ${JSON_SOURCES})
     add_dependencies(test_corgicoin generate_build_info)
+    target_compile_definitions(test_corgicoin PRIVATE
+        TEST_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src/test/data
+    )
 
     target_link_libraries(test_corgicoin
         ${OPENSSL_LIBRARIES}

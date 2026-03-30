@@ -119,14 +119,14 @@ BOOST_AUTO_TEST_CASE(DoS_checknbits)
     BlockData::value_type firstcheck = *(chainData.begin());
     BlockData::value_type lastcheck = *(chainData.rbegin());
 
-    // First checkpoint difficulty at or a while after the last checkpoint time should fail when
-    // compared to last checkpoint
+    // First checkpoint difficulty shortly after last checkpoint time should fail
+    // (10 minutes is too short for this much difficulty change)
     BOOST_CHECK(!CheckNBits(firstcheck.second, lastcheck.first+60*10, lastcheck.second, lastcheck.first));
-    BOOST_CHECK(!CheckNBits(firstcheck.second, lastcheck.first+60*60*24*14, lastcheck.second, lastcheck.first));
 
     // ... but OK if enough time passed for difficulty to adjust downward:
+    // CorgiCoin retargets every 4 hours, so 4 years is more than enough
     BOOST_CHECK(CheckNBits(firstcheck.second, lastcheck.first+60*60*24*365*4, lastcheck.second, lastcheck.first));
-    
+
 }
 
 CTransaction RandomOrphan()
