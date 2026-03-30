@@ -88,8 +88,8 @@ LIBS+= \
 
 DEBUGFLAGS=-g
 
-# Use C++11 standard for modern features and compatibility
-CXX_STANDARD=-std=c++11
+# Use C++17 standard for modern features and compatibility
+CXX_STANDARD=-std=c++17
 
 # CXXFLAGS can be specified on the make command line, so we use xCXXFLAGS that only
 # adds some defaults in front. Unfortunately, CXXFLAGS=... $(CXXFLAGS) does not work.

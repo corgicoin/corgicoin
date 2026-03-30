@@ -1,207 +1,154 @@
 # CorgiCoin [CORG, Ç]
-http://corgicoin.co/
 
 ![CorgiCoin](http://i.imgur.com/jx5vexy.png)
 
-## ⚠️ IMPORTANT SECURITY NOTICE
+## About
 
-**This is a 2014-era cryptocurrency codebase with outdated dependencies.**
+CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase.
 
-**SECURITY STATUS:**
-- ✅ **OpenSSL modernized** (v1.4.1.54): Compatible with OpenSSL 1.1.x/3.x
-  - Can now build with secure, modern OpenSSL versions
-  - OpenSSL 1.0.x still supported but upgrade strongly recommended
-- ✅ **Boost modernized** (v1.4.1.55): Compatible with Boost 1.55.0-1.80+
-  - 70% dependency reduction through C++11/14 modernization
-  - Can now use modern, maintained Boost versions
-- ✅ **Berkeley DB modernized** (v1.4.1.56): Compatible with BDB 4.8-6.2+
-  - Wallet file compatibility maintained across versions
-  - Safe upgrade path to modern BDB releases
-- ✅ **Qt 5 compatible** (v1.4.1.57): Dual Qt 4/5 support, ready for Qt 6
-  - Build with either Qt 4.8+ or Qt 5.6+/Qt 5.15 LTS
-  - Backward compatible API updates with conditional compilation
-- ✅ IRC peer discovery removed (v1.4.1.33)
+**Version 4.0.0.0** represents a complete relaunch with:
+- C++17 codebase (modernized from C++03)
+- OpenSSL 3.x support (1.0.x dropped)
+- Protocol version 70001 (incompatible with legacy 1.x nodes)
+- CI/CD pipeline with actions
 
-**Before using this code:**
-1. Read [MODERNIZATION.md](MODERNIZATION.md) for full security assessment
-2. Update all dependencies to modern versions
-3. Test thoroughly in an isolated environment
-4. **DO NOT use in production without updating dependencies**
+## Chain Specifications
 
-See [MODERNIZATION.md](MODERNIZATION.md) for complete modernization roadmap and dependency updates.
+| Parameter | Value |
+|-----------|-------|
+| **Algorithm** | Scrypt (1024, 1, 1, 256) |
+| **Block Time** | 1 minute |
+| **Difficulty Retarget** | Every 4 hours (240 blocks) |
+| **Max Supply** | 100,000,000,000 CORG |
+| **Coinbase Maturity** | 30 blocks |
+| **P2P Port** | 62556 |
+| **RPC Port** | 62555 |
+| **Testnet P2P Port** | 64556 |
 
-## What is CorgiCoin?
- CorgiCoin is like Bitcoin, but based on Litecoin, and very short.
+### Block Rewards
 
-**Note:** This codebase is provided for historical/educational purposes. Modernization is required for safe operation.
+Random block rewards seeded from previous block hash:
 
-## License
- CorgiCoin is released under the MIT license. See [COPYING](COPYING)
-for more information.
+| Block Height | Max Reward |
+|---|---|
+| 1 - 100,000 | 1,000,000 CORG |
+| 100,001 - 200,000 | 500,000 CORG |
+| 200,001 - 300,000 | 250,000 CORG |
+| 300,001 - 400,000 | 125,000 CORG |
+| 400,001 - 500,000 | 62,500 CORG |
+| 500,001 - 600,000 | 31,250 CORG |
+| 600,001+ | 10,000 CORG (flat) |
 
-## FAQ
+## Building
 
-### Who are you?
-Just a couple guys having fun.
+### Requirements
 
-### What's the max CORG that will exist?
-Only 100 billion. Wait, what.
+- **C++17 compiler**: GCC 9+, Clang 10+, or MSVC 2019+
+- **OpenSSL** 1.1.0+ (3.x recommended)
+- **Boost** 1.65+
+- **Berkeley DB** 5.3+
+- **Qt 5.15+** (for GUI wallet, optional)
+- **CMake** 3.10+
 
-### Coin type?
-CorgiCoin is a Scrypt-based Proof of Work coin.
-
-### Block Info
-
-Just like DOGE:
-
-1 Minute Block Targets, 4 Hour Diff Readjustments
-
-Special reward system: Random block rewards
-
-1-100,000: 0-1,000,000 Corgicoin Reward
-
-100,001 — 200,000: 0-500,000 Corgicoin Reward
-
-200,001 — 300,000: 0-250,000 Corgicoin Reward
-
-300,001 — 400,000: 0-125,000 Corgicoin Reward
-
-400,001 — 500,000: 0-62,500 Corgicoin Reward
-
-500,001 - 600,000: 0-31,250 Corgicoin Reward
-
-600,000+ — 10,000 Reward (flat)
-
-### Conf Settings
-
-**⚠️ SECURITY WARNING:** Do not use default credentials in production!
-
-```conf
-# Change these default values!
-rpcuser=your_secure_username
-rpcpassword=your_secure_random_password
-
-rpcport=62555
-
-# Seed nodes (may be outdated)
-addnode=162.243.41.34
-addnode=192.241.169.209
-addnode=162.243.222.29
-addnode=162.243.67.52
-addnode=162.243.123.79
-```
-
-## Building CorgiCoin
-
-### Prerequisites
-
-**Minimum Requirements (2014-era):**
-- Boost 1.55.0+ (outdated, upgrade to 1.70+ recommended)
-- OpenSSL 1.0.1f+ (CRITICAL: upgrade to OpenSSL 3.x required)
-- Berkeley DB 5.3+ (5.3.28+ recommended)
-- Qt 4.8+ or Qt 5.6+ (Qt 5.15 LTS recommended)
-- C++11 compatible compiler (GCC 4.8+, Clang 3.3+, or MSVC 2015+)
-
-**Recommended Modern Versions:**
-- Boost 1.70 or newer
-- OpenSSL 3.0 or newer
-- Berkeley DB 5.3.28 or 6.x
-- Qt 5.15 LTS (Qt 4.8+ still supported)
-- GCC 9+ or Clang 10+
-
-### Build Instructions
-
-CorgiCoin supports two build systems:
-- **CMake** (recommended for modern systems) - See [BUILD.cmake.md](BUILD.cmake.md)
-- **qmake/make** (traditional approach)
-
-#### CMake (Modern, Cross-Platform)
+### Quick Start
 
 ```bash
+# Install dependencies (Ubuntu/Debian)
+sudo apt-get install build-essential libboost-all-dev libssl-dev \
+  libdb++-dev libminiupnpc-dev cmake
+
+# Build daemon
 mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF
+make -j$(nproc)
+
+# Build with Qt wallet
 cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=ON
 make -j$(nproc)
 ```
 
-See [BUILD.cmake.md](BUILD.cmake.md) for detailed CMake instructions, dependency setup, and IDE integration.
-
-#### Traditional Build (qmake/make)
-
-##### Linux/Unix
+#### macOS
 
 ```bash
-cd src/
-make -f makefile.unix            # For daemon
-# or
-qmake && make                     # For Qt GUI
+brew install boost openssl@3 berkeley-db@5 miniupnpc cmake qt@5
+
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+  -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+  -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db@5)
+make -j$(sysctl -n hw.logicalcpu)
 ```
 
-##### macOS
+See [BUILD.cmake.md](BUILD.cmake.md) for detailed instructions and IDE integration.
 
-```bash
-./build_mac.sh
-# or
-qmake && make
+### Configuration
+
+```conf
+rpcuser=your_secure_username
+rpcpassword=your_secure_random_password
+rpcport=62555
+
+# Seed nodes (determining network config)
+# addnode=<seed-node-ip>
 ```
 
-##### Windows
+## Version History
 
-Use Qt Creator or MinGW-w64 with updated dependency paths.
+### v4.0.0.0 — 2026 Relaunch
+- C++17 standard across all build systems
+- OpenSSL 3.x migration complete (1.0.x dropped)
+- Protocol version 70001 (breaks compatibility with 1.x nodes)
+- Client identity renamed from "Satoshi" to "CorgiCoin"
+- `std::random_shuffle` replaced with `std::shuffle` (C++17 compliance)
+- ECDSA_SIG direct member access replaced with accessor functions
+- DNS seeds updated for new network
+- GitHub Actions CI/CD pipeline added
 
-**⚠️ IMPORTANT:** The `release/` folder contains outdated 2014-era Qt 4 DLLs and MinGW libraries.
-See [RELEASE_FOLDER_MODERNIZATION.md](RELEASE_FOLDER_MODERNIZATION.md) for:
-- How to build with Qt 5 and collect modern DLLs
-- Security implications of outdated dependencies
-- Step-by-step Windows release packaging guide
+### v1.4.1.42 - v1.4.1.67 — Modernization Era
+- 16 releases, ~645+ individual modernizations
+- C++11/14 migration: nullptr, smart pointers, range-based for, enum classes, structured bindings
+- OpenSSL 1.1.x/3.x compatibility layer
+- Boost 1.70+ compatibility (70% dependency reduction)
+- Berkeley DB 4.8-6.2 compatibility
+- Qt 4/5 dual support
+- IRC peer discovery removal
+- See [MODERNIZATION.md](MODERNIZATION.md) for full changelog
 
-### Testing
+### v1.0 - v1.4.1.41 — Original Era (2014)
+- Initial Dogecoin fork with Scrypt PoW
+- Original network launch and mining
 
-After building, backup any existing wallets and test in an isolated environment first.
+## Roadmap
 
-## Modernization
+### Completed
+- [x] C++17 codebase upgrade
+- [x] OpenSSL 3.x full migration
+- [x] New genesis block for 2026 relaunch
+- [x] Protocol version bump (v70001)
+- [x] CI/CD pipeline (GitHub Actions)
+- [x] DNS seed infrastructure update
 
-This codebase has been substantially modernized with C++11/14 features:
+### In Progress
+- [ ] Gen block mining and hash finalization
+- [ ] Seed node deployment (VPS infrastructure)
+- [ ] Historical holder airdrop mechanism (previous chain data recovery)
 
-**✅ Completed (Phase 1 & 3):**
-- C++11 compiler flags and build system (CMake + qmake)
-- nullptr throughout codebase (202 conversions)
-- Modern type aliases with `using` (all typedef converted)
-- Smart pointers (unique_ptr, shared_ptr) for RAII with memory leak fixes
-- C++11 threading (std::thread, std::mutex, std::condition_variable)
-- Modern C++ casts (static_cast, reinterpret_cast, const_cast)
-- Lambda expressions (replaced boost::bind)
-- Qt signal/slot function pointers (~130 conversions)
-- Standard library containers (std::array, std::vector)
-- Deprecated code removal (IRC, auto_ptr)
-- **Major Boost dependency reduction** - Most Boost usage replaced with C++11 STL
-- constexpr for compile-time constants (blockchain, network)
-- Move semantics for performance optimization
-
-**✅ Dependency Modernization Complete:**
-- **OpenSSL 1.1.x/3.x compatible** (v1.4.1.54) - Compiles with modern, secure OpenSSL!
-- **Boost 1.70+ compatible** (v1.4.1.55) - Works with Boost 1.55.0 through 1.80+!
-- **Berkeley DB 4.8-6.2 compatible** (v1.4.1.56) - Safe wallet upgrade path!
-- 70% Boost dependency reduction through C++11/14 modernization
-- Backward compatible with older versions (upgrade strongly recommended)
-
-**Modernization Stats:**
-- 16 major modernization releases (v1.4.1.42-57)
-- ~645+ individual modernizations
-- **All critical dependencies modernized** - OpenSSL, Boost, Berkeley DB, Qt ✅
-- 70% Boost dependency reduction achieved
-- C++17-ready (deprecated features removed)
-- Memory leak fixes and performance optimizations
-
-See [MODERNIZATION.md](MODERNIZATION.md) for complete details and changelog.
+### Planned
+- [ ] Qt 6 migration (drop Qt 4 support)
+- [ ] Replace json_spirit with modern JSON library
+- [ ] Replace boost::filesystem with std::filesystem
+- [ ] Block explorer
+- [ ] Wallet UX improvements
+- [ ] Bech32 address support (BIP173)
+- [ ] P2P encryption (BIP151)
 
 ## Contributing
 
-When contributing, please:
-1. Use C++11 features where appropriate
+1. Use C++17 features where appropriate
 2. Follow existing code style
-3. Test thoroughly
-4. Update dependencies before deploying
+3. Ensure CI passes before submitting PRs
+4. Test on both Linux and macOS
 
-## Support
+## License
 
-For modernization questions and security updates, see [MODERNIZATION.md](MODERNIZATION.md).
+CorgiCoin is released under the MIT/X11 license. See [COPYING](COPYING) for details.

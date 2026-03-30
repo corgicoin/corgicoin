@@ -8,6 +8,9 @@
 CXX=llvm-g++
 DEPSDIR=/usr/local
 
+# Use C++17 standard for modern features and compatibility
+CXX_STANDARD=-std=c++17
+
 INCLUDEPATHS= \
  -I"$(CURDIR)" \
  -I"$(CURDIR)"/obj \
@@ -62,7 +65,7 @@ CFLAGS = -g
 endif
 
 # ppc doesn't work because we don't support big-endian
-CFLAGS += -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter \
+CFLAGS += $(CXX_STANDARD) -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter \
     $(DEBUGFLAGS) $(DEFS) $(INCLUDEPATHS)
 
 OBJS= \

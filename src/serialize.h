@@ -17,6 +17,7 @@
 #include <limits>
 #include <cstring>
 #include <cstdio>
+#include <type_traits>
 
 #include <boost/type_traits/is_fundamental.hpp>
 #include <boost/tuple/tuple.hpp>
@@ -30,7 +31,6 @@
 using int64 = long long;
 using uint64 = unsigned long long;
 
-class CScript;
 class CDataStream;
 class CAutoFile;
 constexpr unsigned int MAX_SIZE = 0x02000000;
@@ -245,7 +245,7 @@ uint64 ReadCompactSize(Stream& is)
 
 
 
-#define FLATDATA(obj)   REF(CFlatData(reinterpret_cast<char*>(&(obj)), reinterpret_cast<char*>(&(obj)) + sizeof(obj)))
+#define FLATDATA(obj)   REF(CFlatData(reinterpret_cast<char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(obj)>>*>(&(obj))), reinterpret_cast<char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(obj)>>*>(&(obj))) + sizeof(obj)))
 
 /** Wrapper for serializing arrays and POD.
  * There's a clever template way to make arrays serialize normally, but MSVC6 doesn't support it.
@@ -300,10 +300,7 @@ template<typename Stream, typename T, typename A> void Unserialize_impl(Stream& 
 template<typename Stream, typename T, typename A> void Unserialize_impl(Stream& is, std::vector<T, A>& v, int nType, int nVersion, const boost::false_type&);
 template<typename Stream, typename T, typename A> inline void Unserialize(Stream& is, std::vector<T, A>& v, int nType, int nVersion);
 
-// others derived from vector
-extern inline unsigned int GetSerializeSize(const CScript& v, int nType, int nVersion);
-template<typename Stream> void Serialize(Stream& os, const CScript& v, int nType, int nVersion);
-template<typename Stream> void Unserialize(Stream& is, CScript& v, int nType, int nVersion);
+// CScript serialization declared in script.h (after full class definition)
 
 // pair
 template<typename K, typename T> unsigned int GetSerializeSize(const std::pair<K, T>& item, int nType, int nVersion);
@@ -340,19 +337,19 @@ template<typename Stream, typename K, typename Pred, typename A> void Unserializ
 // The compiler will only cast int to long if none of the other templates matched.
 // Thanks to Boost serialization for this idea.
 //
-template<typename T>
+template<typename T, typename = std::enable_if_t<!std::is_base_of_v<std::vector<unsigned char>, T>>>
 inline unsigned int GetSerializeSize(const T& a, long nType, int nVersion)
 {
     return a.GetSerializeSize(static_cast<int>(nType), nVersion);
 }
 
-template<typename Stream, typename T>
+template<typename Stream, typename T, typename = std::enable_if_t<!std::is_base_of_v<std::vector<unsigned char>, T>>>
 inline void Serialize(Stream& os, const T& a, long nType, int nVersion)
 {
     a.Serialize(os, static_cast<int>(nType), nVersion);
 }
 
-template<typename Stream, typename T>
+template<typename Stream, typename T, typename = std::enable_if_t<!std::is_base_of_v<std::vector<unsigned char>, T>>>
 inline void Unserialize(Stream& is, T& a, long nType, int nVersion)
 {
     a.Unserialize(is, static_cast<int>(nType), nVersion);
@@ -480,25 +477,7 @@ inline void Unserialize(Stream& is, std::vector<T, A>& v, int nType, int nVersio
 
 
 
-//
-// others derived from vector
-//
-inline unsigned int GetSerializeSize(const CScript& v, int nType, int nVersion)
-{
-    return GetSerializeSize(static_cast<const std::vector<unsigned char>&>(v), nType, nVersion);
-}
-
-template<typename Stream>
-void Serialize(Stream& os, const CScript& v, int nType, int nVersion)
-{
-    Serialize(os, static_cast<const std::vector<unsigned char>&>(v), nType, nVersion);
-}
-
-template<typename Stream>
-void Unserialize(Stream& is, CScript& v, int nType, int nVersion)
-{
-    Unserialize(is, static_cast<std::vector<unsigned char>&>(v), nType, nVersion);
-}
+// CScript serialization is in script.h (after the full class definition)
 
 
 

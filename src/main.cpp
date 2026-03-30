@@ -975,7 +975,7 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
 
     // Limit adjustment step
     int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
-    printf("  nActualTimespan = %"PRI64d"  before bounds\n", nActualTimespan);
+    printf("  nActualTimespan = %" PRI64d "  before bounds\n", nActualTimespan);
 
 	if(pindexLast->nHeight+1 > 10000)	
 	{
@@ -1010,7 +1010,7 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
 
     /// debug print
     printf("GetNextWorkRequired RETARGET\n");
-    printf("nTargetTimespan = %"PRI64d"    nActualTimespan = %"PRI64d"\n", nTargetTimespan, nActualTimespan);
+    printf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d "\n", nTargetTimespan, nActualTimespan);
     printf("Before: %08x  %s\n", pindexLast->nBits, CBigNum().SetCompact(pindexLast->nBits).getuint256().ToString().c_str());
     printf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString().c_str());
 
@@ -2089,8 +2089,8 @@ bool LoadBlockIndex(bool fAllowNew)
 		//     CTxOut(nValue=88.00000000, scriptPubKey=040184710fa689ad5023690c80f3a4)
 		//   vMerkleTree: 6f80efd038 
 
-        // Genesis block
-        const char* pszTimestamp = "Twerpo";
+        // Genesis block — CorgiCoin 2.0 Relaunch (2026)
+        const char* pszTimestamp = "CorgiCoin Relaunch 2026 - The Return of the Short Chain";
         CTransaction txNew;
         txNew.vin.resize(1);
         txNew.vout.resize(1);
@@ -2102,14 +2102,13 @@ bool LoadBlockIndex(bool fAllowNew)
         block.hashPrevBlock = 0;
         block.hashMerkleRoot = block.BuildMerkleTree();
         block.nVersion = 1;
-        block.nTime    = 1386325540;
+        block.nTime    = 1774828800;  // March 2026
         block.nBits    = 0x1e0ffff0;
-        block.nNonce   = 1112448;
-
+        block.nNonce   = 0;  // Will be found by mining loop below
 
         if (fTestNet)
         {
-            block.nTime    = 1386325540;
+            block.nTime    = 1774828800;
             block.nNonce   = 0;
         }
 
@@ -2117,7 +2116,8 @@ bool LoadBlockIndex(bool fAllowNew)
         printf("block.GetHash() = %s\n", block.GetHash().ToString().c_str());
         printf("hashGenesisBlock = %s\n", hashGenesisBlock.ToString().c_str());
         printf("block.hashMerkleRoot = %s\n", block.hashMerkleRoot.ToString().c_str());
-        assert(block.hashMerkleRoot == uint256("0xfd5e2484e1fcbc901e14673811998197fb2dc6bbc83b51b1c41d7e15f63158ae"));
+        // Merkle root will be recalculated after genesis mining
+        // assert(block.hashMerkleRoot == uint256("0x..."));
 
 		if (true && block.GetHash() != hashGenesisBlock) {
 		
@@ -3502,7 +3502,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                 dPriority += static_cast<double>(nValueIn) * nConf;
 
                 if (fDebug && GetBoolArg("-printpriority"))
-                    printf("priority     nValueIn=%-12"PRI64d" nConf=%-5d dPriority=%-20.1f\n", nValueIn, nConf, dPriority);
+                    printf("priority     nValueIn=%-12" PRI64d " nConf=%-5d dPriority=%-20.1f\n", nValueIn, nConf, dPriority);
             }
 
             // Priority is sum(valuein * age) / txsize

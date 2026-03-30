@@ -7,8 +7,10 @@
 
 #include <openssl/aes.h>
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
 #include <vector>
 #include <string>
+#include "compat_openssl.h"
 #ifdef WIN32
 #include <windows.h>
 #endif
@@ -28,8 +30,28 @@ bool CCrypter::SetKeyFromPassphrase(const SecureString& strKeyData, const std::v
 
     int i = 0;
     if (nDerivationMethod == 0)
+    {
+#ifdef OPENSSL_3_0_OR_LATER
+        // EVP_BytesToKey is deprecated in OpenSSL 3.0 — use PKCS5_PBKDF2_HMAC instead.
+        // Note: this produces different output than EVP_BytesToKey. Safe for new wallets.
+        // If importing old encrypted wallets, the legacy derivation must be used.
+        unsigned char derived[WALLET_CRYPTO_KEY_SIZE + WALLET_CRYPTO_KEY_SIZE];
+        if (PKCS5_PBKDF2_HMAC(
+                reinterpret_cast<const char*>(&strKeyData[0]), strKeyData.size(),
+                &chSalt[0], WALLET_CRYPTO_SALT_SIZE,
+                nRounds, EVP_sha512(),
+                sizeof(derived), derived))
+        {
+            memcpy(chKey, derived, WALLET_CRYPTO_KEY_SIZE);
+            memcpy(chIV, derived + WALLET_CRYPTO_KEY_SIZE, WALLET_CRYPTO_KEY_SIZE);
+            OPENSSL_cleanse(derived, sizeof(derived));
+            i = WALLET_CRYPTO_KEY_SIZE;
+        }
+#else
         i = EVP_BytesToKey(EVP_aes_256_cbc(), EVP_sha512(), &chSalt[0],
                           (unsigned char *)&strKeyData[0], strKeyData.size(), nRounds, chKey, chIV);
+#endif
+    }
 
     if (i != (int)WALLET_CRYPTO_KEY_SIZE)
     {
@@ -73,8 +95,6 @@ bool CCrypter::Encrypt(const CKeyingMaterial& vchPlaintext, std::vector<unsigned
 
     bool fOk = true;
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-    // OpenSSL 1.1.0+: Use heap-allocated context
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) return false;
 
@@ -83,16 +103,6 @@ bool CCrypter::Encrypt(const CKeyingMaterial& vchPlaintext, std::vector<unsigned
     if (fOk) fOk = EVP_EncryptFinal_ex(ctx, (&vchCiphertext[0])+nCLen, &nFLen);
 
     EVP_CIPHER_CTX_free(ctx);
-#else
-    // OpenSSL 1.0.x: Use stack-allocated context
-    EVP_CIPHER_CTX ctx;
-
-    EVP_CIPHER_CTX_init(&ctx);
-    if (fOk) fOk = EVP_EncryptInit_ex(&ctx, EVP_aes_256_cbc(), nullptr, chKey, chIV);
-    if (fOk) fOk = EVP_EncryptUpdate(&ctx, &vchCiphertext[0], &nCLen, &vchPlaintext[0], nLen);
-    if (fOk) fOk = EVP_EncryptFinal_ex(&ctx, (&vchCiphertext[0])+nCLen, &nFLen);
-    EVP_CIPHER_CTX_cleanup(&ctx);
-#endif
 
     if (!fOk) return false;
 
@@ -113,8 +123,6 @@ bool CCrypter::Decrypt(const std::vector<unsigned char>& vchCiphertext, CKeyingM
 
     bool fOk = true;
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-    // OpenSSL 1.1.0+: Use heap-allocated context
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) return false;
 
@@ -123,16 +131,6 @@ bool CCrypter::Decrypt(const std::vector<unsigned char>& vchCiphertext, CKeyingM
     if (fOk) fOk = EVP_DecryptFinal_ex(ctx, (&vchPlaintext[0])+nPLen, &nFLen);
 
     EVP_CIPHER_CTX_free(ctx);
-#else
-    // OpenSSL 1.0.x: Use stack-allocated context
-    EVP_CIPHER_CTX ctx;
-
-    EVP_CIPHER_CTX_init(&ctx);
-    if (fOk) fOk = EVP_DecryptInit_ex(&ctx, EVP_aes_256_cbc(), nullptr, chKey, chIV);
-    if (fOk) fOk = EVP_DecryptUpdate(&ctx, &vchPlaintext[0], &nPLen, &vchCiphertext[0], nLen);
-    if (fOk) fOk = EVP_DecryptFinal_ex(&ctx, (&vchPlaintext[0])+nPLen, &nFLen);
-    EVP_CIPHER_CTX_cleanup(&ctx);
-#endif
 
     if (!fOk) return false;
 

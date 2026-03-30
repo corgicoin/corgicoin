@@ -15,10 +15,10 @@
 //
 
 // These need to be macro's, as version.cpp's voodoo requires it
-#define CLIENT_VERSION_MAJOR       1
-#define CLIENT_VERSION_MINOR       4
-#define CLIENT_VERSION_REVISION    1
-#define CLIENT_VERSION_BUILD       67
+#define CLIENT_VERSION_MAJOR       4
+#define CLIENT_VERSION_MINOR       0
+#define CLIENT_VERSION_REVISION    0
+#define CLIENT_VERSION_BUILD       0
 
 constexpr int CLIENT_VERSION =
                            1000000 * CLIENT_VERSION_MAJOR
@@ -34,7 +34,7 @@ extern const std::string CLIENT_DATE;
 // network protocol versioning
 //
 
-constexpr int PROTOCOL_VERSION = 60003;
+constexpr int PROTOCOL_VERSION = 70001;
 
 // earlier versions not supported as of Feb 2012, and are disconnected
 constexpr int MIN_PROTO_VERSION = 209;

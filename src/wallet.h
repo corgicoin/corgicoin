@@ -19,8 +19,9 @@
 
 class CWalletTx;
 class CReserveKey;
-class CWalletDB;
 class COutput;
+
+#include "walletdb.h"
 
 /** (client) version numbers for particular wallet features */
 enum class WalletFeature

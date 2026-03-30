@@ -40,7 +40,7 @@ public:
     bool ReadName(const std::string& strAddress, std::string& strName)
     {
         strName = "";
-        return Read({std::string("name"), strAddress}, strName);
+        return Read(std::make_pair(std::string("name"), strAddress), strName);
     }
 
     bool WriteName(const std::string& strAddress, const std::string& strName);
@@ -49,42 +49,42 @@ public:
 
     bool ReadTx(uint256 hash, CWalletTx& wtx)
     {
-        return Read({std::string("tx"), hash}, wtx);
+        return Read(std::make_pair(std::string("tx"), hash), wtx);
     }
 
     bool WriteTx(uint256 hash, const CWalletTx& wtx)
     {
         nWalletDBUpdated++;
-        return Write({std::string("tx"), hash}, wtx);
+        return Write(std::make_pair(std::string("tx"), hash), wtx);
     }
 
     bool EraseTx(uint256 hash)
     {
         nWalletDBUpdated++;
-        return Erase({std::string("tx"), hash});
+        return Erase(std::make_pair(std::string("tx"), hash));
     }
 
     bool ReadKey(const CPubKey& vchPubKey, CPrivKey& vchPrivKey)
     {
         vchPrivKey.clear();
-        return Read({std::string("key"), vchPubKey.Raw()}, vchPrivKey);
+        return Read(std::make_pair(std::string("key"), vchPubKey.Raw()), vchPrivKey);
     }
 
     bool WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey)
     {
         nWalletDBUpdated++;
-        return Write({std::string("key"), vchPubKey.Raw()}, vchPrivKey, false);
+        return Write(std::make_pair(std::string("key"), vchPubKey.Raw()), vchPrivKey, false);
     }
 
     bool WriteCryptedKey(const CPubKey& vchPubKey, const std::vector<unsigned char>& vchCryptedSecret, bool fEraseUnencryptedKey = true)
     {
         nWalletDBUpdated++;
-        if (!Write({std::string("ckey"), vchPubKey.Raw()}, vchCryptedSecret, false))
+        if (!Write(std::make_pair(std::string("ckey"), vchPubKey.Raw()), vchCryptedSecret, false))
             return false;
         if (fEraseUnencryptedKey)
         {
-            Erase({std::string("key"), vchPubKey.Raw()});
-            Erase({std::string("wkey"), vchPubKey.Raw()});
+            Erase(std::make_pair(std::string("key"), vchPubKey.Raw()));
+            Erase(std::make_pair(std::string("wkey"), vchPubKey.Raw()));
         }
         return true;
     }
@@ -92,7 +92,7 @@ public:
     bool WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey)
     {
         nWalletDBUpdated++;
-        return Write({std::string("mkey"), nID}, kMasterKey, true);
+        return Write(std::make_pair(std::string("mkey"), nID), kMasterKey, true);
     }
 
     // Support for BIP 0013 : see https://en.bitcoin.it/wiki/BIP_0013

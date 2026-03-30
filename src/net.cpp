@@ -1144,8 +1144,9 @@ void MapPort()
 // The first name is used as information source for addrman.
 // The second name should resolve to a list of seed addresses.
 static const char *strDNSSeed[][2] = {
-       // default hypernode dns seed , change later when network grows
-       {"seed.corgicoin.com", "seed.corgicoin.com"},
+       // DNS seeds for CorgiCoin 2.0 network
+       {"seed1.corgicoin.com", "seed1.corgicoin.com"},
+       {"seed2.corgicoin.com", "seed2.corgicoin.com"},
        {"seed.vannatter.com", "seed.vannatter.com"},
 };
 
@@ -1217,9 +1218,9 @@ void ThreadDNSAddressSeed2(void* parg)
 
 
 
+// Seed node IPs — add VPS addresses in network byte order after deployment
 unsigned int pnSeed[] =
 {
-    0x92B9B572, 0xA2F3716E, 0x5F551D90
 };
 
 void DumpAddresses()
@@ -1229,7 +1230,7 @@ void DumpAddresses()
     CAddrDB adb;
     adb.Write(addrman);
 
-    printf("Flushed %d addresses to peers.dat  %"PRI64d"ms\n",
+    printf("Flushed %d addresses to peers.dat  %" PRI64d "ms\n",
            addrman.size(), GetTimeMillis() - nStart);
 }
 

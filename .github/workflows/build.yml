@@ -1,0 +1,56 @@
+name: Build CorgiCoin
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libboost-all-dev \
+            libssl-dev \
+            libdb++-dev \
+            libminiupnpc-dev \
+            libqt5gui5 libqt5core5a libqt5dbus5 \
+            qttools5-dev qttools5-dev-tools
+
+      - name: Build daemon with CMake
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
+          make -j$(nproc)
+
+      - name: Build Qt wallet with CMake
+        run: |
+          mkdir build-qt && cd build-qt
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=ON
+          make -j$(nproc)
+
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install boost openssl@3 berkeley-db@5 miniupnpc qt@5
+
+      - name: Build daemon with CMake
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_QT_GUI=OFF \
+            -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+            -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db@5)
+          make -j$(sysctl -n hw.logicalcpu)

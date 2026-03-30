@@ -21,6 +21,7 @@ typedef int pid_t; /* define for windows compatiblity */
 #include <map>
 #include <vector>
 #include <string>
+#include <type_traits>
 
 #include <thread>
 #include <chrono>
@@ -40,10 +41,10 @@ constexpr int64 COIN = 100000000;
 constexpr int64 CENT = 1000000;
 
 #define loop                for (;;)
-#define BEGIN(a)            (reinterpret_cast<char*>(&(a)))
-#define END(a)              (reinterpret_cast<char*>(&((&(a))[1])))
-#define UBEGIN(a)           (reinterpret_cast<unsigned char*>(&(a)))
-#define UEND(a)             (reinterpret_cast<unsigned char*>(&((&(a))[1])))
+#define BEGIN(a)            (reinterpret_cast<char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&(a))))
+#define END(a)              (reinterpret_cast<char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&((&(a))[1]))))
+#define UBEGIN(a)           (reinterpret_cast<unsigned char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&(a))))
+#define UEND(a)             (reinterpret_cast<unsigned char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&((&(a))[1]))))
 #define ARRAYLEN(array)     (sizeof(array)/sizeof((array)[0]))
 #define printf              OutputDebugStringF
 
@@ -190,7 +191,7 @@ void runCommand(std::string strCommand);
 
 inline std::string i64tostr(int64 n)
 {
-    return strprintf("%"PRI64d, n);
+    return strprintf("%" PRI64d, n);
 }
 
 inline std::string itostr(int n)
@@ -586,17 +587,17 @@ inline void SetThreadPriority(int nPriority)
 #else
 inline pthread_t CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
 {
-    pthread_t hthread = 0;
-    int ret = pthread_create(&hthread, nullptr, (void*(*)(void*))pfn, parg);
+    pthread_t hthread{};
+    int ret = pthread_create(&hthread, nullptr, reinterpret_cast<void*(*)(void*)>(pfn), parg);
     if (ret != 0)
     {
         printf("Error: pthread_create() returned %d\n", ret);
-        return static_cast<pthread_t>(0);
+        return pthread_t{};
     }
     if (!fWantHandle)
     {
         pthread_detach(hthread);
-        return static_cast<pthread_t>(-1);
+        return pthread_t{};
     }
     return hthread;
 }

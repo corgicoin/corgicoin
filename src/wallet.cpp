@@ -11,6 +11,7 @@
 #include "crypter.h"
 #include "ui_interface.h"
 #include "base58.h"
+#include <random>
 
 using namespace std;
 
@@ -983,7 +984,8 @@ bool CWallet::SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfThe
     vector<pair<int64, pair<const CWalletTx*,unsigned int> > > vValue;
     int64 nTotalLower = 0;
 
-    random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
+    std::shuffle(vCoins.begin(), vCoins.end(),
+        std::mt19937{static_cast<std::mt19937::result_type>(GetRandInt(std::numeric_limits<int>::max()))});
 
     for (COutput output : vCoins)
     {
@@ -1424,7 +1426,7 @@ bool CWallet::NewKeyPool()
             walletdb.WritePool(nIndex, CKeyPool(GenerateNewKey()));
             setKeyPool.insert(nIndex);
         }
-        printf("CWallet::NewKeyPool wrote %"PRI64d" new keys\n", nKeys);
+        printf("CWallet::NewKeyPool wrote %" PRI64d " new keys\n", nKeys);
     }
     return true;
 }
@@ -1449,7 +1451,7 @@ bool CWallet::TopUpKeyPool()
             if (!walletdb.WritePool(nEnd, CKeyPool(GenerateNewKey())))
                 throw runtime_error("TopUpKeyPool() : writing generated key failed");
             setKeyPool.insert(nEnd);
-            printf("keypool added key %"PRI64d", size=%d\n", nEnd, setKeyPool.size());
+            printf("keypool added key %" PRI64d ", size=%d\n", nEnd, setKeyPool.size());
         }
     }
     return true;
@@ -1478,7 +1480,7 @@ void CWallet::ReserveKeyFromKeyPool(int64& nIndex, CKeyPool& keypool)
         if (!HaveKey(keypool.vchPubKey.GetID()))
             throw runtime_error("ReserveKeyFromKeyPool() : unknown key in key pool");
         assert(keypool.vchPubKey.IsValid());
-        printf("keypool reserve %"PRI64d"\n", nIndex);
+        printf("keypool reserve %" PRI64d "\n", nIndex);
     }
 }
 
@@ -1505,7 +1507,7 @@ void CWallet::KeepKey(int64 nIndex)
         CWalletDB walletdb(strWalletFile);
         walletdb.ErasePool(nIndex);
     }
-    printf("keypool keep %"PRI64d"\n", nIndex);
+    printf("keypool keep %" PRI64d "\n", nIndex);
 }
 
 void CWallet::ReturnKey(int64 nIndex)
@@ -1515,7 +1517,7 @@ void CWallet::ReturnKey(int64 nIndex)
         LOCK(cs_wallet);
         setKeyPool.insert(nIndex);
     }
-    printf("keypool return %"PRI64d"\n", nIndex);
+    printf("keypool return %" PRI64d "\n", nIndex);
 }
 
 bool CWallet::GetKeyFromPool(CPubKey& result, bool fAllowReuse)

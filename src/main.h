@@ -48,7 +48,8 @@ constexpr int fHaveUPnP = false;
 
 extern CScript COINBASE_FLAGS;
 
-static const uint256 hashGenesisBlockOfficial("0x80e8f750bbc1ffc3ec396227281bdb8963ec4eb0e3fadcd0b2808150edc7b5b7");
+// TODO: Replace with actual hash after mining the new genesis block
+static const uint256 hashGenesisBlockOfficial("0x0000000000000000000000000000000000000000000000000000000000000000");
 
 extern CCriticalSection cs_main;
 extern std::map<uint256, CBlockIndex*> mapBlockIndex;
@@ -350,7 +351,7 @@ public:
     {
         if (scriptPubKey.size() < 6)
             return "CTxOut(error)";
-        return strprintf("CTxOut(nValue=%"PRI64d".%08"PRI64d", scriptPubKey=%s)", nValue / COIN, nValue % COIN, scriptPubKey.ToString().substr(0,30).c_str());
+        return strprintf("CTxOut(nValue=%" PRI64d ".%08" PRI64d ", scriptPubKey=%s)", nValue / COIN, nValue % COIN, scriptPubKey.ToString().substr(0,30).c_str());
     }
 
     void print() const
@@ -530,10 +531,10 @@ public:
         return dPriority > 100 * COIN * 1440 / 250; // CorgiCoin: 1440 blocks found a day. Priority cutoff is 100 corgicoin day / 250 bytes.
     }
 
-    int64 GetMinFee(unsigned int nBlockSize=1, bool fAllowFree=true, enum GetMinFee_mode mode=GMF_BLOCK) const
+    int64 GetMinFee(unsigned int nBlockSize=1, bool fAllowFree=true, GetMinFee_mode mode=GetMinFee_mode::GMF_BLOCK) const
     {
         // Base fee is either MIN_TX_FEE or MIN_RELAY_TX_FEE
-        int64 nBaseFee = (mode == GMF_RELAY) ? MIN_RELAY_TX_FEE : MIN_TX_FEE;
+        int64 nBaseFee = (mode == GetMinFee_mode::GMF_RELAY) ? MIN_RELAY_TX_FEE : MIN_TX_FEE;
 
         unsigned int nBytes = ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION);
         unsigned int nNewBlockSize = nBlockSize + nBytes;
@@ -715,7 +716,7 @@ public:
 
     IMPLEMENT_SERIALIZE
     (
-        nSerSize += SerReadWrite(s, *static_cast<CTransaction*>(this), nType, nVersion, ser_action);
+        nSerSize += SerReadWrite(s, *const_cast<CTransaction*>(static_cast<const CTransaction*>(this)), nType, nVersion, ser_action);
         nVersion = this->nVersion;
         READWRITE(hashBlock);
         READWRITE(vMerkleBranch);
@@ -1458,8 +1459,8 @@ public:
         return strprintf(
                 "CAlert(\n"
                 "    nVersion     = %d\n"
-                "    nRelayUntil  = %"PRI64d"\n"
-                "    nExpiration  = %"PRI64d"\n"
+                "    nRelayUntil  = %" PRI64d "\n"
+                "    nExpiration  = %" PRI64d "\n"
                 "    nID          = %d\n"
                 "    nCancel      = %d\n"
                 "    setCancel    = %s\n"

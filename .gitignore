@@ -1,6 +1,7 @@
 # Xcode
 DerivedData/
 build/
+build-*/
 *.pbxuser
 !default.pbxuser
 *.mode1v3
@@ -58,9 +59,10 @@ ui_*.h
 .qmake.cache
 .qmake.stash
 
-# IDE files
+# IDE and AI assistant files
 .vscode/
 .idea/
+.claude/
 *.sublime-*
 *.user
 *.creator

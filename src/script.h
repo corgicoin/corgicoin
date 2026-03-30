@@ -605,4 +605,27 @@ bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsig
 // combine them intelligently and return the result.
 CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo, unsigned int nIn, const CScript& scriptSig1, const CScript& scriptSig2);
 
+// CScript serialization — must be after CScript class definition
+// so the compiler knows CScript inherits from std::vector<unsigned char>.
+// These call the vector overloads via an explicit reference to avoid ambiguity.
+inline unsigned int GetSerializeSize(const CScript& v, int nType, int nVersion)
+{
+    const std::vector<unsigned char>& vec = v;
+    return GetSerializeSize(vec, nType, nVersion);
+}
+
+template<typename Stream>
+void Serialize(Stream& os, const CScript& v, int nType, int nVersion)
+{
+    const std::vector<unsigned char>& vec = v;
+    Serialize(os, vec, nType, nVersion);
+}
+
+template<typename Stream>
+void Unserialize(Stream& is, CScript& v, int nType, int nVersion)
+{
+    std::vector<unsigned char>& vec = v;
+    Unserialize(is, vec, nType, nVersion);
+}
+
 #endif

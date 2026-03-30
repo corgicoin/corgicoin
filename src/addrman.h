@@ -49,7 +49,7 @@ private:
 public:
 
     IMPLEMENT_SERIALIZE(
-        CAddress* pthis = static_cast<CAddress*>(this);
+        CAddress* pthis = const_cast<CAddress*>(static_cast<const CAddress*>(this));
         READWRITE(*pthis);
         READWRITE(source);
         READWRITE(nLastSuccess);

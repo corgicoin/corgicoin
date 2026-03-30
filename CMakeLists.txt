@@ -1,11 +1,20 @@
 cmake_minimum_required(VERSION 3.10)
-project(CorgiCoin VERSION 1.4.1.28 LANGUAGES CXX C)
+
+# Use modern find_package behavior
+if(POLICY CMP0074)
+    cmake_policy(SET CMP0074 NEW)
+endif()
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
+
+project(CorgiCoin VERSION 4.0.0.0 LANGUAGES CXX C)
 
 # Add custom CMake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
 # C++ Standard
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -38,7 +47,6 @@ find_package(BerkeleyDB REQUIRED)
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 find_package(Boost 1.55.0 REQUIRED COMPONENTS
-    system
     filesystem
     program_options
     thread
@@ -154,7 +162,6 @@ set(DAEMON_SOURCES
     src/key.cpp
     src/db.cpp
     src/init.cpp
-    src/irc.cpp
     src/keystore.cpp
     src/main.cpp
     src/net.cpp
@@ -179,17 +186,12 @@ set(JSON_SOURCES
     src/json/json_spirit_reader.cpp
 )
 
-# Build info generation
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/build.h
+# Build info generation — always regenerate to capture git state
+add_custom_target(generate_build_info ALL
     COMMAND /bin/sh ${CMAKE_CURRENT_SOURCE_DIR}/share/genbuild.sh ${CMAKE_CURRENT_BINARY_DIR}/build.h
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ALWAYS
     COMMENT "Generating build info"
-)
-
-add_custom_target(generate_build_info ALL
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/build.h
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/build.h
 )
 
 add_definitions(-DHAVE_BUILD_INFO)

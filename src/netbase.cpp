@@ -452,7 +452,7 @@ bool SetNameProxy(CService addrProxy, int nSocksVersion) {
         return false;
     if (nSocksVersion != 0 && !addrProxy.IsValid())
         return false;
-    nameproxyInfo = {addrProxy, nSocksVersion);
+    nameproxyInfo = {addrProxy, nSocksVersion};
     return true;
 }
 

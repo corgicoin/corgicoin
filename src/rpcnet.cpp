@@ -51,7 +51,7 @@ Value getpeerinfo(const Array& params, bool fHelp)
         Object obj;
 
         obj.emplace_back("addr", stats.addrName);
-        obj.emplace_back("services", strprintf("%08"PRI64x, stats.nServices));
+        obj.emplace_back("services", strprintf("%08" PRI64x, stats.nServices));
         obj.emplace_back("lastsend", (boost::int64_t)stats.nLastSend);
         obj.emplace_back("lastrecv", (boost::int64_t)stats.nLastRecv);
         obj.emplace_back("conntime", (boost::int64_t)stats.nTimeConnected);
