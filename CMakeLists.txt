@@ -94,7 +94,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wformat-security
         -Wno-unused-parameter
         -Wno-deprecated
+        -Wno-deprecated-declarations
     )
+
+    # GCC-specific warning suppressions
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options(-Wno-stringop-truncation)
+    endif()
 
     # Security hardening flags
     if(ENABLE_HARDENING)

@@ -588,12 +588,21 @@ inline void SetThreadPriority(int nPriority)
 inline pthread_t CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
 {
     pthread_t hthread{};
-    // Suppress -Wcast-function-type-mismatch: pthread_create requires void*(*)(void*),
-    // but our thread functions are void(*)(void*). The cast is safe on all POSIX platforms.
+    // pthread_create requires void*(*)(void*) but our thread functions are void(*)(void*).
+    // The cast is safe on all POSIX platforms.
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wcast-function-type-mismatch"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif
     int ret = pthread_create(&hthread, nullptr, reinterpret_cast<void*(*)(void*)>(pfn), parg);
+#if defined(__clang__)
 #pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
     if (ret != 0)
     {
         printf("Error: pthread_create() returned %d\n", ret);
