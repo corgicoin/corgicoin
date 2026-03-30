@@ -108,7 +108,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             -fstack-protector-all
             -Wstack-protector
             -D_FORTIFY_SOURCE=2
-            -D_GLIBCXX_ASSERTIONS
         )
 
         if(NOT WINDOWS AND NOT MACOSX)
