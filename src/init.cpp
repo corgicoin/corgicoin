@@ -15,8 +15,7 @@
 #include "ui_interface.h"
 #include "compat_openssl.h"
 #include "compat_boost.h"
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
+#include <filesystem>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -79,7 +78,7 @@ void Shutdown(void* parg)
         bitdb.Flush(false);
         StopNode();
         bitdb.Flush(true);
-        boost::filesystem::remove(GetPidFile());
+        std::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain.get());
         pwalletMain.reset();  // Explicit cleanup before exit
         CreateThread(ExitTimeout, nullptr);
@@ -126,7 +125,7 @@ bool AppInit(int argc, char* argv[])
         //
         // If Qt is used, parameters/corgicoin.conf are parsed in qt/bitcoin.cpp's main()
         ParseParameters(argc, argv);
-        if (!boost::filesystem::is_directory(GetDataDir(false)))
+        if (!std::filesystem::is_directory(GetDataDir(false)))
         {
             fprintf(stderr, "Error: Specified directory does not exist\n");
             Shutdown(nullptr);
@@ -422,7 +421,7 @@ bool AppInit2()
     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
 
     // Make sure only a single CorgiCoin process is using the data directory.
-    boost::filesystem::path pathLockFile = GetDataDir() / ".lock";
+    std::filesystem::path pathLockFile = GetDataDir() / ".lock";
     FILE* file = fopen(pathLockFile.string().c_str(), "a"); // empty lock file; created if it doesn't exist.
     if (file) fclose(file);
     static boost::interprocess::file_lock lock(pathLockFile.string().c_str());

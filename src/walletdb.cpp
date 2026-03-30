@@ -8,7 +8,7 @@
 
 #include "walletdb.h"
 #include "wallet.h"
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 using namespace std;
 using namespace boost;
@@ -401,20 +401,16 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
                 bitdb.mapFileUseCount.erase(wallet.strWalletFile);
 
                 // Copy wallet.dat
-                boost::filesystem::path pathSrc = GetDataDir() / wallet.strWalletFile;
-                boost::filesystem::path pathDest(strDest);
-                if (boost::filesystem::is_directory(pathDest))
+                std::filesystem::path pathSrc = GetDataDir() / wallet.strWalletFile;
+                std::filesystem::path pathDest(strDest);
+                if (std::filesystem::is_directory(pathDest))
                     pathDest /= wallet.strWalletFile;
 
                 try {
-#if BOOST_VERSION >= 104000
-                    boost::filesystem::copy_file(pathSrc, pathDest, boost::filesystem::copy_options::overwrite_existing);
-#else
-                    boost::filesystem::copy_file(pathSrc, pathDest);
-#endif
+                    std::filesystem::copy_file(pathSrc, pathDest, std::filesystem::copy_options::overwrite_existing);
                     printf("copied wallet.dat to %s\n", pathDest.string().c_str());
                     return true;
-                } catch(const boost::filesystem::filesystem_error &e) {
+                } catch(const std::filesystem::filesystem_error &e) {
                     printf("error copying wallet.dat to %s - %s\n", pathDest.string().c_str(), e.what());
                     return false;
                 }

@@ -12,8 +12,7 @@
 #include "init.h"
 #include "ui_interface.h"
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
+#include <filesystem>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/uniform_int_distribution.hpp>
 #include <memory>
@@ -1995,7 +1994,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 
 bool CheckDiskSpace(uint64 nAdditionalBytes)
 {
-    uint64 nFreeBytesAvailable = boost::filesystem::space(GetDataDir()).available;
+    uint64 nFreeBytesAvailable = std::filesystem::space(GetDataDir()).available;
 
     // Check for nMinDiskSpace bytes (currently 50MB)
     if (nFreeBytesAvailable < nMinDiskSpace + nAdditionalBytes)

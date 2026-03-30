@@ -46,7 +46,7 @@ find_package(BerkeleyDB REQUIRED)
 # Boost components
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
-set(BOOST_COMPONENTS filesystem program_options thread)
+set(BOOST_COMPONENTS program_options thread)
 if(BUILD_TESTS)
     list(APPEND BOOST_COMPONENTS unit_test_framework)
 endif()
@@ -84,6 +84,9 @@ add_definitions(
 
 # IPv6 support
 add_definitions(-DUSE_IPV6)
+
+# Suppress Boost bind placeholder deprecation warning
+add_definitions(-DBOOST_BIND_GLOBAL_PLACEHOLDERS)
 
 # Common compiler flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

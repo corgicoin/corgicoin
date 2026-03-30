@@ -25,8 +25,7 @@ typedef int pid_t; /* define for windows compatiblity */
 
 #include <thread>
 #include <chrono>
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/path.hpp>
+#include <filesystem>
 #include <boost/date_time/gregorian/gregorian_types.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 
@@ -158,15 +157,15 @@ bool WildcardMatch(const char* psz, const char* mask);
 bool WildcardMatch(const std::string& str, const std::string& mask);
 void FileCommit(FILE *fileout);
 int GetFilesize(FILE* file);
-bool RenameOver(boost::filesystem::path src, boost::filesystem::path dest);
-boost::filesystem::path GetDefaultDataDir();
-const boost::filesystem::path &GetDataDir(bool fNetSpecific = true);
-boost::filesystem::path GetConfigFile();
-boost::filesystem::path GetPidFile();
-void CreatePidFile(const boost::filesystem::path &path, pid_t pid);
+bool RenameOver(std::filesystem::path src, std::filesystem::path dest);
+std::filesystem::path GetDefaultDataDir();
+const std::filesystem::path &GetDataDir(bool fNetSpecific = true);
+std::filesystem::path GetConfigFile();
+std::filesystem::path GetPidFile();
+void CreatePidFile(const std::filesystem::path &path, pid_t pid);
 void ReadConfigFile(std::map<std::string, std::string>& mapSettingsRet, std::map<std::string, std::vector<std::string> >& mapMultiSettingsRet);
 #ifdef WIN32
-boost::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
+std::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
 #endif
 void ShrinkDebugFile();
 int GetRandInt(int nMax);

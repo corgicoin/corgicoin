@@ -30,7 +30,7 @@
 // Boost library usage in this codebase:
 //
 // ESSENTIAL (cannot be replaced without major refactoring):
-// - boost::filesystem        - File operations (C++17 has std::filesystem but we target C++11/14)
+// - boost::filesystem        - REMOVED/REPLACED with std::filesystem (C++17)
 // - boost::asio             - Async I/O for RPC server
 // - boost::interprocess     - Inter-process communication
 // - boost::program_options  - Command-line argument parsing
@@ -52,6 +52,7 @@
 // ✅ boost::array           → std::array (v1.4.1.47)
 // ✅ boost::bind (most)     → C++11 lambdas (v1.4.1.49)
 // ✅ boost::foreach         → Range-based for loops (v1.4.1.x)
+// ✅ boost::filesystem      → std::filesystem (C++17)
 
 // Print Boost version info
 inline void PrintBoostVersion()

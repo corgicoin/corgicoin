@@ -41,7 +41,7 @@ class CDBEnv
 private:
     bool fDetachDB;
     bool fDbEnvInit;
-    boost::filesystem::path pathEnv;
+    std::filesystem::path pathEnv;
 
     void EnvShutdown();
 
@@ -53,7 +53,7 @@ public:
 
     CDBEnv();
     ~CDBEnv();
-    bool Open(boost::filesystem::path pathEnv_);
+    bool Open(std::filesystem::path pathEnv_);
     void Close();
     void Flush(bool fShutdown);
     void CheckpointLSN(std::string strFile);
@@ -334,7 +334,7 @@ private:
 class CAddrDB
 {
 private:
-    boost::filesystem::path pathAddr;
+    std::filesystem::path pathAddr;
 public:
     CAddrDB();
     bool Write(const CAddrMan& addr);
