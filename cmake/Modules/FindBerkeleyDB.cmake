@@ -16,9 +16,16 @@ find_path(BERKELEYDB_INCLUDE_DIR
         /usr/local/Cellar/berkeley-db/*/include
         /usr/local/Cellar/berkeley-db@5/*/include
         /usr/local/opt/berkeley-db/include
+        /usr/local/opt/berkeley-db@5/include
+        /opt/homebrew/include
+        /opt/homebrew/Cellar/berkeley-db/*/include
+        /opt/homebrew/Cellar/berkeley-db@5/*/include
+        /opt/homebrew/opt/berkeley-db/include
+        /opt/homebrew/opt/berkeley-db@5/include
         /opt/local/include
         /opt/include
         $ENV{BERKELEYDB_ROOT}/include
+        $ENV{BerkeleyDB_ROOT}/include
     PATH_SUFFIXES
         db5
         db53
@@ -38,13 +45,22 @@ find_library(BERKELEYDB_LIBRARY
         libdb_cxx
     PATHS
         /usr/lib
+        /usr/lib/x86_64-linux-gnu
+        /usr/lib/aarch64-linux-gnu
         /usr/local/lib
         /usr/local/Cellar/berkeley-db/*/lib
         /usr/local/Cellar/berkeley-db@5/*/lib
         /usr/local/opt/berkeley-db/lib
+        /usr/local/opt/berkeley-db@5/lib
+        /opt/homebrew/lib
+        /opt/homebrew/Cellar/berkeley-db/*/lib
+        /opt/homebrew/Cellar/berkeley-db@5/*/lib
+        /opt/homebrew/opt/berkeley-db/lib
+        /opt/homebrew/opt/berkeley-db@5/lib
         /opt/local/lib
         /opt/lib
         $ENV{BERKELEYDB_ROOT}/lib
+        $ENV{BerkeleyDB_ROOT}/lib
     PATH_SUFFIXES
         db5
         db53

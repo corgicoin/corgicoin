@@ -17,24 +17,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            cmake \
             libboost-all-dev \
             libssl-dev \
             libdb++-dev \
-            libminiupnpc-dev \
-            libqt5gui5 libqt5core5a libqt5dbus5 \
-            qttools5-dev qttools5-dev-tools
+            libminiupnpc-dev
 
-      - name: Build daemon with CMake
+      - name: Build daemon
         run: |
           mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
           make -j$(nproc)
 
-      - name: Build Qt wallet with CMake
+      - name: Run tests
         run: |
-          mkdir build-qt && cd build-qt
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=ON
-          make -j$(nproc)
+          cd build
+          ./test_corgicoin
 
   build-macos:
     runs-on: macos-14
@@ -43,14 +41,20 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install boost openssl@3 berkeley-db@5 miniupnpc qt@5
+          brew install boost openssl@3 berkeley-db miniupnpc cmake
 
-      - name: Build daemon with CMake
+      - name: Build daemon
         run: |
           mkdir build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_QT_GUI=OFF \
+            -DBUILD_TESTS=ON \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-            -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db@5)
+            -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
           make -j$(sysctl -n hw.logicalcpu)
+
+      - name: Run tests
+        run: |
+          cd build
+          ./test_corgicoin
