@@ -483,7 +483,7 @@ bool CTxDB::LoadBlockIndex()
     // Calculate bnChainWork
     vector<pair<int, CBlockIndex*> > vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
-    for (const std::pair<uint256, CBlockIndex*>& item : mapBlockIndex)
+    for (const auto& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
         vSortedByHeight.emplace_back(pindex->nHeight, pindex);

@@ -515,7 +515,7 @@ void ParseParameters(int argc, const char* const argv[])
     }
 
     // New 0.6 features:
-    for (const std::pair<string,string>& entry : mapArgs)
+    for (const auto& entry : mapArgs)
     {
         string name = entry.first;
 
@@ -1269,7 +1269,7 @@ long hex2long(const char* hexString)
 
 	while (*hexString && ret >= 0) 
 	{
-		ret = (ret << 4) | hextable[*hexString++];
+		ret = (ret << 4) | hextable[static_cast<unsigned char>(*hexString++)];
 	}
 
 	return ret; 

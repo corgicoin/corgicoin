@@ -81,8 +81,8 @@ private:
 public:
     mutable CCriticalSection cs_wallet;
 
-    bool fFileBacked = false;
     std::string strWalletFile;
+    bool fFileBacked = false;
 
     std::set<int64> setKeyPool;
 
