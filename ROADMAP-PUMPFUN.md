@@ -1,5 +1,7 @@
 # CorgiCoin x Pump.fun Integration Roadmap
 
+> **DISCLAIMER:** This document is a working draft and is entirely in the discovery/exploration phase. Nothing described here is finalized, committed to, or guaranteed to ship. Features, timelines, tokenomics, and partnership details are all subject to change or may be scrapped entirely as we learn more. This is a brainstorm, not a promise.
+
 ## Vision
 
 Bridge CorgiCoin's Scrypt PoW mining community with the Solana memecoin ecosystem. Rather than creating yet another token, CorgiCoin positions itself as a **PoW burn layer** — a mineable chain whose burn mechanism can integrate with *multiple* pump.fun community tokens. Miners get access to Solana DeFi; pump.fun communities get the credibility and deflation mechanics of a real proof-of-work chain.
