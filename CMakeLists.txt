@@ -46,11 +46,11 @@ find_package(BerkeleyDB REQUIRED)
 # Boost components
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
-find_package(Boost 1.55.0 REQUIRED COMPONENTS
-    filesystem
-    program_options
-    thread
-)
+set(BOOST_COMPONENTS filesystem program_options thread)
+if(BUILD_TESTS)
+    list(APPEND BOOST_COMPONENTS unit_test_framework)
+endif()
+find_package(Boost 1.55.0 REQUIRED COMPONENTS ${BOOST_COMPONENTS})
 
 # Optional dependencies
 if(USE_UPNP)
@@ -449,6 +449,61 @@ if(BUILD_QT_GUI)
     if(USE_QRCODE)
         target_link_libraries(corgicoin-qt ${QRENCODE_LIBRARY})
     endif()
+endif()
+
+# Test suite
+if(BUILD_TESTS)
+    enable_testing()
+
+    set(TEST_SOURCES
+        src/test/test_bitcoin.cpp
+        src/test/Checkpoints_tests.cpp
+        src/test/DoS_tests.cpp
+        src/test/base32_tests.cpp
+        src/test/base58_tests.cpp
+        src/test/base64_tests.cpp
+        src/test/bignum_tests.cpp
+        src/test/getarg_tests.cpp
+        src/test/key_tests.cpp
+        src/test/miner_tests.cpp
+        src/test/mruset_tests.cpp
+        src/test/multisig_tests.cpp
+        src/test/netbase_tests.cpp
+        src/test/rpc_tests.cpp
+        src/test/script_P2SH_tests.cpp
+        src/test/script_tests.cpp
+        src/test/sigopcount_tests.cpp
+        src/test/transaction_tests.cpp
+        src/test/uint160_tests.cpp
+        src/test/uint256_tests.cpp
+        src/test/util_tests.cpp
+        src/test/wallet_tests.cpp
+    )
+
+    # Tests use the daemon sources minus init.cpp (test_bitcoin.cpp provides its own main/setup)
+    set(TEST_DAEMON_SOURCES ${DAEMON_SOURCES})
+    list(REMOVE_ITEM TEST_DAEMON_SOURCES src/init.cpp)
+
+    add_executable(test_corgicoin ${TEST_SOURCES} ${TEST_DAEMON_SOURCES} ${JSON_SOURCES})
+    add_dependencies(test_corgicoin generate_build_info)
+
+    target_link_libraries(test_corgicoin
+        ${OPENSSL_LIBRARIES}
+        ${BERKELEYDB_LIBRARY}
+        ${Boost_LIBRARIES}
+        Threads::Threads
+        ${CMAKE_DL_LIBS}
+    )
+
+    if(LINUX)
+        target_link_libraries(test_corgicoin rt)
+    endif()
+
+    if(USE_UPNP)
+        target_link_libraries(test_corgicoin ${MINIUPNPC_LIBRARY})
+    endif()
+
+    add_test(NAME corgicoin_tests COMMAND test_corgicoin)
 endif()
 
 # Installation

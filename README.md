@@ -142,6 +142,18 @@ rpcport=62555
 - [ ] Bech32 address support (BIP173)
 - [ ] P2P encryption (BIP151)
 
+### Pump.fun / Solana Integration (Future)
+
+CorgiCoin is exploring a cross-chain integration with the Solana memecoin ecosystem. Rather than tying to a single token, CORG aims to be a **PoW burn layer** that can partner with multiple pump.fun community tokens — starting with the existing [CORG token on pump.fun](https://pump.fun/coin/8uRR3wuidqf2FR3qqxUjgiExnuLCUYb7yRJ6xWd2pump).
+
+- [ ] **Multi-Token Burn Bridge** — burn CORG on-chain to boost partnered Solana tokens (rewards, airdrops, LP funding)
+- [ ] **Partner Token Program** — framework for pump.fun communities to integrate with CorgiCoin mining
+- [ ] **Cross-Chain Mining Rewards** — portion of block rewards fund Solana-side liquidity for partner tokens
+- [ ] **Burn-to-Mint NFTs** — burn CORG to mint collectible NFTs on Solana with rarity tiers
+- [ ] **Bridge Oracle Infrastructure** — trustless verification of CORG burns for cross-chain rewards
+
+See [ROADMAP-PUMPFUN.md](ROADMAP-PUMPFUN.md) for the full technical spec.
+
 ## Contributing
 
 1. Use C++17 features where appropriate
