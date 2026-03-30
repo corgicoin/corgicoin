@@ -4,13 +4,14 @@
 
 ## About
 
-CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase.
+CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
 **Version 4.0.0.0** represents a complete relaunch with:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x support (1.0.x dropped)
 - Protocol version 70001 (incompatible with legacy 1.x nodes)
 - CI/CD pipeline with actions
+- Planned cross-chain integration with Solana/pump.fun (proof-of-burn bridge, partner token program)
 
 ## Chain Specifications
 
@@ -144,7 +145,7 @@ rpcport=62555
 
 ### Pump.fun / Solana Integration (Future)
 
-CorgiCoin is exploring a cross-chain integration with the Solana memecoin ecosystem. Rather than tying to a single token, CORG aims to be a **PoW burn layer** that can partner with multiple pump.fun community tokens — starting with the existing [CORG token on pump.fun](https://pump.fun/coin/8uRR3wuidqf2FR3qqxUjgiExnuLCUYb7yRJ6xWd2pump).
+CorgiCoin is exploring a cross-chain integration with the Solana memecoin ecosystem. Rather than tying to a single token, CORG aims to be a **PoW burn layer** that can partner with multiple pump.fun community tokens.
 
 - [ ] **Multi-Token Burn Bridge** — burn CORG on-chain to boost partnered Solana tokens (rewards, airdrops, LP funding)
 - [ ] **Partner Token Program** — framework for pump.fun communities to integrate with CorgiCoin mining
