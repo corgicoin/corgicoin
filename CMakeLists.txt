@@ -99,7 +99,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
     # GCC-specific warning suppressions
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(-Wno-stringop-truncation)
+        add_compile_options(-Wno-stringop-truncation -Wno-deprecated-copy)
     endif()
 
     # Security hardening flags

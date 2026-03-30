@@ -590,17 +590,16 @@ inline pthread_t CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=fa
     pthread_t hthread{};
     // pthread_create requires void*(*)(void*) but our thread functions are void(*)(void*).
     // The cast is safe on all POSIX platforms.
-#if defined(__clang__) && __has_warning("-Wcast-function-type-mismatch")
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcast-function-type-mismatch"
-#elif defined(__GNUC__)
+#ifdef __GNUC__
 #pragma GCC diagnostic push
+#if defined(__clang__)
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+#else
 #pragma GCC diagnostic ignored "-Wcast-function-type"
 #endif
+#endif
     int ret = pthread_create(&hthread, nullptr, reinterpret_cast<void*(*)(void*)>(pfn), parg);
-#if defined(__clang__) && __has_warning("-Wcast-function-type-mismatch")
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif
     if (ret != 0)
