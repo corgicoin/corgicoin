@@ -319,7 +319,7 @@ QMAKE_EXTRA_COMPILERS += TSQM
 
 # "Other files" to show in Qt Creator
 OTHER_FILES += \
-    contrib/gitian-descriptors/* doc/*.rst doc/*.txt doc/README README.md res/bitcoin-qt.rc \
+    contrib/gitian-descriptors/* doc/*.rst doc/*.txt doc/README README.md res/corgicoin-qt.rc \
     share/setup.nsi
 
 # platform specific defaults, if not overridden on command line
@@ -382,7 +382,7 @@ isEmpty(OPENSSL_LIB_PATH) {
 
 windows:LIBS += -lws2_32 -lshlwapi -lmswsock
 windows:DEFINES += WIN32
-windows:RC_FILE = src/qt/res/bitcoin-qt.rc
+windows:RC_FILE = src/qt/res/corgicoin-qt.rc
 
 windows:!contains(MINGW_THREAD_BUGFIX, 0) {
     # At least qmake's win32-g++-cross profile is missing the -lmingwthrd
@@ -404,7 +404,7 @@ macx:HEADERS += src/qt/macdockiconhandler.h
 macx:OBJECTIVE_SOURCES += src/qt/macdockiconhandler.mm
 macx:LIBS += -framework Foundation -framework ApplicationServices -framework AppKit
 macx:DEFINES += MAC_OSX MSG_NOSIGNAL=0
-macx:ICON = src/qt/res/icons/bitcoin.icns
+macx:ICON = src/qt/res/icons/corgicoin.icns
 macx:TARGET = "corgicoin-qt"
 
 # Set libraries and includes at end, to use platform-defined defaults if not overridden

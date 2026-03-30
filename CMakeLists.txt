@@ -390,10 +390,10 @@ if(BUILD_QT_GUI)
         )
         set_target_properties(corgicoin-qt PROPERTIES
             MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/contrib/macdeploy/Info.plist
-            MACOSX_BUNDLE_ICON_FILE bitcoin.icns
+            MACOSX_BUNDLE_ICON_FILE corgicoin.icns
         )
         # Copy icon to bundle
-        set(ICON_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/qt/res/icons/bitcoin.icns)
+        set(ICON_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/qt/res/icons/corgicoin.icns)
         set_source_files_properties(${ICON_FILE} PROPERTIES
             MACOSX_PACKAGE_LOCATION Resources
         )
