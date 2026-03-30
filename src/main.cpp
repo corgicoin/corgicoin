@@ -309,9 +309,9 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
     if (IsCoinBase())
         return true; // Coinbases don't use vin normally
 
-    for (const auto& input : vin)
+    for (unsigned int i = 0; i < vin.size(); i++)
     {
-        const CTxOut& prev = GetOutputFor(input, mapInputs);
+        const CTxOut& prev = GetOutputFor(vin[i], mapInputs);
 
         vector<vector<unsigned char> > vSolutions;
         txnouttype whichType;
@@ -1995,7 +1995,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 
 bool CheckDiskSpace(uint64 nAdditionalBytes)
 {
-    uint64 nFreeBytesAvailable = filesystem::space(GetDataDir()).available;
+    uint64 nFreeBytesAvailable = boost::filesystem::space(GetDataDir()).available;
 
     // Check for nMinDiskSpace bytes (currently 50MB)
     if (nFreeBytesAvailable < nMinDiskSpace + nAdditionalBytes)
@@ -3362,7 +3362,7 @@ int static FormatHashBlocks(void* pbuffer, unsigned int len)
 static const unsigned int pSHA256InitState[8] =
 {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
-void SHA256Transform(void* pstate, void* pinput, const void* pinit)
+void SHA256Transform(void* pstate, void* pinput, void* pinit)
 {
     SHA256_CTX ctx;
     unsigned char data[64];
@@ -3511,7 +3511,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             if (porphan)
                 porphan->dPriority = dPriority;
             else
-                mapPriority.insert({-dPriority, &(*mi).second});
+                mapPriority.insert(std::make_pair(-dPriority, &entry.second));
 
             if (fDebug && GetBoolArg("-printpriority"))
             {

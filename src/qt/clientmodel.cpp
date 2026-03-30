@@ -261,7 +261,7 @@ void ClientModel::setMining(MiningType type, bool mining, int threads, int hashr
 {
     if (type == SoloMining && mining != miningStarted)
     {
-        GenerateBitcoins(mining ? 1 : 0, pwalletMain);
+        GenerateBitcoins(mining ? 1 : 0, pwalletMain.get());
     }
     miningType = type;
     miningStarted = mining;

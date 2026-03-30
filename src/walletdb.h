@@ -99,13 +99,13 @@ public:
     bool ReadCScript(const uint160 &hash, CScript& redeemScript)
     {
         redeemScript.clear();
-        return Read({std::string("cscript"), hash}, redeemScript);
+        return Read(std::make_pair(std::string("cscript"), hash), redeemScript);
     }
 
     bool WriteCScript(const uint160& hash, const CScript& redeemScript)
     {
         nWalletDBUpdated++;
-        return Write({std::string("cscript"), hash}, redeemScript, false);
+        return Write(std::make_pair(std::string("cscript"), hash), redeemScript, false);
     }
 
     bool WriteBestBlock(const CBlockLocator& locator)
@@ -133,19 +133,19 @@ public:
 
     bool ReadPool(int64 nPool, CKeyPool& keypool)
     {
-        return Read({std::string("pool"), nPool}, keypool);
+        return Read(std::make_pair(std::string("pool"), nPool), keypool);
     }
 
     bool WritePool(int64 nPool, const CKeyPool& keypool)
     {
         nWalletDBUpdated++;
-        return Write({std::string("pool"), nPool}, keypool);
+        return Write(std::make_pair(std::string("pool"), nPool), keypool);
     }
 
     bool ErasePool(int64 nPool)
     {
         nWalletDBUpdated++;
-        return Erase({std::string("pool"), nPool});
+        return Erase(std::make_pair(std::string("pool"), nPool));
     }
 
     // Settings are no longer stored in wallet.dat; these are
@@ -153,18 +153,18 @@ public:
     template<typename T>
     bool ReadSetting(const std::string& strKey, T& value)
     {
-        return Read({std::string("setting"), strKey}, value);
+        return Read(std::make_pair(std::string("setting"), strKey), value);
     }
     template<typename T>
     bool WriteSetting(const std::string& strKey, const T& value)
     {
         nWalletDBUpdated++;
-        return Write({std::string("setting"), strKey}, value);
+        return Write(std::make_pair(std::string("setting"), strKey), value);
     }
     bool EraseSetting(const std::string& strKey)
     {
         nWalletDBUpdated++;
-        return Erase({std::string("setting"), strKey});
+        return Erase(std::make_pair(std::string("setting"), strKey));
     }
 
     bool WriteMinVersion(int nVersion)

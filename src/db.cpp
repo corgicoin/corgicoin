@@ -69,10 +69,10 @@ bool CDBEnv::Open(boost::filesystem::path pathEnv_)
         return false;
 
     pathEnv = pathEnv_;
-    filesystem::path pathDataDir = pathEnv;
-    filesystem::path pathLogDir = pathDataDir / "database";
-    filesystem::create_directory(pathLogDir);
-    filesystem::path pathErrorFile = pathDataDir / "db.log";
+    boost::filesystem::path pathDataDir = pathEnv;
+    boost::filesystem::path pathLogDir = pathDataDir / "database";
+    boost::filesystem::create_directory(pathLogDir);
+    boost::filesystem::path pathErrorFile = pathDataDir / "db.log";
     printf("dbenv.open LogDir=%s ErrorFile=%s\n", pathLogDir.string().c_str(), pathErrorFile.string().c_str());
 
     unsigned int nEnvFlags = 0;
@@ -368,13 +368,13 @@ bool CTxDB::ReadTxIndex(uint256 hash, CTxIndex& txindex)
 {
     assert(!fClient);
     txindex.SetNull();
-    return Read({string("tx"), hash}, txindex);
+    return Read(std::make_pair(string("tx"), hash), txindex);
 }
 
 bool CTxDB::UpdateTxIndex(uint256 hash, const CTxIndex& txindex)
 {
     assert(!fClient);
-    return Write({string("tx"), hash}, txindex);
+    return Write(std::make_pair(string("tx"), hash), txindex);
 }
 
 bool CTxDB::AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeight)
@@ -384,7 +384,7 @@ bool CTxDB::AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeigh
     // Add to tx index
     uint256 hash = tx.GetHash();
     CTxIndex txindex(pos, tx.vout.size());
-    return Write({string("tx"), hash}, txindex);
+    return Write(std::make_pair(string("tx"), hash), txindex);
 }
 
 bool CTxDB::EraseTxIndex(const CTransaction& tx)
@@ -392,13 +392,13 @@ bool CTxDB::EraseTxIndex(const CTransaction& tx)
     assert(!fClient);
     uint256 hash = tx.GetHash();
 
-    return Erase({string("tx"), hash});
+    return Erase(std::make_pair(string("tx"), hash));
 }
 
 bool CTxDB::ContainsTx(uint256 hash)
 {
     assert(!fClient);
-    return Exists({string("tx"), hash});
+    return Exists(std::make_pair(string("tx"), hash));
 }
 
 bool CTxDB::ReadDiskTx(uint256 hash, CTransaction& tx, CTxIndex& txindex)
@@ -429,7 +429,7 @@ bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction& tx)
 
 bool CTxDB::WriteBlockIndex(const CDiskBlockIndex& blockindex)
 {
-    return Write({string("blockindex"), blockindex.GetBlockHash()}, blockindex);
+    return Write(std::make_pair(string("blockindex"), blockindex.GetBlockHash()), blockindex);
 }
 
 bool CTxDB::ReadHashBestChain(uint256& hashBestChain)

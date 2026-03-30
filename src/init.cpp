@@ -17,7 +17,6 @@
 #include "compat_boost.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
-#include <boost/filesystem/convenience.hpp>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -692,7 +691,7 @@ bool AppInit2()
     printf("%s", strErrors.str().c_str());
     printf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
-    RegisterWallet(pwalletMain);
+    RegisterWallet(pwalletMain.get());
 
     CBlockIndex *pindexRescan = pindexBest;
     if (GetBoolArg("-rescan"))

@@ -380,7 +380,7 @@ Value setgenerate(const Array& params, bool fHelp)
     }
     mapArgs["-gen"] = (fGenerate ? "1" : "0");
 
-    GenerateBitcoins(fGenerate, pwalletMain);
+    GenerateBitcoins(fGenerate, pwalletMain.get());
     return Value::null;
 }
 
@@ -1054,7 +1054,7 @@ Value sendmany(const Array& params, bool fHelp)
         throw JSONRPCError(-6, "Account has insufficient funds");
 
     // Send
-    CReserveKey keyChange(pwalletMain);
+    CReserveKey keyChange(pwalletMain.get());
     int64 nFeeRequired = 0;
     bool fCreated = pwalletMain->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired);
     if (!fCreated)
@@ -1877,7 +1877,7 @@ Value getworkex(const Array& params, bool fHelp)
     using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
     static mapNewBlock_t mapNewBlock;
     static vector<CBlock*> vNewBlock;
-    static CReserveKey reservekey(pwalletMain);
+    static CReserveKey reservekey(pwalletMain.get());
 
     if (params.size() == 0)
     {
@@ -2009,7 +2009,7 @@ Value getwork(const Array& params, bool fHelp)
     using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
     static vector<CBlock*> vNewBlock;
-    static CReserveKey reservekey(pwalletMain);
+    static CReserveKey reservekey(pwalletMain.get());
 
     if (params.size() == 0)
     {
@@ -2138,7 +2138,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
         if (IsInitialBlockDownload())
             throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
-        static CReserveKey reservekey(pwalletMain);
+        static CReserveKey reservekey(pwalletMain.get());
 
         // Update block
         static unsigned int nTransactionsUpdatedLast;
