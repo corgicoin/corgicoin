@@ -2,7 +2,7 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Copyright (c) 2011-2012 The Litecoin Developers
 // Copyright (c) 2013 Dogecoin Developers
-// Copyright (c) 2014 Corgicoin Developers
+// Copyright (c) 2014-2026 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -2619,15 +2619,14 @@ bool ClientAllowed(const boost::asio::ip::address& address)
 {
     // Make sure that IPv4-compatible and IPv4-mapped IPv6 addresses are treated as IPv4 addresses
     if (address.is_v6()
-     && (address.to_v6().is_v4_compatible()
-      || address.to_v6().is_v4_mapped()))
-        return ClientAllowed(address.to_v6().to_v4());
+     && address.to_v6().is_v4_mapped())
+        return ClientAllowed(boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, address.to_v6()));
 
     if (address == asio::ip::address_v4::loopback()
      || address == asio::ip::address_v6::loopback()
      || (address.is_v4()
-         // Chech whether IPv4 addresses match 127.0.0.0/8 (loopback subnet)
-      && (address.to_v4().to_ulong() & 0xff000000) == 0x7f000000))
+         // Check whether IPv4 addresses match 127.0.0.0/8 (loopback subnet)
+      && (address.to_v4().to_uint() & 0xff000000) == 0x7f000000))
         return true;
 
     const string strAddress = address.to_string();
@@ -2670,15 +2669,17 @@ public:
     }
     bool connect(const std::string& server, const std::string& port)
     {
-        ip::tcp::resolver resolver(stream.get_io_service());
-        ip::tcp::resolver::query query(server.c_str(), port.c_str());
-        auto endpoint_iterator = resolver.resolve(query);
-        ip::tcp::resolver::iterator end;
+        asio::io_context ioc;
+        ip::tcp::resolver resolver(ioc);
+        auto endpoint_iterator = resolver.resolve(server.c_str(), port.c_str());
+        decltype(endpoint_iterator) end;
         boost::system::error_code error = asio::error::host_not_found;
-        while (error && endpoint_iterator != end)
+        for (const auto& ep : endpoint_iterator)
         {
             stream.lowest_layer().close();
-            stream.lowest_layer().connect(*endpoint_iterator++, error);
+            stream.lowest_layer().connect(ep, error);
+            if (!error)
+                break;
         }
         if (error)
             return false;
@@ -2706,10 +2707,10 @@ class AcceptedConnectionImpl : public AcceptedConnection
 {
 public:
     AcceptedConnectionImpl(
-            asio::io_service& io_service,
+            boost::asio::any_io_executor executor,
             ssl::context &context,
             bool fUseSSL) :
-        sslStream(io_service, context),
+        sslStream(executor, context),
         _d(sslStream, fUseSSL),
         _stream(_d)
     {
@@ -2762,8 +2763,8 @@ void ThreadRPCServer(void* parg)
 }
 
 // Forward declaration required for RPCListen
-template <typename Protocol, typename SocketAcceptorService>
-static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
+template <typename Protocol>
+static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > acceptor,
                              ssl::context& context,
                              bool fUseSSL,
                              AcceptedConnection* conn,
@@ -2772,27 +2773,27 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol, So
 /**
  * Sets up I/O resources to accept and handle a new connection.
  */
-template <typename Protocol, typename SocketAcceptorService>
-static void RPCListen(std::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
+template <typename Protocol>
+static void RPCListen(std::shared_ptr< basic_socket_acceptor<Protocol> > acceptor,
                    ssl::context& context,
                    const bool fUseSSL)
 {
     // Accept connection
-    AcceptedConnectionImpl<Protocol>* conn = new AcceptedConnectionImpl<Protocol>(acceptor->get_io_service(), context, fUseSSL);
+    AcceptedConnectionImpl<Protocol>* conn = new AcceptedConnectionImpl<Protocol>(acceptor->get_executor(), context, fUseSSL);
 
     acceptor->async_accept(
             conn->sslStream.lowest_layer(),
             conn->peer,
             [acceptor, &context, fUseSSL, conn](const boost::system::error_code& error) {
-                RPCAcceptHandler<Protocol, SocketAcceptorService>(acceptor, context, fUseSSL, conn, error);
+                RPCAcceptHandler<Protocol>(acceptor, context, fUseSSL, conn, error);
             });
 }
 
 /**
  * Accept and handle incoming connection.
  */
-template <typename Protocol, typename SocketAcceptorService>
-static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
+template <typename Protocol>
+static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > acceptor,
                              ssl::context& context,
                              const bool fUseSSL,
                              AcceptedConnection* conn,
@@ -2865,25 +2866,25 @@ void ThreadRPCServer2(void* parg)
 
     const bool fUseSSL = GetBoolArg("-rpcssl");
 
-    asio::io_service io_service;
+    asio::io_context io_service;
 
-    ssl::context context(io_service, ssl::context::sslv23);
+    ssl::context context(ssl::context::sslv23);
     if (fUseSSL)
     {
         context.set_options(ssl::context::no_sslv2);
 
-        filesystem::path pathCertFile(GetArg("-rpcsslcertificatechainfile", "server.cert"));
-        if (!pathCertFile.is_complete()) pathCertFile = filesystem::path(GetDataDir()) / pathCertFile;
-        if (filesystem::exists(pathCertFile)) context.use_certificate_chain_file(pathCertFile.string());
+        boost::filesystem::path pathCertFile(GetArg("-rpcsslcertificatechainfile", "server.cert"));
+        if (!pathCertFile.is_absolute()) pathCertFile = boost::filesystem::path(GetDataDir()) / pathCertFile;
+        if (boost::filesystem::exists(pathCertFile)) context.use_certificate_chain_file(pathCertFile.string());
         else printf("ThreadRPCServer ERROR: missing server certificate file %s\n", pathCertFile.string().c_str());
 
-        filesystem::path pathPKFile(GetArg("-rpcsslprivatekeyfile", "server.pem"));
-        if (!pathPKFile.is_complete()) pathPKFile = filesystem::path(GetDataDir()) / pathPKFile;
-        if (filesystem::exists(pathPKFile)) context.use_private_key_file(pathPKFile.string(), ssl::context::pem);
+        boost::filesystem::path pathPKFile(GetArg("-rpcsslprivatekeyfile", "server.pem"));
+        if (!pathPKFile.is_absolute()) pathPKFile = boost::filesystem::path(GetDataDir()) / pathPKFile;
+        if (boost::filesystem::exists(pathPKFile)) context.use_private_key_file(pathPKFile.string(), ssl::context::pem);
         else printf("ThreadRPCServer ERROR: missing server private key file %s\n", pathPKFile.string().c_str());
 
         string strCiphers = GetArg("-rpcsslciphers", "TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!AH:!3DES:@STRENGTH");
-        SSL_CTX_set_cipher_list(context.impl(), strCiphers.c_str());
+        SSL_CTX_set_cipher_list(context.native_handle(), strCiphers.c_str());
     }
 
     // Try a dual IPv6/IPv4 socket, falling back to separate IPv4 and IPv6 sockets
@@ -2904,13 +2905,14 @@ void ThreadRPCServer2(void* parg)
         acceptor->set_option(boost::asio::ip::v6_only(loopback), v6_only_error);
 
         acceptor->bind(endpoint);
-        acceptor->listen(socket_base::max_connections);
+        acceptor->listen(boost::asio::socket_base::max_listen_connections);
 
         RPCListen(acceptor, context, fUseSSL);
         // Cancel outstanding listen-requests for this acceptor when shutting down
-        StopRequests.connect(signals2::slot<void ()>(
-                    static_cast<void (ip::tcp::acceptor::*)()>(&ip::tcp::acceptor::close), acceptor.get())
-                .track(acceptor));
+        std::weak_ptr<ip::tcp::acceptor> weak_acceptor(acceptor);
+        StopRequests.connect([weak_acceptor]() {
+            if (auto a = weak_acceptor.lock()) a->close();
+        });
 
         // If dual IPv6/IPv4 failed (or we're opening loopback interfaces only), open IPv4 separately
         if (loopback || v6_only_error)
@@ -2918,17 +2920,18 @@ void ThreadRPCServer2(void* parg)
             bindAddress = loopback ? asio::ip::address_v4::loopback() : asio::ip::address_v4::any();
             endpoint.address(bindAddress);
 
-            acceptor.reset(new ip::tcp::acceptor(io_service));
+            acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
             acceptor->open(endpoint.protocol());
             acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
             acceptor->bind(endpoint);
-            acceptor->listen(socket_base::max_connections);
+            acceptor->listen(boost::asio::socket_base::max_listen_connections);
 
             RPCListen(acceptor, context, fUseSSL);
             // Cancel outstanding listen-requests for this acceptor when shutting down
-            StopRequests.connect(signals2::slot<void ()>(
-                        static_cast<void (ip::tcp::acceptor::*)()>(&ip::tcp::acceptor::close), acceptor.get())
-                    .track(acceptor));
+            std::weak_ptr<ip::tcp::acceptor> weak_acceptor2(acceptor);
+            StopRequests.connect([weak_acceptor2]() {
+                if (auto a = weak_acceptor2.lock()) a->close();
+            });
         }
     }
     catch(boost::system::system_error &e)
@@ -3159,8 +3162,8 @@ Object CallRPC(const string& strMethod, const Array& params)
 
     // Connect to localhost
     bool fUseSSL = GetBoolArg("-rpcssl");
-    asio::io_service io_service;
-    ssl::context context(io_service, ssl::context::sslv23);
+    asio::io_context io_service;
+    ssl::context context(ssl::context::sslv23);
     context.set_options(ssl::context::no_sslv2);
     asio::ssl::stream<asio::ip::tcp::socket> sslStream(io_service, context);
     SSLIOStreamDevice<asio::ip::tcp> d(sslStream, fUseSSL);

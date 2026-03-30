@@ -2,7 +2,7 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Copyright (c) 2011-2012 Litecoin Developers
 // Copyright (c) 2013 Dogecoin Developers
-// Copyright (c) 2014 Corgicoin Developers
+// Copyright (c) 2014-2026 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -3362,7 +3362,7 @@ int static FormatHashBlocks(void* pbuffer, unsigned int len)
 static const unsigned int pSHA256InitState[8] =
 {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
-void SHA256Transform(void* pstate, void* pinput, void* pinit)
+void SHA256Transform(void* pstate, void* pinput, const void* pinit)
 {
     SHA256_CTX ctx;
     unsigned char data[64];
@@ -3373,7 +3373,7 @@ void SHA256Transform(void* pstate, void* pinput, void* pinit)
         reinterpret_cast<uint32_t*>(data)[i] = ByteReverse(reinterpret_cast<uint32_t*>(pinput)[i]);
 
     for (int i = 0; i < 8; i++)
-        ctx.h[i] = reinterpret_cast<uint32_t*>(pinit)[i];
+        ctx.h[i] = reinterpret_cast<const uint32_t*>(pinit)[i];
 
     SHA256_Update(&ctx, data, sizeof(data));
     for (int i = 0; i < 8; i++)

@@ -2,7 +2,7 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Copyright (c) 2011-2012 Litecoin Developers
 // Copyright (c) 2013 Dogecoin Developers
-// Copyright (c) 2014 Corgicoin Developers
+// Copyright (c) 2014-2026 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -1047,7 +1047,8 @@ void ThreadMapPort2(void* parg)
     struct IGDdatas data;
     int r;
 
-    r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr));
+    char wanaddr[64];
+    r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), wanaddr, sizeof(wanaddr));
     if (r == 1)
     {
         if (fDiscover) {

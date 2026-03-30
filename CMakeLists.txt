@@ -105,21 +105,21 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             -D_GLIBCXX_ASSERTIONS
         )
 
-        if(NOT WINDOWS)
+        if(NOT WINDOWS AND NOT MACOSX)
             add_compile_options(-fPIE)
             add_link_options(-pie)
-        endif()
 
-        # GCC 8+ / Clang 7+ additional hardening
-        if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
-           (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 7.0))
-            add_compile_options(-fstack-clash-protection)
-        endif()
+            # GCC 8+ / Clang 7+ additional hardening
+            if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
+               (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 7.0))
+                add_compile_options(-fstack-clash-protection)
+            endif()
 
-        add_link_options(
-            -Wl,-z,relro
-            -Wl,-z,now
-        )
+            add_link_options(
+                -Wl,-z,relro
+                -Wl,-z,now
+            )
+        endif()
     endif()
 endif()
 
