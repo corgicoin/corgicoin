@@ -3637,8 +3637,7 @@ void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash
         uint256 hash1;
         unsigned char pchPadding1[64];
     }
-    tmp;
-    memset(&tmp, 0, sizeof(tmp));
+    tmp{};
 
     tmp.block.nVersion       = pblock->nVersion;
     tmp.block.hashPrevBlock  = pblock->hashPrevBlock;
