@@ -19,7 +19,7 @@ enum Value_type {
     obj_type, array_type, str_type, bool_type, int_type, real_type, null_type
 };
 
-static const char* Value_type_name[] = {
+[[maybe_unused]] static const char* Value_type_name[] = {
     "object", "array", "string", "boolean", "integer", "real", "null"
 };
 
