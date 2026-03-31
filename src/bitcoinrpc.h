@@ -13,9 +13,7 @@
 #include <list>
 #include <map>
 
-#include "json/json_spirit_reader_template.h"
-#include "json/json_spirit_writer_template.h"
-#include "json/json_spirit_utils.h"
+#include "json/json_compat.h"
 
 json_spirit::Object JSONRPCError(int code, const std::string& message);
 

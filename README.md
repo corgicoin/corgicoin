@@ -100,10 +100,14 @@ rpcport=62555
 - OpenSSL 3.x migration complete (1.0.x dropped)
 - Protocol version 70001 (breaks compatibility with 1.x nodes)
 - Client identity renamed from "Satoshi" to "CorgiCoin"
+- `boost::filesystem` replaced with `std::filesystem` (C++17)
+- `json_spirit` replaced with nlohmann/json (modern, maintained JSON library)
 - `std::random_shuffle` replaced with `std::shuffle` (C++17 compliance)
 - ECDSA_SIG direct member access replaced with accessor functions
 - DNS seeds updated for new network
-- GitHub Actions CI/CD pipeline added
+- GitHub Actions CI/CD with tests on Linux and macOS
+- 79 unit tests covering scrypt, addresses, block rewards, serialization, and more
+- Full rebranding: share/ assets, icons, installer scripts updated to CorgiCoin
 
 ### v1.4.1.42 - v1.4.1.67 — Modernization Era
 - 16 releases, ~645+ individual modernizations
@@ -124,9 +128,13 @@ rpcport=62555
 ### Completed
 - [x] C++17 codebase upgrade
 - [x] OpenSSL 3.x full migration
-- [x] New genesis block for 2026 relaunch
 - [x] Protocol version bump (v70001)
-- [x] CI/CD pipeline (GitHub Actions)
+- [x] CI/CD pipeline (GitHub Actions) with test suite
+- [x] Replace `boost::filesystem` with `std::filesystem`
+- [x] Replace `json_spirit` with nlohmann/json
+- [x] Full asset rebranding (icons, installer, share/ directory)
+- [x] Unit test suite (79 tests: scrypt, addresses, block rewards, serialization, etc.)
+- [x] Copyright headers updated to 2014-2026
 - [x] DNS seed infrastructure update
 
 ### In Progress
@@ -136,8 +144,6 @@ rpcport=62555
 
 ### Planned
 - [ ] Qt 6 migration (drop Qt 4 support)
-- [ ] Replace json_spirit with modern JSON library
-- [ ] Replace boost::filesystem with std::filesystem
 - [ ] Block explorer
 - [ ] Wallet UX improvements
 - [ ] Bech32 address support (BIP173)

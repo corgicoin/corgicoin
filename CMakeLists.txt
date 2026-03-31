@@ -187,11 +187,9 @@ set(DAEMON_SOURCES
     src/noui.cpp
 )
 
-# JSON Spirit sources
+# JSON library (nlohmann/json with json_spirit compatibility layer)
 set(JSON_SOURCES
-    src/json/json_spirit_writer.cpp
-    src/json/json_spirit_value.cpp
-    src/json/json_spirit_reader.cpp
+    src/json/json_compat.cpp
 )
 
 # Build info generation — always regenerate to capture git state
