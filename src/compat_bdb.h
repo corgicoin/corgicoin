@@ -7,6 +7,8 @@
 
 #include <db_cxx.h>
 
+#include "logging.h"
+
 // Compatibility layer for Berkeley DB versions
 // This codebase is compatible with Berkeley DB 4.8+ through 6.2+
 //
@@ -78,37 +80,37 @@
 // Print Berkeley DB version info
 inline void PrintBerkeleyDBVersion()
 {
-    printf("Berkeley DB version: %d.%d.%d\n",
+    LogPrintf("Berkeley DB version: %d.%d.%d\n",
            DB_VERSION_MAJOR,
            DB_VERSION_MINOR,
            DB_VERSION_PATCH);
 
 #if DB_VERSION_MAJOR >= 6
-    printf("INFO: Using Berkeley DB 6.x - latest stable API\n");
+    LogPrintf("INFO: Using Berkeley DB 6.x - latest stable API\n");
 #elif DB_VERSION_MAJOR == 5 && DB_VERSION_MINOR >= 3
-    printf("INFO: Using Berkeley DB 5.3+ - recommended version\n");
+    LogPrintf("INFO: Using Berkeley DB 5.3+ - recommended version\n");
 #elif DB_VERSION_MAJOR == 5 && DB_VERSION_MINOR == 0
-    printf("WARNING: Berkeley DB 5.0.x uses AGPL license!\n");
-    printf("WARNING: Consider using 4.8.x, 5.1+, or 6.x for licensing compatibility\n");
+    LogPrintf("WARNING: Berkeley DB 5.0.x uses AGPL license!\n");
+    LogPrintf("WARNING: Consider using 4.8.x, 5.1+, or 6.x for licensing compatibility\n");
 #elif DB_VERSION_MAJOR == 4 && DB_VERSION_MINOR >= 8
-    printf("INFO: Using Berkeley DB 4.8+ - stable and widely used\n");
+    LogPrintf("INFO: Using Berkeley DB 4.8+ - stable and widely used\n");
 #else
-    printf("WARNING: Using older Berkeley DB version - upgrade recommended\n");
+    LogPrintf("WARNING: Using older Berkeley DB version - upgrade recommended\n");
 #endif
 
-    printf("INFO: Wallet files should be backed up before any BDB version change\n");
+    LogPrintf("INFO: Wallet files should be backed up before any BDB version change\n");
 }
 
 // Wallet compatibility check
 inline void WarnWalletCompatibility()
 {
 #if DB_VERSION_MAJOR >= 6
-    printf("IMPORTANT: Using Berkeley DB 6.x\n");
-    printf("  - Can read wallet files from BDB 4.8/5.x\n");
-    printf("  - Wallet files may not be readable by older BDB versions after modification\n");
-    printf("  - ALWAYS backup your wallet before upgrading Berkeley DB!\n");
+    LogPrintf("IMPORTANT: Using Berkeley DB 6.x\n");
+    LogPrintf("  - Can read wallet files from BDB 4.8/5.x\n");
+    LogPrintf("  - Wallet files may not be readable by older BDB versions after modification\n");
+    LogPrintf("  - ALWAYS backup your wallet before upgrading Berkeley DB!\n");
 #elif DB_VERSION_MAJOR == 5
-    printf("INFO: Using Berkeley DB 5.x - compatible with 4.8.x wallet files\n");
+    LogPrintf("INFO: Using Berkeley DB 5.x - compatible with 4.8.x wallet files\n");
 #endif
 }
 

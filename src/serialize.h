@@ -25,6 +25,7 @@
 
 #include "allocators.h"
 #include "version.h"
+#include "logging.h"
 
 // Modern C++11 type aliases
 using int64 = long long;
@@ -1010,23 +1011,23 @@ public:
 int main(int argc, char *argv[])
 {
     vector<unsigned char> vch(0xcc, 250);
-    printf("CDataStream:\n");
+    LogPrintf("CDataStream:\n");
     for (int n = 1000; n <= 4500000; n *= 2)
     {
         CDataStream ss;
         time_t nStart = time(nullptr);
         for (int i = 0; i < n; i++)
             ss.write(reinterpret_cast<const char*>(&vch[0]), vch.size());
-        printf("n=%-10d %d seconds\n", n, time(nullptr) - nStart);
+        LogPrintf("n=%-10d %d seconds\n", n, time(nullptr) - nStart);
     }
-    printf("stringstream:\n");
+    LogPrintf("stringstream:\n");
     for (int n = 1000; n <= 4500000; n *= 2)
     {
         stringstream ss;
         time_t nStart = time(nullptr);
         for (int i = 0; i < n; i++)
             ss.write(reinterpret_cast<const char*>(&vch[0]), vch.size());
-        printf("n=%-10d %d seconds\n", n, time(nullptr) - nStart);
+        LogPrintf("n=%-10d %d seconds\n", n, time(nullptr) - nStart);
     }
 }
 #endif

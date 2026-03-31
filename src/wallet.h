@@ -16,6 +16,7 @@
 #include "keystore.h"
 #include "script.h"
 #include "ui_interface.h"
+#include "logging.h"
 
 class CWalletTx;
 class CReserveKey;
@@ -611,7 +612,7 @@ public:
 
     void print() const
     {
-        printf("%s\n", ToString().c_str());
+        LogPrintf("%s\n", ToString().c_str());
     }
 };
 

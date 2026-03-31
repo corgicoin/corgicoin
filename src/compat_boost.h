@@ -7,6 +7,8 @@
 
 #include <boost/version.hpp>
 
+#include "logging.h"
+
 // Compatibility layer for modern Boost versions
 // This codebase is compatible with Boost 1.55.0 through 1.80+
 
@@ -52,17 +54,17 @@
 // Print Boost version info
 inline void PrintBoostVersion()
 {
-    printf("Boost version: %d.%d.%d\n",
+    LogPrintf("Boost version: %d.%d.%d\n",
            BOOST_VERSION / 100000,
            (BOOST_VERSION / 100) % 1000,
            BOOST_VERSION % 100);
 
 #if BOOST_VERSION >= 107000
-    printf("INFO: Using modern Boost %d.%d+ with excellent C++11/14 support\n",
+    LogPrintf("INFO: Using modern Boost %d.%d+ with excellent C++11/14 support\n",
            BOOST_VERSION / 100000,
            (BOOST_VERSION / 100) % 1000);
 #else
-    printf("INFO: Using Boost %d.%d (upgrade to 1.70+ recommended)\n",
+    LogPrintf("INFO: Using Boost %d.%d (upgrade to 1.70+ recommended)\n",
            BOOST_VERSION / 100000,
            (BOOST_VERSION / 100) % 1000);
 #endif

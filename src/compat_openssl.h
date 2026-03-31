@@ -7,6 +7,8 @@
 
 #include <openssl/opensslv.h>
 
+#include "logging.h"
+
 // Compatibility layer for OpenSSL 3.x
 // OpenSSL 3.0+ deprecated many functions used in older crypto code
 
@@ -29,9 +31,9 @@
 inline void PrintOpenSSLVersion()
 {
 #ifdef OPENSSL_VERSION_TEXT
-    printf("OpenSSL version: %s\n", OPENSSL_VERSION_TEXT);
+    LogPrintf("OpenSSL version: %s\n", OPENSSL_VERSION_TEXT);
 #else
-    printf("OpenSSL version: %08x\n", OPENSSL_VERSION_NUMBER);
+    LogPrintf("OpenSSL version: %08x\n", OPENSSL_VERSION_NUMBER);
 #endif
 }
 

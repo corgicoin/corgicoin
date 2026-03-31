@@ -33,6 +33,7 @@ typedef int pid_t; /* define for windows compatiblity */
 #include <openssl/ripemd.h>
 
 #include "netbase.h" // for AddTimeData
+#include "logging.h"
 
 // Note: int64 and uint64 are defined in uint256.h (included above)
 
@@ -263,12 +264,12 @@ inline std::string HexStr(const std::vector<unsigned char>& vch, bool fSpaces=fa
 template<typename T>
 void PrintHex(const T pbegin, const T pend, const char* pszFormat="%s", bool fSpaces=true)
 {
-    printf(pszFormat, HexStr(pbegin, pend, fSpaces).c_str());
+    LogPrintf(pszFormat, HexStr(pbegin, pend, fSpaces).c_str());
 }
 
 inline void PrintHex(const std::vector<unsigned char>& vch, const char* pszFormat="%s", bool fSpaces=true)
 {
-    printf(pszFormat, HexStr(vch, fSpaces).c_str());
+    LogPrintf(pszFormat, HexStr(vch, fSpaces).c_str());
 }
 
 inline int64 GetPerformanceCounter()
@@ -568,7 +569,7 @@ inline pthread_thread CreateThread(void(*pfn)(void*), void* parg, bool fWantHand
             &nUnused);                   // thread identifier
     if (hthread == nullptr)
     {
-        printf("Error: CreateThread() returned %d\n", GetLastError());
+        LogPrintf("Error: CreateThread() returned %d\n", GetLastError());
         return static_cast<pthread_thread>(0);
     }
     if (!fWantHandle)
@@ -603,7 +604,7 @@ inline pthread_t CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=fa
 #endif
     if (ret != 0)
     {
-        printf("Error: pthread_create() returned %d\n", ret);
+        LogPrintf("Error: pthread_create() returned %d\n", ret);
         return pthread_t{};
     }
     if (!fWantHandle)

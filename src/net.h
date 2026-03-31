@@ -21,6 +21,7 @@
 #include "netbase.h"
 #include "protocol.h"
 #include "addrman.h"
+#include "logging.h"
 
 class CRequestTracker;
 class CNode;
@@ -318,8 +319,7 @@ public:
         // We're using mapAskFor as a priority queue,
         // the key is the earliest time the request can be sent
         int64& nRequestTime = mapAlreadyAskedFor[inv];
-        if (fDebugNet)
-            printf("askfor %s   %" PRI64d "\n", inv.ToString().c_str(), nRequestTime);
+        LogPrint(LOG_NET, "askfor %s   %" PRI64d "\n", inv.ToString().c_str(), nRequestTime);
 
         // Make sure not to reuse time indexes to keep things in the same order
         int64 nNow = (GetTime() - 1) * 1000000;
@@ -343,8 +343,7 @@ public:
         nHeaderStart = vSend.size();
         vSend << CMessageHeader(pszCommand, 0);
         nMessageStart = vSend.size();
-        if (fDebug)
-            printf("sending: %s ", pszCommand);
+        LogDebug("sending: %s ", pszCommand);
     }
 
     void AbortMessage()
@@ -356,15 +355,14 @@ public:
         nMessageStart = -1;
         LEAVE_CRITICAL_SECTION(cs_vSend);
 
-        if (fDebug)
-            printf("(aborted)\n");
+        LogDebug("(aborted)\n");
     }
 
     void EndMessage()
     {
         if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
         {
-            printf("dropmessages DROPPING SEND MESSAGE\n");
+            LogPrintf("dropmessages DROPPING SEND MESSAGE\n");
             AbortMessage();
             return;
         }
@@ -383,9 +381,7 @@ public:
         assert(nMessageStart - nHeaderStart >= CMessageHeader::CHECKSUM_OFFSET + sizeof(nChecksum));
         memcpy(reinterpret_cast<char*>(&vSend[nHeaderStart]) + CMessageHeader::CHECKSUM_OFFSET, &nChecksum, sizeof(nChecksum));
 
-        if (fDebug) {
-            printf("(%d bytes)\n", nSize);
-        }
+        LogDebug("(%d bytes)\n", nSize);
 
         nHeaderStart = -1;
         nMessageStart = -1;
