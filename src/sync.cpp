@@ -7,14 +7,15 @@
 
 #include "sync.h"
 #include "util.h"
+#include "logging.h"
 
 #include <memory>
 
 #ifdef DEBUG_LOCKCONTENTION
 void PrintLockContention(const char* pszName, const char* pszFile, int nLine)
 {
-    printf("LOCKCONTENTION: %s\n", pszName);
-    printf("Locker: %s:%d\n", pszFile, nLine);
+    LogPrintf("LOCKCONTENTION: %s\n", pszName);
+    LogPrintf("Locker: %s:%d\n", pszFile, nLine);
 }
 #endif /* DEBUG_LOCKCONTENTION */
 
@@ -59,20 +60,20 @@ static thread_local std::unique_ptr<LockStack> lockstack;
 
 static void potential_deadlock_detected(const std::pair<void*, void*>& mismatch, const LockStack& s1, const LockStack& s2)
 {
-    printf("POTENTIAL DEADLOCK DETECTED\n");
-    printf("Previous lock order was:\n");
+    LogPrintf("POTENTIAL DEADLOCK DETECTED\n");
+    LogPrintf("Previous lock order was:\n");
     for (const std::pair<void*, CLockLocation>& i : s2)
     {
-        if (i.first == mismatch.first) printf(" (1)");
-        if (i.first == mismatch.second) printf(" (2)");
-        printf(" %s\n", i.second.ToString().c_str());
+        if (i.first == mismatch.first) LogPrintf(" (1)");
+        if (i.first == mismatch.second) LogPrintf(" (2)");
+        LogPrintf(" %s\n", i.second.ToString().c_str());
     }
-    printf("Current lock order is:\n");
+    LogPrintf("Current lock order is:\n");
     for (const std::pair<void*, CLockLocation>& i : s1)
     {
-        if (i.first == mismatch.first) printf(" (1)");
-        if (i.first == mismatch.second) printf(" (2)");
-        printf(" %s\n", i.second.ToString().c_str());
+        if (i.first == mismatch.first) LogPrintf(" (1)");
+        if (i.first == mismatch.second) LogPrintf(" (2)");
+        LogPrintf(" %s\n", i.second.ToString().c_str());
     }
 }
 
@@ -81,7 +82,7 @@ static void push_lock(void* c, const CLockLocation& locklocation, bool fTry)
     if (lockstack == nullptr)
         lockstack = std::make_unique<LockStack>();
 
-    if (fDebug) printf("Locking: %s\n", locklocation.ToString().c_str());
+    LogDebug("Locking: %s\n", locklocation.ToString().c_str());
     dd_mutex.lock();
 
     (*lockstack).emplace_back(c, locklocation);
@@ -108,10 +109,9 @@ static void push_lock(void* c, const CLockLocation& locklocation, bool fTry)
 
 static void pop_lock()
 {
-    if (fDebug) 
     {
         const CLockLocation& locklocation = (*lockstack).rbegin()->second;
-        printf("Unlocked: %s\n", locklocation.ToString().c_str());
+        LogDebug("Unlocked: %s\n", locklocation.ToString().c_str());
     }
     dd_mutex.lock();
     (*lockstack).pop_back();

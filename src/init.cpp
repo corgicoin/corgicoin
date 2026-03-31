@@ -16,6 +16,7 @@
 #include "ui_interface.h"
 #include "compat_openssl.h"
 #include "compat_boost.h"
+#include "logging.h"
 #include <filesystem>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -84,7 +85,7 @@ void Shutdown(void* parg)
         pwalletMain.reset();  // Explicit cleanup before exit
         CreateThread(ExitTimeout, nullptr);
         Sleep(50);
-        printf("CorgiCoin exited\n\n");
+        LogPrintf("CorgiCoin exited\n\n");
         fExit = true;
 #ifndef QT_GUI
         // ensure non UI client get's exited here, but let Bitcoin-Qt reach return 0; in bitcoin.cpp
@@ -362,6 +363,9 @@ bool AppInit2()
 
     // ********************************************************* Step 3: parameter-to-internal-flags
 
+    // Initialize logging subsystem
+    InitLogging(GetArg("-debug", ""), GetBoolArg("-printtoconsole"), GetBoolArg("-logtimestamps"));
+
     fDebug = GetBoolArg("-debug");
 
     // -debug implies fDebug*
@@ -453,8 +457,8 @@ bool AppInit2()
 
     if (!fDebug)
         ShrinkDebugFile();
-    printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-    printf("CorgiCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
+    LogPrintf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
+    LogPrintf("CorgiCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
 
     // Print dependency versions and security warnings
     PrintBoostVersion();
@@ -462,17 +466,17 @@ bool AppInit2()
     PrintBerkeleyDBVersion();
 
 #ifdef OPENSSL_1_0_LEGACY
-    printf("\n");
-    printf("*********************************************************************\n");
-    printf("*** CRITICAL SECURITY WARNING: OpenSSL 1.0.x DETECTED            ***\n");
-    printf("*** This version is INSECURE and should NOT be used in production ***\n");
-    printf("*** Please upgrade to OpenSSL 3.0+ immediately                    ***\n");
-    printf("*********************************************************************\n");
-    printf("\n");
+    LogPrintf("\n");
+    LogPrintf("*********************************************************************\n");
+    LogPrintf("*** CRITICAL SECURITY WARNING: OpenSSL 1.0.x DETECTED            ***\n");
+    LogPrintf("*** This version is INSECURE and should NOT be used in production ***\n");
+    LogPrintf("*** Please upgrade to OpenSSL 3.0+ immediately                    ***\n");
+    LogPrintf("*********************************************************************\n");
+    LogPrintf("\n");
 #endif
-    printf("Startup time: %s\n", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
-    printf("Default data directory %s\n", GetDefaultDataDir().string().c_str());
-    printf("Used data directory %s\n", GetDataDir().string().c_str());
+    LogPrintf("Startup time: %s\n", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
+    LogPrintf("Default data directory %s\n", GetDefaultDataDir().string().c_str());
+    LogPrintf("Used data directory %s\n", GetDataDir().string().c_str());
     std::ostringstream strErrors;
 
     if (fDaemon)
@@ -591,7 +595,7 @@ bool AppInit2()
     }
 
     uiInterface.InitMessage(_("Loading block index..."));
-    printf("Loading block index...\n");
+    LogPrintf("Loading block index...\n");
     nStart = GetTimeMillis();
     if (!LoadBlockIndex())
         strErrors << _("Error loading blkindex.dat") << "\n";
@@ -601,10 +605,10 @@ bool AppInit2()
     // As the program has not fully started yet, Shutdown() is possibly overkill.
     if (fRequestShutdown)
     {
-        printf("Shutdown requested. Exiting.\n");
+        LogPrintf("Shutdown requested. Exiting.\n");
         return false;
     }
-    printf(" block index %15" PRI64d "ms\n", GetTimeMillis() - nStart);
+    LogPrintf(" block index %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
     if (GetBoolArg("-printblockindex") || GetBoolArg("-printblocktree"))
     {
@@ -626,19 +630,19 @@ bool AppInit2()
                 block.ReadFromDisk(pindex);
                 block.BuildMerkleTree();
                 block.print();
-                printf("\n");
+                LogPrintf("\n");
                 nFound++;
             }
         }
         if (nFound == 0)
-            printf("No blocks matching %s were found\n", strMatch.c_str());
+            LogPrintf("No blocks matching %s were found\n", strMatch.c_str());
         return false;
     }
 
     // ********************************************************* Step 7: load wallet
 
     uiInterface.InitMessage(_("Loading wallet..."));
-    printf("Loading wallet...\n");
+    LogPrintf("Loading wallet...\n");
     nStart = GetTimeMillis();
     bool fFirstRun;
     pwalletMain = std::make_unique<CWallet>("wallet.dat");
@@ -652,7 +656,7 @@ bool AppInit2()
         else if (nLoadWalletRet == DB_NEED_REWRITE)
         {
             strErrors << _("Wallet needed to be rewritten: restart CorgiCoin to complete") << "\n";
-            printf("%s", strErrors.str().c_str());
+            LogPrintf("%s", strErrors.str().c_str());
             return InitError(strErrors.str());
         }
         else
@@ -664,12 +668,12 @@ bool AppInit2()
         int nMaxVersion = GetArg("-upgradewallet", 0);
         if (nMaxVersion == 0) // the -upgradewallet without argument case
         {
-            printf("Performing wallet upgrade to %i\n", static_cast<int>(WalletFeature::FEATURE_LATEST));
+            LogPrintf("Performing wallet upgrade to %i\n", static_cast<int>(WalletFeature::FEATURE_LATEST));
             nMaxVersion = CLIENT_VERSION;
             pwalletMain->SetMinVersion(WalletFeature::FEATURE_LATEST); // permanently upgrade the wallet immediately
         }
         else
-            printf("Allowing wallet upgrade up to %i\n", nMaxVersion);
+            LogPrintf("Allowing wallet upgrade up to %i\n", nMaxVersion);
         if (nMaxVersion < pwalletMain->GetVersion())
             strErrors << _("Cannot downgrade wallet") << "\n";
         pwalletMain->SetMaxVersion(nMaxVersion);
@@ -688,8 +692,8 @@ bool AppInit2()
             strErrors << _("Cannot write default address") << "\n";
     }
 
-    printf("%s", strErrors.str().c_str());
-    printf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
+    LogPrintf("%s", strErrors.str().c_str());
+    LogPrintf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
     RegisterWallet(pwalletMain.get());
 
@@ -706,10 +710,10 @@ bool AppInit2()
     if (pindexBest != pindexRescan)
     {
         uiInterface.InitMessage(_("Rescanning..."));
-        printf("Rescanning last %i blocks (from block %i)...\n", pindexBest->nHeight - pindexRescan->nHeight, pindexRescan->nHeight);
+        LogPrintf("Rescanning last %i blocks (from block %i)...\n", pindexBest->nHeight - pindexRescan->nHeight, pindexRescan->nHeight);
         nStart = GetTimeMillis();
         pwalletMain->ScanForWalletTransactions(pindexRescan, true);
-        printf(" rescan      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
+        LogPrintf(" rescan      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
     }
 
     // ********************************************************* Step 8: import blocks
@@ -727,16 +731,16 @@ bool AppInit2()
     // ********************************************************* Step 9: load peers
 
     uiInterface.InitMessage(_("Loading addresses..."));
-    printf("Loading addresses...\n");
+    LogPrintf("Loading addresses...\n");
     nStart = GetTimeMillis();
 
     {
         CAddrDB adb;
         if (!adb.Read(addrman))
-            printf("Invalid or missing peers.dat; recreating\n");
+            LogPrintf("Invalid or missing peers.dat; recreating\n");
     }
 
-    printf("Loaded %i addresses from peers.dat  %" PRI64d "ms\n",
+    LogPrintf("Loaded %i addresses from peers.dat  %" PRI64d "ms\n",
            addrman.size(), GetTimeMillis() - nStart);
 
     // ********************************************************* Step 10: start node
@@ -747,11 +751,11 @@ bool AppInit2()
     RandAddSeedPerfmon();
 
     //// debug print
-    printf("mapBlockIndex.size() = %d\n",   mapBlockIndex.size());
-    printf("nBestHeight = %d\n",            nBestHeight);
-    printf("setKeyPool.size() = %d\n",      pwalletMain->setKeyPool.size());
-    printf("mapWallet.size() = %d\n",       pwalletMain->mapWallet.size());
-    printf("mapAddressBook.size() = %d\n",  pwalletMain->mapAddressBook.size());
+    LogPrintf("mapBlockIndex.size() = %d\n",   mapBlockIndex.size());
+    LogPrintf("nBestHeight = %d\n",            nBestHeight);
+    LogPrintf("setKeyPool.size() = %d\n",      pwalletMain->setKeyPool.size());
+    LogPrintf("mapWallet.size() = %d\n",       pwalletMain->mapWallet.size());
+    LogPrintf("mapAddressBook.size() = %d\n",  pwalletMain->mapAddressBook.size());
 
     if (!CreateThread(StartNode, nullptr))
         InitError(_("Error: could not start node"));
@@ -762,7 +766,7 @@ bool AppInit2()
     // ********************************************************* Step 11: finished
 
     uiInterface.InitMessage(_("Done loading"));
-    printf("Done loading\n");
+    LogPrintf("Done loading\n");
 
     if (!strErrors.str().empty())
         return InitError(strErrors.str());

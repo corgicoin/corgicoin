@@ -12,8 +12,6 @@
 
 #include <boost/lexical_cast.hpp>
 
-#define printf OutputDebugStringF
-
 using namespace json_spirit;
 using namespace std;
 

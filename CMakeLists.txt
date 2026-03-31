@@ -180,6 +180,7 @@ set(DAEMON_SOURCES
     src/rpcrawtransaction.cpp
     src/script.cpp
     src/scrypt.c
+    src/logging.cpp
     src/sync.cpp
     src/util.cpp
     src/wallet.cpp

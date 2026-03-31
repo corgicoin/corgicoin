@@ -15,6 +15,7 @@
 #include "script.h"
 #include "db.h"
 #include "scrypt.h"
+#include "logging.h"
 
 #include <list>
 
@@ -584,24 +585,24 @@ public:
     {
         CAutoFile filein = CAutoFile(OpenBlockFile(pos.nFile, 0, pfileRet ? "rb+" : "rb"), SER_DISK, CLIENT_VERSION);
         if (!filein)
-            return error("CTransaction::ReadFromDisk() : OpenBlockFile failed");
+            return LogError("CTransaction::ReadFromDisk() : OpenBlockFile failed");
 
         // Read transaction
         if (fseek(filein, pos.nTxPos, SEEK_SET) != 0)
-            return error("CTransaction::ReadFromDisk() : fseek failed");
+            return LogError("CTransaction::ReadFromDisk() : fseek failed");
 
         try {
             filein >> *this;
         }
         catch (std::exception &e) {
-            return error("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
+            return LogError("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
         }
 
         // Return file pointer
         if (pfileRet)
         {
             if (fseek(filein, pos.nTxPos, SEEK_SET) != 0)
-                return error("CTransaction::ReadFromDisk() : second fseek failed");
+                return LogError("CTransaction::ReadFromDisk() : second fseek failed");
             *pfileRet = filein.release();
         }
         return true;
@@ -946,7 +947,7 @@ public:
         // Open history file to append
         CAutoFile fileout = CAutoFile(AppendBlockFile(nFileRet), SER_DISK, CLIENT_VERSION);
         if (!fileout)
-            return error("CBlock::WriteToDisk() : AppendBlockFile failed");
+            return LogError("CBlock::WriteToDisk() : AppendBlockFile failed");
 
         // Write index header
         unsigned int nSize = fileout.GetSerializeSize(*this);
@@ -955,7 +956,7 @@ public:
         // Write block
         long fileOutPos = ftell(fileout);
         if (fileOutPos < 0)
-            return error("CBlock::WriteToDisk() : ftell failed");
+            return LogError("CBlock::WriteToDisk() : ftell failed");
         nBlockPosRet = fileOutPos;
         fileout << *this;
 
@@ -974,7 +975,7 @@ public:
         // Open history file to read
         CAutoFile filein = CAutoFile(OpenBlockFile(nFile, nBlockPos, "rb"), SER_DISK, CLIENT_VERSION);
         if (!filein)
-            return error("CBlock::ReadFromDisk() : OpenBlockFile failed");
+            return LogError("CBlock::ReadFromDisk() : OpenBlockFile failed");
         if (!fReadTransactions)
             filein.nType |= SER_BLOCKHEADERONLY;
 
@@ -983,12 +984,12 @@ public:
             filein >> *this;
         }
         catch (std::exception &e) {
-            return error("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
+            return LogError("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
         }
 
         // Check the header
         if (!CheckProofOfWork(GetPoWHash(), nBits))
-            return error("CBlock::ReadFromDisk() : errors in block header");
+            return LogError("CBlock::ReadFromDisk() : errors in block header");
 
         return true;
     }
@@ -1577,9 +1578,9 @@ public:
     {
         CKey key;
         if (!key.SetPubKey(ParseHex("040184710fa689ad5023690c80f3a49c8f13f8d45b8c857fbcbc8bc4a8e4d3eb4b10f4d4604fa08dce601aaf0f470216fe1b51850b4acf21b179c45070ac7b03a9")))
-            return error("CAlert::CheckSignature() : SetPubKey failed");
+            return LogError("CAlert::CheckSignature() : SetPubKey failed");
         if (!key.Verify(Hash(vchMsg.begin(), vchMsg.end()), vchSig))
-            return error("CAlert::CheckSignature() : verify signature failed");
+            return LogError("CAlert::CheckSignature() : verify signature failed");
 
         // Now unserialize the data
         CDataStream sMsg(vchMsg, SER_NETWORK, PROTOCOL_VERSION);

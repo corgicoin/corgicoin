@@ -8,6 +8,7 @@
 
 #include "walletdb.h"
 #include "wallet.h"
+#include "logging.h"
 #include <filesystem>
 
 using namespace std;
@@ -126,7 +127,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
         Dbc* pcursor = GetCursor();
         if (!pcursor)
         {
-            printf("Error getting wallet database cursor\n");
+            LogPrintf("Error getting wallet database cursor\n");
             return DB_CORRUPT;
         }
 
@@ -140,7 +141,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 break;
             else if (ret != 0)
             {
-                printf("Error reading next record from wallet database\n");
+                LogPrintf("Error reading next record from wallet database\n");
                 return DB_CORRUPT;
             }
 
@@ -164,7 +165,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 wtx.BindWallet(pwallet);
 
                 if (wtx.GetHash() != hash)
-                    printf("Error in wallet.dat, hash mismatch\n");
+                    LogPrintf("Error in wallet.dat, hash mismatch\n");
 
                 // Undo serialize changes in 31600
                 if (31404 <= wtx.fTimeReceivedIsTxTime && wtx.fTimeReceivedIsTxTime <= 31703)
@@ -174,20 +175,20 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                         char fTmp;
                         char fUnused;
                         ssValue >> fTmp >> fUnused >> wtx.strFromAccount;
-                        printf("LoadWallet() upgrading tx ver=%d %d '%s' %s\n", wtx.fTimeReceivedIsTxTime, fTmp, wtx.strFromAccount.c_str(), hash.ToString().c_str());
+                        LogPrintf("LoadWallet() upgrading tx ver=%d %d '%s' %s\n", wtx.fTimeReceivedIsTxTime, fTmp, wtx.strFromAccount.c_str(), hash.ToString().c_str());
                         wtx.fTimeReceivedIsTxTime = fTmp;
                     }
                     else
                     {
-                        printf("LoadWallet() repairing tx ver=%d %s\n", wtx.fTimeReceivedIsTxTime, hash.ToString().c_str());
+                        LogPrintf("LoadWallet() repairing tx ver=%d %s\n", wtx.fTimeReceivedIsTxTime, hash.ToString().c_str());
                         wtx.fTimeReceivedIsTxTime = 0;
                     }
                     vWalletUpgrade.push_back(hash);
                 }
 
                 //// debug print
-                //printf("LoadWallet  %s\n", wtx.GetHash().ToString().c_str());
-                //printf(" %12" PRI64d "  %s  %s  %s\n",
+                //LogPrintf("LoadWallet  %s\n", wtx.GetHash().ToString().c_str());
+                //LogPrintf(" %12" PRI64d "  %s  %s  %s\n",
                 //    wtx.vout[0].nValue,
                 //    DateTimeStrFormat("%x %H:%M:%S", wtx.GetBlockTime()).c_str(),
                 //    wtx.hashBlock.ToString().substr(0,20).c_str(),
@@ -215,12 +216,12 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                     key.SetPrivKey(pkey);
                     if (key.GetPubKey() != vchPubKey)
                     {
-                        printf("Error reading wallet database: CPrivKey pubkey inconsistency\n");
+                        LogPrintf("Error reading wallet database: CPrivKey pubkey inconsistency\n");
                         return DB_CORRUPT;
                     }
                     if (!key.IsValid())
                     {
-                        printf("Error reading wallet database: invalid CPrivKey\n");
+                        LogPrintf("Error reading wallet database: invalid CPrivKey\n");
                         return DB_CORRUPT;
                     }
                 }
@@ -232,18 +233,18 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                     key.SetPrivKey(wkey.vchPrivKey);
                     if (key.GetPubKey() != vchPubKey)
                     {
-                        printf("Error reading wallet database: CWalletKey pubkey inconsistency\n");
+                        LogPrintf("Error reading wallet database: CWalletKey pubkey inconsistency\n");
                         return DB_CORRUPT;
                     }
                     if (!key.IsValid())
                     {
-                        printf("Error reading wallet database: invalid CWalletKey\n");
+                        LogPrintf("Error reading wallet database: invalid CWalletKey\n");
                         return DB_CORRUPT;
                     }
                 }
                 if (!pwallet->LoadKey(key))
                 {
-                    printf("Error reading wallet database: LoadKey failed\n");
+                    LogPrintf("Error reading wallet database: LoadKey failed\n");
                     return DB_CORRUPT;
                 }
             }
@@ -255,7 +256,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 ssValue >> kMasterKey;
                 if(pwallet->mapMasterKeys.count(nID) != 0)
                 {
-                    printf("Error reading wallet database: duplicate CMasterKey id %u\n", nID);
+                    LogPrintf("Error reading wallet database: duplicate CMasterKey id %u\n", nID);
                     return DB_CORRUPT;
                 }
                 pwallet->mapMasterKeys[nID] = kMasterKey;
@@ -270,7 +271,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 ssValue >> vchPrivKey;
                 if (!pwallet->LoadCryptedKey(vchPubKey, vchPrivKey))
                 {
-                    printf("Error reading wallet database: LoadCryptedKey failed\n");
+                    LogPrintf("Error reading wallet database: LoadCryptedKey failed\n");
                     return DB_CORRUPT;
                 }
                 fIsEncrypted = true;
@@ -299,7 +300,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 ssValue >> script;
                 if (!pwallet->LoadCScript(script))
                 {
-                    printf("Error reading wallet database: LoadCScript failed\n");
+                    LogPrintf("Error reading wallet database: LoadCScript failed\n");
                     return DB_CORRUPT;
                 }
             }
@@ -310,7 +311,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
     for (uint256 hash : vWalletUpgrade)
         WriteTx(hash, pwallet->mapWallet[hash]);
 
-    printf("nFileVersion = %d\n", nFileVersion);
+    LogPrintf("nFileVersion = %d\n", nFileVersion);
 
 
     // Rewrite encrypted wallets of versions 0.4.0 and 0.5.0rc:
@@ -368,7 +369,7 @@ void ThreadFlushWalletDB(void* parg)
                     auto mi = bitdb.mapFileUseCount.find(strFile);
                     if (mi != bitdb.mapFileUseCount.end())
                     {
-                        printf("Flushing wallet.dat\n");
+                        LogPrintf("Flushing wallet.dat\n");
                         nLastFlushed = nWalletDBUpdated;
                         int64 nStart = GetTimeMillis();
 
@@ -377,7 +378,7 @@ void ThreadFlushWalletDB(void* parg)
                         bitdb.CheckpointLSN(strFile);
 
                         bitdb.mapFileUseCount.erase(mi++);
-                        printf("Flushed wallet.dat %" PRI64d "ms\n", GetTimeMillis() - nStart);
+                        LogPrintf("Flushed wallet.dat %" PRI64d "ms\n", GetTimeMillis() - nStart);
                     }
                 }
             }
@@ -408,10 +409,10 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
 
                 try {
                     std::filesystem::copy_file(pathSrc, pathDest, std::filesystem::copy_options::overwrite_existing);
-                    printf("copied wallet.dat to %s\n", pathDest.string().c_str());
+                    LogPrintf("copied wallet.dat to %s\n", pathDest.string().c_str());
                     return true;
                 } catch(const std::filesystem::filesystem_error &e) {
-                    printf("error copying wallet.dat to %s - %s\n", pathDest.string().c_str(), e.what());
+                    LogPrintf("error copying wallet.dat to %s - %s\n", pathDest.string().c_str(), e.what());
                     return false;
                 }
             }

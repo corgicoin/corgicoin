@@ -45,7 +45,7 @@ constexpr int64 CENT = 1000000;
 #define UBEGIN(a)           (reinterpret_cast<unsigned char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&(a))))
 #define UEND(a)             (reinterpret_cast<unsigned char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&((&(a))[1]))))
 #define ARRAYLEN(array)     (sizeof(array)/sizeof((array)[0]))
-#define printf              OutputDebugStringF
+// printf macro removed — use LogPrintf() from logging.h instead
 
 #ifndef PRI64d
 #if defined(_MSC_VER) || defined(__MSVCRT__)

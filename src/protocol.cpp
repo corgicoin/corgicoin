@@ -9,6 +9,7 @@
 #include "protocol.h"
 #include "util.h"
 #include "netbase.h"
+#include "logging.h"
 
 #ifndef WIN32
 # include <arpa/inet.h>
@@ -69,7 +70,7 @@ bool CMessageHeader::IsValid() const
     // Message size
     if (nMessageSize > MAX_SIZE)
     {
-        printf("CMessageHeader::IsValid() : (%s, %u bytes) nMessageSize > MAX_SIZE\n", GetCommand().c_str(), nMessageSize);
+        LogPrintf("CMessageHeader::IsValid() : (%s, %u bytes) nMessageSize > MAX_SIZE\n", GetCommand().c_str(), nMessageSize);
         return false;
     }
 
@@ -148,6 +149,6 @@ std::string CInv::ToString() const
 
 void CInv::print() const
 {
-    printf("CInv(%s)\n", ToString().c_str());
+    LogPrintf("CInv(%s)\n", ToString().c_str());
 }
 
