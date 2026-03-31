@@ -17,6 +17,8 @@
 #include <limits>
 #include <cstring>
 #include <cstdio>
+#include <ios>
+#include <stdexcept>
 #include <type_traits>
 
 #include <tuple>
