@@ -27,7 +27,7 @@ AddressBookPage::AddressBookPage(Mode mode, Tabs tab, QWidget *parent) :
 {
     ui->setupUi(this);
 
-#ifdef Q_WS_MAC // Icons on push buttons are very uncommon on Mac
+#ifdef Q_OS_MACOS // Icons on push buttons are very uncommon on Mac
     ui->newAddressButton->setIcon(QIcon());
     ui->copyToClipboard->setIcon(QIcon());
     ui->deleteButton->setIcon(QIcon());
@@ -134,7 +134,7 @@ void AddressBookPage::setModel(AddressTableModel *model)
     // Set column widths
     ui->tableView->horizontalHeader()->resizeSection(
             AddressTableModel::Address, 320);
-    ui->tableView->horizontalHeader()->setResizeMode(
+    ui->tableView->horizontalHeader()->setSectionResizeMode(
             AddressTableModel::Label, QHeaderView::Stretch);
 
     connect(ui->tableView->selectionModel(), &QItemSelectionModel::selectionChanged,
@@ -186,7 +186,7 @@ void AddressBookPage::on_signMessage_clicked()
     QModelIndexList indexes = table->selectionModel()->selectedRows(AddressTableModel::Address);
     QString addr;
 
-    foreach (QModelIndex index, indexes)
+    for (const QModelIndex &index : indexes)
     {
         QVariant address = index.data();
         addr = address.toString();
@@ -201,7 +201,7 @@ void AddressBookPage::on_verifyMessage_clicked()
     QModelIndexList indexes = table->selectionModel()->selectedRows(AddressTableModel::Address);
     QString addr;
 
-    foreach (QModelIndex index, indexes)
+    for (const QModelIndex &index : indexes)
     {
         QVariant address = index.data();
         addr = address.toString();
@@ -294,7 +294,7 @@ void AddressBookPage::done(int retval)
     // Figure out which address was selected, and return it
     QModelIndexList indexes = table->selectionModel()->selectedRows(AddressTableModel::Address);
 
-    foreach (QModelIndex index, indexes)
+    for (const QModelIndex &index : indexes)
     {
         QVariant address = table->model()->data(index);
         returnValue = address.toString();
@@ -339,7 +339,7 @@ void AddressBookPage::on_showQRCode_clicked()
     QTableView *table = ui->tableView;
     QModelIndexList indexes = table->selectionModel()->selectedRows(AddressTableModel::Address);
 
-    foreach (QModelIndex index, indexes)
+    for (const QModelIndex &index : indexes)
     {
         QString address = index.data().toString(), label = index.sibling(index.row(), 0).data(Qt::EditRole).toString();
 

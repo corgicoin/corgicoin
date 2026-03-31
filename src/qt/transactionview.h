@@ -57,10 +57,12 @@ private:
 
     QWidget *createDateRangeWidget();
 
+public slots:
+    void showDetails();
+
 private slots:
     void contextualMenu(const QPoint &);
     void dateRangeChanged();
-    void showDetails();
     void copyAddress();
     void editLabel();
     void copyLabel();

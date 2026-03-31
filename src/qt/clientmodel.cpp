@@ -192,7 +192,7 @@ double ClientModel::GetDifficulty() const
 
 QDateTime ClientModel::getLastBlockDate() const
 {
-    return QDateTime::fromTime_t(pindexBest->GetBlockTime());
+    return QDateTime::fromSecsSinceEpoch(pindexBest->GetBlockTime());
 }
 
 void ClientModel::updateTimer()
@@ -226,7 +226,7 @@ void ClientModel::updateNumConnections(int numConnections)
 void ClientModel::updateAlert(const QString &hash, int status)
 {
     // Show error message notification for new alert
-    if(status == CT_NEW)
+    if(status == static_cast<int>(ChangeType::CT_NEW))
     {
         uint256 hash_256;
         hash_256.SetHex(hash.toStdString());
@@ -298,7 +298,7 @@ QString ClientModel::clientName() const
 
 QString ClientModel::formatClientStartupTime() const
 {
-    return QDateTime::fromTime_t(nClientStartupTime).toString();
+    return QDateTime::fromSecsSinceEpoch(nClientStartupTime).toString();
 }
 
 // Handlers for core signals
@@ -320,21 +320,24 @@ static void NotifyAlertChanged(ClientModel *clientmodel, const uint256 &hash, Ch
     OutputDebugStringF("NotifyAlertChanged %s status=%i\n", hash.GetHex().c_str(), status);
     QMetaObject::invokeMethod(clientmodel, "updateAlert", Qt::QueuedConnection,
                               Q_ARG(QString, QString::fromStdString(hash.GetHex())),
-                              Q_ARG(int, status));
+                              Q_ARG(int, static_cast<int>(status)));
 }
 
 void ClientModel::subscribeToCoreSignals()
 {
-    // Connect signals to client
-    uiInterface.NotifyBlocksChanged.connect([this]() { NotifyBlocksChanged(this); });
-    uiInterface.NotifyNumConnectionsChanged.connect([this](int newNumConnections) { NotifyNumConnectionsChanged(this, newNumConnections); });
-    uiInterface.NotifyAlertChanged.connect([this](const uint256& hash, ChangeType status) { NotifyAlertChanged(this, hash, status); });
+    // Connect signals to client, storing connections for later disconnection
+    coreSignalConnections.push_back(
+        uiInterface.NotifyBlocksChanged.connect([this]() { NotifyBlocksChanged(this); }));
+    coreSignalConnections.push_back(
+        uiInterface.NotifyNumConnectionsChanged.connect([this](int newNumConnections) { NotifyNumConnectionsChanged(this, newNumConnections); }));
+    coreSignalConnections.push_back(
+        uiInterface.NotifyAlertChanged.connect([this](const uint256& hash, ChangeType status) { NotifyAlertChanged(this, hash, status); }));
 }
 
 void ClientModel::unsubscribeFromCoreSignals()
 {
-    // Disconnect signals from client
-    uiInterface.NotifyBlocksChanged.disconnect([this]() { NotifyBlocksChanged(this); });
-    uiInterface.NotifyNumConnectionsChanged.disconnect([this](int newNumConnections) { NotifyNumConnectionsChanged(this, newNumConnections); });
-    uiInterface.NotifyAlertChanged.disconnect([this](const uint256& hash, ChangeType status) { NotifyAlertChanged(this, hash, status); });
+    // Disconnect all signals from client
+    for (auto& conn : coreSignalConnections)
+        conn.disconnect();
+    coreSignalConnections.clear();
 }

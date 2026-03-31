@@ -66,7 +66,7 @@ void WalletModel::updateStatus()
     EncryptionStatus newEncryptionStatus = getEncryptionStatus();
 
     if(cachedEncryptionStatus != newEncryptionStatus)
-        emit encryptionStatusChanged(newEncryptionStatus);
+        emit encryptionStatusChanged(static_cast<int>(newEncryptionStatus));
 }
 
 void WalletModel::pollBalanceChanged()
@@ -130,11 +130,11 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
 
     if(recipients.empty())
     {
-        return OK;
+        return SendCoinsReturn(StatusCode::OK);
     }
 
     // Pre-check input data for validity
-    foreach(const SendCoinsRecipient &rcp, recipients)
+    for (const SendCoinsRecipient &rcp : recipients)
     {
         if(!validateAddress(rcp.address))
         {
@@ -169,7 +169,7 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
 
         // Sendmany
         std::vector<std::pair<CScript, int64>> vecSend;
-        foreach(const SendCoinsRecipient &rcp, recipients)
+        for (const SendCoinsRecipient &rcp : recipients)
         {
             CScript scriptPubKey;
             scriptPubKey.SetDestination(CBitcoinAddress(rcp.address.toStdString()).Get());
@@ -185,23 +185,23 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
         {
             if((total + nFeeRequired) > wallet->GetBalance())
             {
-                return SendCoinsReturn(AmountWithFeeExceedsBalance, nFeeRequired);
+                return SendCoinsReturn(StatusCode::AmountWithFeeExceedsBalance, nFeeRequired);
             }
-            return TransactionCreationFailed;
+            return SendCoinsReturn(StatusCode::TransactionCreationFailed);
         }
         if(!uiInterface.ThreadSafeAskFee(nFeeRequired, tr("Sending...").toStdString()))
         {
-            return Aborted;
+            return SendCoinsReturn(StatusCode::Aborted);
         }
         if(!wallet->CommitTransaction(wtx, keyChange))
         {
-            return TransactionCommitFailed;
+            return SendCoinsReturn(StatusCode::TransactionCommitFailed);
         }
         hex = QString::fromStdString(wtx.GetHash().GetHex());
     }
 
     // Add addresses / update labels that we've sent to to the address book
-    foreach(const SendCoinsRecipient &rcp, recipients)
+    for (const SendCoinsRecipient &rcp : recipients)
     {
         std::string strAddress = rcp.address.toStdString();
         CTxDestination dest = CBitcoinAddress(strAddress).Get();
@@ -219,7 +219,7 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
         }
     }
 
-    return SendCoinsReturn(OK, 0, hex);
+    return SendCoinsReturn(StatusCode::OK, 0, hex);
 }
 
 OptionsModel *WalletModel::getOptionsModel()
@@ -311,7 +311,7 @@ static void NotifyAddressBookChanged(WalletModel *walletmodel, CWallet *wallet, 
                               Q_ARG(QString, QString::fromStdString(CBitcoinAddress(address).ToString())),
                               Q_ARG(QString, QString::fromStdString(label)),
                               Q_ARG(bool, isMine),
-                              Q_ARG(int, status));
+                              Q_ARG(int, static_cast<int>(status)));
 }
 
 static void NotifyTransactionChanged(WalletModel *walletmodel, CWallet *wallet, const uint256 &hash, ChangeType status)
@@ -319,31 +319,30 @@ static void NotifyTransactionChanged(WalletModel *walletmodel, CWallet *wallet, 
     OutputDebugStringF("NotifyTransactionChanged %s status=%i\n", hash.GetHex().c_str(), status);
     QMetaObject::invokeMethod(walletmodel, "updateTransaction", Qt::QueuedConnection,
                               Q_ARG(QString, QString::fromStdString(hash.GetHex())),
-                              Q_ARG(int, status));
+                              Q_ARG(int, static_cast<int>(status)));
 }
 
 void WalletModel::subscribeToCoreSignals()
 {
-    // Connect signals to wallet
-    wallet->NotifyStatusChanged.connect([this](ChangeType status) { NotifyKeyStoreStatusChanged(this, status); });
-    wallet->NotifyAddressBookChanged.connect([this](CWallet* wallet, const CTxDestination& address, const std::string& label, bool isMine, ChangeType status) {
-        NotifyAddressBookChanged(this, wallet, address, label, isMine, status);
-    });
-    wallet->NotifyTransactionChanged.connect([this](CWallet* wallet, const uint256& hash, ChangeType status) {
-        NotifyTransactionChanged(this, wallet, hash, status);
-    });
+    // Connect signals to wallet, storing connections for later disconnection
+    coreSignalConnections.push_back(
+        wallet->NotifyStatusChanged.connect([this](CCryptoKeyStore* ks) { NotifyKeyStoreStatusChanged(this, ks); }));
+    coreSignalConnections.push_back(
+        wallet->NotifyAddressBookChanged.connect([this](CWallet* wallet, const CTxDestination& address, const std::string& label, bool isMine, ChangeType status) {
+            NotifyAddressBookChanged(this, wallet, address, label, isMine, status);
+        }));
+    coreSignalConnections.push_back(
+        wallet->NotifyTransactionChanged.connect([this](CWallet* wallet, const uint256& hash, ChangeType status) {
+            NotifyTransactionChanged(this, wallet, hash, status);
+        }));
 }
 
 void WalletModel::unsubscribeFromCoreSignals()
 {
-    // Disconnect signals from wallet
-    wallet->NotifyStatusChanged.disconnect([this](ChangeType status) { NotifyKeyStoreStatusChanged(this, status); });
-    wallet->NotifyAddressBookChanged.disconnect([this](CWallet* wallet, const CTxDestination& address, const std::string& label, bool isMine, ChangeType status) {
-        NotifyAddressBookChanged(this, wallet, address, label, isMine, status);
-    });
-    wallet->NotifyTransactionChanged.disconnect([this](CWallet* wallet, const uint256& hash, ChangeType status) {
-        NotifyTransactionChanged(this, wallet, hash, status);
-    });
+    // Disconnect all signals from wallet
+    for (auto& conn : coreSignalConnections)
+        conn.disconnect();
+    coreSignalConnections.clear();
 }
 
 // WalletModel::UnlockContext implementation

@@ -4,9 +4,11 @@
 
 #include "wallet.h"
 #include "base58.h"
+#include "ui_interface.h"
 
 #include <QFont>
 #include <QColor>
+#include <algorithm>
 
 const QString AddressTableModel::Send = "S";
 const QString AddressTableModel::Receive = "R";
@@ -74,9 +76,9 @@ public:
     void updateEntry(const QString &address, const QString &label, bool isMine, int status)
     {
         // Find address / label in model
-        auto lower = qLowerBound(
+        auto lower = std::lower_bound(
             cachedAddressTable.begin(), cachedAddressTable.end(), address, AddressTableEntryLessThan());
-        auto upper = qUpperBound(
+        auto upper = std::upper_bound(
             cachedAddressTable.begin(), cachedAddressTable.end(), address, AddressTableEntryLessThan());
         int lowerIndex = (lower - cachedAddressTable.begin());
         int upperIndex = (upper - cachedAddressTable.begin());
@@ -85,7 +87,7 @@ public:
 
         switch(status)
         {
-        case CT_NEW:
+        case static_cast<int>(ChangeType::CT_NEW):
             if(inModel)
             {
                 OutputDebugStringF("Warning: AddressTablePriv::updateEntry: Got CT_NOW, but entry is already in model\n");
@@ -95,7 +97,7 @@ public:
             cachedAddressTable.insert(lowerIndex, AddressTableEntry(newEntryType, label, address));
             parent->endInsertRows();
             break;
-        case CT_UPDATED:
+        case static_cast<int>(ChangeType::CT_UPDATED):
             if(!inModel)
             {
                 OutputDebugStringF("Warning: AddressTablePriv::updateEntry: Got CT_UPDATED, but entry is not in model\n");
@@ -105,7 +107,7 @@ public:
             lower->label = label;
             parent->emitDataChanged(lowerIndex);
             break;
-        case CT_DELETED:
+        case static_cast<int>(ChangeType::CT_DELETED):
             if(!inModel)
             {
                 OutputDebugStringF("Warning: AddressTablePriv::updateEntry: Got CT_DELETED, but entry is not in model\n");
@@ -214,7 +216,7 @@ bool AddressTableModel::setData(const QModelIndex & index, const QVariant & valu
         return false;
     AddressTableEntry *rec = static_cast<AddressTableEntry*>(index.internalPointer());
 
-    editStatus = OK;
+    editStatus = EditStatus::OK;
 
     if(role == Qt::EditRole)
     {
@@ -265,7 +267,7 @@ QVariant AddressTableModel::headerData(int section, Qt::Orientation orientation,
 Qt::ItemFlags AddressTableModel::flags(const QModelIndex & index) const
 {
     if(!index.isValid())
-        return 0;
+        return Qt::ItemFlags();
     AddressTableEntry *rec = static_cast<AddressTableEntry*>(index.internalPointer());
 
     Qt::ItemFlags retval = Qt::ItemIsSelectable | Qt::ItemIsEnabled;

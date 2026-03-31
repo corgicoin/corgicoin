@@ -6,7 +6,7 @@
 
 #include <QLabel>
 #include <QLineEdit>
-#include <QRegExpValidator>
+#include <QRegularExpressionValidator>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QDoubleSpinBox>
@@ -38,8 +38,8 @@ BitcoinAmountField::BitcoinAmountField(QWidget *parent):
     setFocusProxy(amount);
 
     // If one if the widgets changes, the combined content changes as well
-    connect(amount, QOverload<const QString &>::of(&QDoubleSpinBox::valueChanged), this, &BitcoinAmountField::textChanged);
-    connect(unit, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BitcoinAmountField::unitChanged);
+    connect(amount, &QDoubleSpinBox::textChanged, this, &BitcoinAmountField::textChanged);
+    connect(unit, &QComboBox::currentIndexChanged, this, &BitcoinAmountField::unitChanged);
 
     // Set default based on configuration
     unitChanged(unit->currentIndex());

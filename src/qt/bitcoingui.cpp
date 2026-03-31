@@ -1,5 +1,5 @@
 /*
- * Qt4 bitcoin GUI.
+ * Qt bitcoin GUI.
  *
  * W.J. van der Laan 2011-2012
  * The Bitcoin Developers 2011-2012
@@ -30,7 +30,7 @@
 #include "guiutil.h"
 #include "rpcconsole.h"
 
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
 #include "macdockiconhandler.h"
 #endif
 
@@ -55,9 +55,12 @@
 #include <QMovie>
 #include <QFileDialog>
 #include <QDesktopServices>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QDragEnterEvent>
 #include <QUrl>
+#include <QActionGroup>
+#include <QMimeData>
 
 #include <iostream>
 
@@ -74,7 +77,7 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
 {
     resize(850, 550);
     setWindowTitle(tr("CorgiCoin") + " - " + tr("Wallet"));
-#ifndef Q_WS_MAC
+#ifndef Q_OS_MACOS
     qApp->setWindowIcon(QIcon(":icons/bitcoin"));
     setWindowIcon(QIcon(":icons/bitcoin"));
 #else
@@ -84,7 +87,7 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
 
 	//specify a new font.
 //	QFont newFont("Comic Sans MS", 10);
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
 	QFont newFont("Lucida Grande", 12);
 #else
   QFont newFont("Arial", 10);
@@ -200,7 +203,7 @@ BitcoinGUI::~BitcoinGUI()
 {
     if(trayIcon) // Hide tray icon, as deleting will let it linger until quit (on Ubuntu)
         trayIcon->hide();
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
     delete appMenuBar;
 #endif
 }
@@ -271,13 +274,13 @@ void BitcoinGUI::createActions()
     connect(sendCoinsAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
     connect(sendCoinsAction, &QAction::triggered, this, &BitcoinGUI::gotoSendCoinsPage);
     connect(signMessageAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
-    connect(signMessageAction, &QAction::triggered, this, &BitcoinGUI::gotoSignMessageTab);
+    connect(signMessageAction, &QAction::triggered, this, [this]() { gotoSignMessageTab(); });
     connect(verifyMessageAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
-    connect(verifyMessageAction, &QAction::triggered, this, &BitcoinGUI::gotoVerifyMessageTab);
+    connect(verifyMessageAction, &QAction::triggered, this, [this]() { gotoVerifyMessageTab(); });
 #ifdef FIRST_CLASS_MESSAGING
     connect(firstClassMessagingAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
     // Always start with the sign message tab for FIRST_CLASS_MESSAGING
-    connect(firstClassMessagingAction, &QAction::triggered, this, &BitcoinGUI::gotoSignMessageTab);
+    connect(firstClassMessagingAction, &QAction::triggered, this, [this]() { gotoSignMessageTab(); });
 #endif
 
     quitAction = new QAction(QIcon(":/icons/quit"), tr("E&xit"), this);
@@ -319,7 +322,7 @@ void BitcoinGUI::createActions()
 
 void BitcoinGUI::createMenuBar()
 {
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
     // Create a decoupled menu bar on Mac which stays even if the window is closed
     appMenuBar = new QMenuBar();
 #else
@@ -379,7 +382,7 @@ void BitcoinGUI::setClientModel(ClientModel *clientModel)
         if(clientModel->isTestNet())
         {
             setWindowTitle(windowTitle() + QString(" ") + tr("[testnet]"));
-#ifndef Q_WS_MAC
+#ifndef Q_OS_MACOS
             qApp->setWindowIcon(QIcon(":icons/bitcoin_testnet"));
             setWindowIcon(QIcon(":icons/bitcoin_testnet"));
 #else
@@ -432,7 +435,7 @@ void BitcoinGUI::setWalletModel(WalletModel *walletModel)
         signVerifyMessageDialog->setModel(walletModel);
         miningPage->setModel(clientModel);
 
-        setEncryptionStatus(walletModel->getEncryptionStatus());
+        setEncryptionStatus(static_cast<int>(walletModel->getEncryptionStatus()));
         connect(walletModel, &WalletModel::encryptionStatusChanged, this, &BitcoinGUI::setEncryptionStatus);
 
         // Balloon popup for new transaction
@@ -447,7 +450,7 @@ void BitcoinGUI::setWalletModel(WalletModel *walletModel)
 void BitcoinGUI::createTrayIcon()
 {
     QMenu *trayIconMenu;
-#ifndef Q_WS_MAC
+#ifndef Q_OS_MACOS
     trayIcon = new QSystemTrayIcon(this);
     trayIconMenu = new QMenu(this);
     trayIcon->setContextMenu(trayIconMenu);
@@ -475,7 +478,7 @@ void BitcoinGUI::createTrayIcon()
     trayIconMenu->addSeparator();
     trayIconMenu->addAction(optionsAction);
     trayIconMenu->addAction(openRPCConsoleAction);
-#ifndef Q_WS_MAC // This is built-in on Mac
+#ifndef Q_OS_MACOS // This is built-in on Mac
     trayIconMenu->addSeparator();
     trayIconMenu->addAction(quitAction);
 #endif
@@ -483,7 +486,7 @@ void BitcoinGUI::createTrayIcon()
     notificator = new Notificator(qApp->applicationName(), trayIcon);
 }
 
-#ifndef Q_WS_MAC
+#ifndef Q_OS_MACOS
 void BitcoinGUI::trayIconActivated(QSystemTrayIcon::ActivationReason reason)
 {
     if(reason == QSystemTrayIcon::Trigger)
@@ -661,7 +664,7 @@ void BitcoinGUI::error(const QString &title, const QString &message, bool modal)
 void BitcoinGUI::changeEvent(QEvent *e)
 {
     QMainWindow::changeEvent(e);
-#ifndef Q_WS_MAC // Ignored on Mac
+#ifndef Q_OS_MACOS // Ignored on Mac
     if(e->type() == QEvent::WindowStateChange)
     {
         if(clientModel && clientModel->getOptionsModel()->getMinimizeToTray())
@@ -681,7 +684,7 @@ void BitcoinGUI::closeEvent(QCloseEvent *event)
 {
     if(clientModel)
     {
-#ifndef Q_WS_MAC // Ignored on Mac
+#ifndef Q_OS_MACOS // Ignored on Mac
         if(!clientModel->getOptionsModel()->getMinimizeToTray() &&
            !clientModel->getOptionsModel()->getMinimizeOnClose())
         {
@@ -848,7 +851,7 @@ void BitcoinGUI::dropEvent(QDropEvent *event)
     {
         int nValidUrisFound = 0;
         QList<QUrl> uris = event->mimeData()->urls();
-        foreach(const QUrl &uri, uris)
+        for (const QUrl &uri : uris)
         {
             if (sendCoinsPage->handleURI(uri.toString()))
                 nValidUrisFound++;
@@ -880,13 +883,13 @@ void BitcoinGUI::setEncryptionStatus(int status)
 {
     switch(status)
     {
-    case WalletModel::Unencrypted:
+    case static_cast<int>(WalletModel::EncryptionStatus::Unencrypted):
         labelEncryptionIcon->hide();
         encryptWalletAction->setChecked(false);
         changePassphraseAction->setEnabled(false);
         encryptWalletAction->setEnabled(true);
         break;
-    case WalletModel::Unlocked:
+    case static_cast<int>(WalletModel::EncryptionStatus::Unlocked):
         labelEncryptionIcon->show();
         labelEncryptionIcon->setPixmap(QIcon(":/icons/lock_open").pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
         labelEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b>"));
@@ -894,7 +897,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         changePassphraseAction->setEnabled(true);
         encryptWalletAction->setEnabled(false); // TODO: decrypt currently not supported
         break;
-    case WalletModel::Locked:
+    case static_cast<int>(WalletModel::EncryptionStatus::Locked):
         labelEncryptionIcon->show();
         labelEncryptionIcon->setPixmap(QIcon(":/icons/lock_closed").pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
         labelEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>locked</b>"));
@@ -914,12 +917,12 @@ void BitcoinGUI::encryptWallet(bool status)
     dlg.setModel(walletModel);
     dlg.exec();
 
-    setEncryptionStatus(walletModel->getEncryptionStatus());
+    setEncryptionStatus(static_cast<int>(walletModel->getEncryptionStatus()));
 }
 
 void BitcoinGUI::backupWallet()
 {
-    QString saveDir = QDesktopServices::storageLocation(QDesktopServices::DocumentsLocation);
+    QString saveDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     QString filename = QFileDialog::getSaveFileName(this, tr("Backup Wallet"), saveDir, tr("Wallet Data (*.dat)"));
     if(!filename.isEmpty()) {
         if(!walletModel->backupWallet(filename)) {
@@ -940,7 +943,7 @@ void BitcoinGUI::unlockWallet()
     if(!walletModel)
         return;
     // Unlock wallet when requested by wallet model
-    if(walletModel->getEncryptionStatus() == WalletModel::Locked)
+    if(walletModel->getEncryptionStatus() == WalletModel::EncryptionStatus::Locked)
     {
         AskPassphraseDialog dlg(AskPassphraseDialog::Unlock, this);
         dlg.setModel(walletModel);

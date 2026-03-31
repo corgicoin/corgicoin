@@ -111,7 +111,7 @@ RPCConsole::RPCConsole(QWidget *parent) :
 {
     ui->setupUi(this);
 
-#ifndef Q_WS_MAC
+#ifndef Q_OS_MACOS
     ui->openDebugLogfileButton->setIcon(QIcon(":/icons/export"));
     ui->showCLOptionsButton->setIcon(QIcon(":/icons/options"));
 #endif
@@ -294,7 +294,7 @@ void RPCConsole::startExecutor()
     // Notify executor when thread started (in executor thread)
     connect(thread, &QThread::started, executor, &RPCExecutor::start);
     // Replies from executor object must go to this object
-    connect(executor, &RPCExecutor::reply, this, &RPCConsole::message);
+    connect(executor, &RPCExecutor::reply, this, [this](int category, const QString& msg) { message(category, msg, false); });
     // Requests from this object must go to executor
     connect(this, &RPCConsole::cmdRequest, executor, &RPCExecutor::request);
     // On stopExecutor signal

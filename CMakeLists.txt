@@ -225,28 +225,34 @@ endif()
 
 # Qt GUI
 if(BUILD_QT_GUI)
-    # Find Qt (try Qt5 first, fallback to Qt4)
-    find_package(Qt5 COMPONENTS Core Gui Widgets Network QUIET)
-
-    if(Qt5_FOUND)
+    # Find Qt (try Qt6 first, fallback to Qt5)
+    find_package(Qt6 COMPONENTS Core Gui Widgets Network QUIET)
+    if(Qt6_FOUND)
+        message(STATUS "Building with Qt6")
+        set(QT_VERSION 6)
+    else()
+        find_package(Qt5 COMPONENTS Core Gui Widgets Network REQUIRED)
         message(STATUS "Building with Qt5")
         set(QT_VERSION 5)
-    else()
-        find_package(Qt4 4.8.0 REQUIRED QtCore QtGui QtNetwork)
-        include(${QT_USE_FILE})
-        message(STATUS "Building with Qt4")
-        set(QT_VERSION 4)
     endif()
 
-    if(USE_DBUS AND QT_VERSION EQUAL 5)
-        find_package(Qt5 COMPONENTS DBus QUIET)
-        if(Qt5DBus_FOUND)
-            add_definitions(-DUSE_DBUS)
-            message(STATUS "Building with D-Bus support")
+    if(USE_DBUS)
+        if(QT_VERSION EQUAL 6)
+            find_package(Qt6 COMPONENTS DBus QUIET)
+            if(Qt6DBus_FOUND)
+                add_definitions(-DUSE_DBUS)
+                message(STATUS "Building with D-Bus support")
+            endif()
+        else()
+            find_package(Qt5 COMPONENTS DBus QUIET)
+            if(Qt5DBus_FOUND)
+                add_definitions(-DUSE_DBUS)
+                message(STATUS "Building with D-Bus support")
+            endif()
         endif()
     endif()
 
-    add_definitions(-DQT_GUI)
+    # QT_GUI and QT_NO_FOREACH are added per-target below (not globally)
 
     # Qt source files
     set(QT_SOURCES
@@ -359,15 +365,15 @@ if(BUILD_QT_GUI)
         )
     endif()
 
-    # Process Qt files
-    if(QT_VERSION EQUAL 5)
-        qt5_wrap_cpp(QT_MOC ${QT_HEADERS})
+    # AUTOMOC will be set per-target on corgicoin-qt only (not daemon/tests)
+
+    # Process Qt files (qt5_ prefix works for both Qt5 and Qt6 via compatibility)
+    if(QT_VERSION EQUAL 6)
+        qt_wrap_ui(QT_UI ${QT_FORMS})
+        qt_add_resources(QT_QRC ${QT_RESOURCES})
+    else()
         qt5_wrap_ui(QT_UI ${QT_FORMS})
         qt5_add_resources(QT_QRC ${QT_RESOURCES})
-    else()
-        qt4_wrap_cpp(QT_MOC ${QT_HEADERS})
-        qt4_wrap_ui(QT_UI ${QT_FORMS})
-        qt4_add_resources(QT_QRC ${QT_RESOURCES})
     endif()
 
     include_directories(
@@ -385,7 +391,6 @@ if(BUILD_QT_GUI)
             ${GUI_DAEMON_SOURCES}
             ${JSON_SOURCES}
             ${QT_SOURCES}
-            ${QT_MOC}
             ${QT_UI}
             ${QT_QRC}
         )
@@ -404,27 +409,28 @@ if(BUILD_QT_GUI)
             ${GUI_DAEMON_SOURCES}
             ${JSON_SOURCES}
             ${QT_SOURCES}
-            ${QT_MOC}
             ${QT_UI}
             ${QT_QRC}
         )
     endif()
 
+    set_target_properties(corgicoin-qt PROPERTIES AUTOMOC ON)
+    target_compile_definitions(corgicoin-qt PRIVATE QT_GUI QT_NO_FOREACH)
     add_dependencies(corgicoin-qt generate_build_info)
 
-    # Link Qt libraries
-    if(QT_VERSION EQUAL 5)
-        target_link_libraries(corgicoin-qt
-            Qt5::Core
-            Qt5::Gui
-            Qt5::Widgets
-            Qt5::Network
-        )
-        if(USE_DBUS AND Qt5DBus_FOUND)
-            target_link_libraries(corgicoin-qt Qt5::DBus)
+    # Link Qt libraries (Qt::Core etc. works for both Qt5.15+ and Qt6)
+    target_link_libraries(corgicoin-qt
+        Qt::Core
+        Qt::Gui
+        Qt::Widgets
+        Qt::Network
+    )
+    if(USE_DBUS)
+        if(QT_VERSION EQUAL 6 AND Qt6DBus_FOUND)
+            target_link_libraries(corgicoin-qt Qt::DBus)
+        elseif(QT_VERSION EQUAL 5 AND Qt5DBus_FOUND)
+            target_link_libraries(corgicoin-qt Qt::DBus)
         endif()
-    else()
-        target_link_libraries(corgicoin-qt ${QT_LIBRARIES})
     endif()
 
     # Link other libraries
@@ -551,10 +557,10 @@ message(STATUS "  OpenSSL:              ${OPENSSL_VERSION}")
 message(STATUS "  Boost:                ${Boost_VERSION}")
 message(STATUS "  Berkeley DB:          ${BERKELEYDB_VERSION}")
 if(BUILD_QT_GUI)
-    if(QT_VERSION EQUAL 5)
-        message(STATUS "  Qt:                   ${Qt5_VERSION}")
+    if(QT_VERSION EQUAL 6)
+        message(STATUS "  Qt:                   ${Qt6_VERSION}")
     else()
-        message(STATUS "  Qt:                   ${QT_VERSION_MAJOR}.${QT_VERSION_MINOR}.${QT_VERSION_PATCH}")
+        message(STATUS "  Qt:                   ${Qt5_VERSION}")
     endif()
 endif()
 message(STATUS "")

@@ -86,27 +86,27 @@ void EditAddressDialog::accept()
     {
         switch(model->getEditStatus())
         {
-        case AddressTableModel::DUPLICATE_ADDRESS:
+        case AddressTableModel::EditStatus::DUPLICATE_ADDRESS:
             QMessageBox::warning(this, windowTitle(),
                 tr("The entered address \"%1\" is already in the address book.").arg(ui->addressEdit->text()),
                 QMessageBox::Ok, QMessageBox::Ok);
             break;
-        case AddressTableModel::INVALID_ADDRESS:
+        case AddressTableModel::EditStatus::INVALID_ADDRESS:
             QMessageBox::warning(this, windowTitle(),
                 tr("The entered address \"%1\" is not a valid CorgiCoin address.").arg(ui->addressEdit->text()),
                 QMessageBox::Ok, QMessageBox::Ok);
             return;
-        case AddressTableModel::WALLET_UNLOCK_FAILURE:
+        case AddressTableModel::EditStatus::WALLET_UNLOCK_FAILURE:
             QMessageBox::critical(this, windowTitle(),
                 tr("Could not unlock wallet."),
                 QMessageBox::Ok, QMessageBox::Ok);
             return;
-        case AddressTableModel::KEY_GENERATION_FAILURE:
+        case AddressTableModel::EditStatus::KEY_GENERATION_FAILURE:
             QMessageBox::critical(this, windowTitle(),
                 tr("New key generation failed."),
                 QMessageBox::Ok, QMessageBox::Ok);
             return;
-        case AddressTableModel::OK:
+        case AddressTableModel::EditStatus::OK:
             // Failed with unknown reason. Just reject.
             break;
         }

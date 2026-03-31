@@ -38,7 +38,7 @@ TransactionView::TransactionView(QWidget *parent) :
 
     QHBoxLayout *hlayout = new QHBoxLayout();
     hlayout->setContentsMargins(0,0,0,0);
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
     hlayout->setSpacing(5);
     hlayout->addSpacing(26);
 #else
@@ -47,7 +47,7 @@ TransactionView::TransactionView(QWidget *parent) :
 #endif
 
     dateWidget = new QComboBox(this);
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
     dateWidget->setFixedWidth(121);
 #else
     dateWidget->setFixedWidth(120);
@@ -62,7 +62,7 @@ TransactionView::TransactionView(QWidget *parent) :
     hlayout->addWidget(dateWidget);
 
     typeWidget = new QComboBox(this);
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
     typeWidget->setFixedWidth(121);
 #else
     typeWidget->setFixedWidth(120);
@@ -80,18 +80,12 @@ TransactionView::TransactionView(QWidget *parent) :
     hlayout->addWidget(typeWidget);
 
     addressWidget = new QLineEdit(this);
-#if QT_VERSION >= 0x040700
-    /* Do not move this to the XML file, Qt before 4.7 will choke on it */
     addressWidget->setPlaceholderText(tr("Enter address or label to search"));
-#endif
     hlayout->addWidget(addressWidget);
 
     amountWidget = new QLineEdit(this);
-#if QT_VERSION >= 0x040700
-    /* Do not move this to the XML file, Qt before 4.7 will choke on it */
     amountWidget->setPlaceholderText(tr("Min amount"));
-#endif
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
     amountWidget->setFixedWidth(97);
 #else
     amountWidget->setFixedWidth(100);
@@ -110,7 +104,7 @@ TransactionView::TransactionView(QWidget *parent) :
     vlayout->setSpacing(0);
     int width = view->verticalScrollBar()->sizeHint().width();
     // Cover scroll bar width with spacing
-#ifdef Q_WS_MAC
+#ifdef Q_OS_MACOS
     hlayout->addSpacing(width+2);
 #else
     hlayout->addSpacing(width);
@@ -137,8 +131,8 @@ TransactionView::TransactionView(QWidget *parent) :
     contextMenu->addAction(showDetailsAction);
 
     // Connect actions
-    connect(dateWidget, QOverload<int>::of(&QComboBox::activated), this, &TransactionView::chooseDate);
-    connect(typeWidget, QOverload<int>::of(&QComboBox::activated), this, &TransactionView::chooseType);
+    connect(dateWidget, &QComboBox::activated, this, &TransactionView::chooseDate);
+    connect(typeWidget, &QComboBox::activated, this, &TransactionView::chooseType);
     connect(addressWidget, &QLineEdit::textChanged, this, &TransactionView::changedPrefix);
     connect(amountWidget, &QLineEdit::textChanged, this, &TransactionView::changedAmount);
 
@@ -179,7 +173,7 @@ void TransactionView::setModel(WalletModel *model)
                 TransactionTableModel::Date, 120);
         transactionView->horizontalHeader()->resizeSection(
                 TransactionTableModel::Type, 120);
-        transactionView->horizontalHeader()->setResizeMode(
+        transactionView->horizontalHeader()->setSectionResizeMode(
                 TransactionTableModel::ToAddress, QHeaderView::Stretch);
         transactionView->horizontalHeader()->resizeSection(
                 TransactionTableModel::Amount, 100);
@@ -201,30 +195,30 @@ void TransactionView::chooseDate(int idx)
         break;
     case Today:
         transactionProxyModel->setDateRange(
-                QDateTime(current),
+                current.startOfDay(),
                 TransactionFilterProxy::MAX_DATE);
         break;
     case ThisWeek: {
         // Find last monday
         QDate startOfWeek = current.addDays(-(current.dayOfWeek()-1));
         transactionProxyModel->setDateRange(
-                QDateTime(startOfWeek),
+                startOfWeek.startOfDay(),
                 TransactionFilterProxy::MAX_DATE);
 
         } break;
     case ThisMonth:
         transactionProxyModel->setDateRange(
-                QDateTime(QDate(current.year(), current.month(), 1)),
+                QDate(current.year(), current.month(), 1).startOfDay(),
                 TransactionFilterProxy::MAX_DATE);
         break;
     case LastMonth:
         transactionProxyModel->setDateRange(
-                QDateTime(QDate(current.year(), current.month()-1, 1)),
-                QDateTime(QDate(current.year(), current.month(), 1)));
+                QDate(current.year(), current.month()-1, 1).startOfDay(),
+                QDate(current.year(), current.month(), 1).startOfDay());
         break;
     case ThisYear:
         transactionProxyModel->setDateRange(
-                QDateTime(QDate(current.year(), 1, 1)),
+                QDate(current.year(), 1, 1).startOfDay(),
                 TransactionFilterProxy::MAX_DATE);
         break;
     case Range:
@@ -416,8 +410,8 @@ void TransactionView::dateRangeChanged()
     if(!transactionProxyModel)
         return;
     transactionProxyModel->setDateRange(
-            QDateTime(dateFrom->date()),
-            QDateTime(dateTo->date()).addDays(1));
+            dateFrom->date().startOfDay(),
+            dateTo->date().startOfDay().addDays(1));
 }
 
 void TransactionView::focusTransaction(const QModelIndex &idx)

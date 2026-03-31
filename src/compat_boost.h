@@ -40,19 +40,15 @@
 // - boost::tuple            - Used in serialization code
 // - boost::variant          - Used in transaction destination types
 //
-// THIRD-PARTY (json_spirit library):
-// - boost::bind             - JSON parser callbacks
-// - boost::function         - JSON parser callbacks
-// - boost::spirit           - JSON parser framework
-//
-// REMOVED (replaced with C++11 standard library):
+// REMOVED (replaced with C++17 standard library or modern alternatives):
 // ✅ boost::thread          → std::thread (v1.4.1.48)
 // ✅ boost::mutex           → std::mutex (v1.4.1.48)
 // ✅ boost::shared_ptr      → std::shared_ptr (v1.4.1.45, v1.4.1.50)
 // ✅ boost::array           → std::array (v1.4.1.47)
 // ✅ boost::bind (most)     → C++11 lambdas (v1.4.1.49)
 // ✅ boost::foreach         → Range-based for loops (v1.4.1.x)
-// ✅ boost::filesystem      → std::filesystem (C++17)
+// ✅ boost::filesystem      → std::filesystem (C++17, v4.0.0.0)
+// ✅ json_spirit (boost::spirit/bind/function) → nlohmann/json (v4.0.0.0)
 
 // Print Boost version info
 inline void PrintBoostVersion()

@@ -1,10 +1,10 @@
 
 #include "macdockiconhandler.h"
 
-#include <QtGui/QMenu>
-#include <QtGui/QWidget>
-
-extern void qt_mac_set_dock_menu(QMenu*);
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QWidget>
+#include <QImage>
+#include <QPixmap>
 
 #undef slots
 #include <Cocoa/Cocoa.h>
@@ -51,7 +51,8 @@ MacDockIconHandler::MacDockIconHandler() : QObject()
 
     this->m_dummyWidget = new QWidget();
     this->m_dockMenu = new QMenu(this->m_dummyWidget);
-    qt_mac_set_dock_menu(this->m_dockMenu);
+    // Set dock menu using native macOS API (qt_mac_set_dock_menu was removed in Qt6)
+    this->m_dockMenu->setAsDockMenu();
     [pool release];
 }
 
@@ -75,9 +76,14 @@ void MacDockIconHandler::setIcon(const QIcon &icon)
     else {
         QSize size = icon.actualSize(QSize(128, 128));
         QPixmap pixmap = icon.pixmap(size);
-        CGImageRef cgImage = pixmap.toMacCGImageRef();
+        QImage qimg = pixmap.toImage().convertToFormat(QImage::Format_ARGB32);
+        CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+        CGContextRef ctx = CGBitmapContextCreate((void*)qimg.bits(), qimg.width(), qimg.height(), 8, qimg.bytesPerLine(), colorSpace, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
+        CGImageRef cgImage = CGBitmapContextCreateImage(ctx);
         image = [[NSImage alloc] initWithCGImage:cgImage size:NSZeroSize];
         CFRelease(cgImage);
+        CFRelease(ctx);
+        CFRelease(colorSpace);
     }
 
     [NSApp setApplicationIconImage:image];

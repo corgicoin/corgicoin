@@ -102,6 +102,7 @@ rpcport=62555
 - Client identity renamed from "Satoshi" to "CorgiCoin"
 - `boost::filesystem` replaced with `std::filesystem` (C++17)
 - `json_spirit` replaced with nlohmann/json (modern, maintained JSON library)
+- Qt 6 support (Qt 4 dropped, Qt 5/6 dual compatibility)
 - `std::random_shuffle` replaced with `std::shuffle` (C++17 compliance)
 - ECDSA_SIG direct member access replaced with accessor functions
 - DNS seeds updated for new network
@@ -134,6 +135,7 @@ rpcport=62555
 - [x] Replace `json_spirit` with nlohmann/json
 - [x] Full asset rebranding (icons, installer, share/ directory)
 - [x] Unit test suite (79 tests: scrypt, addresses, block rewards, serialization, etc.)
+- [x] Qt 6 support (Qt 4 dropped, Qt 5/6 dual support)
 - [x] Copyright headers updated to 2014-2026
 - [x] DNS seed infrastructure update
 
@@ -143,7 +145,6 @@ rpcport=62555
 - [ ] Historical holder airdrop mechanism (previous chain data recovery)
 
 ### Planned
-- [ ] Qt 6 migration (drop Qt 4 support)
 - [ ] Block explorer
 - [ ] Wallet UX improvements
 - [ ] Bech32 address support (BIP173)

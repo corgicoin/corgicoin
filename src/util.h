@@ -39,7 +39,7 @@ typedef int pid_t; /* define for windows compatiblity */
 constexpr int64 COIN = 100000000;
 constexpr int64 CENT = 1000000;
 
-#define loop                for (;;)
+// #define loop was removed — it conflicts with Qt6's qeventloop.h parameter names
 #define BEGIN(a)            (reinterpret_cast<char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&(a))))
 #define END(a)              (reinterpret_cast<char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&((&(a))[1]))))
 #define UBEGIN(a)           (reinterpret_cast<unsigned char*>(const_cast<std::remove_const_t<std::remove_reference_t<decltype(a)>>*>(&(a))))

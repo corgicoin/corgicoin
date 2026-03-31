@@ -18,9 +18,10 @@
 #include <QIcon>
 #include <QDateTime>
 #include <QtAlgorithms>
+#include <algorithm>
 
 // Amount column is right-aligned it contains numbers
-static int column_alignments[] = {
+static Qt::Alignment column_alignments[] = {
         Qt::AlignLeft|Qt::AlignVCenter,
         Qt::AlignLeft|Qt::AlignVCenter,
         Qt::AlignLeft|Qt::AlignVCenter,
@@ -95,9 +96,9 @@ public:
             bool inWallet = mi != wallet->mapWallet.end();
 
             // Find bounds of this transaction in model
-            auto lower = qLowerBound(
+            auto lower = std::lower_bound(
                 cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
-            auto upper = qUpperBound(
+            auto upper = std::upper_bound(
                 cachedWallet.begin(), cachedWallet.end(), hash, TxLessThan());
             int lowerIndex = (lower - cachedWallet.begin());
             int upperIndex = (upper - cachedWallet.begin());
@@ -106,12 +107,12 @@ public:
             // Determine whether to show transaction or not
             bool showTransaction = (inWallet && TransactionRecord::showTransaction(mi->second));
 
-            if(status == CT_UPDATED)
+            if(status == static_cast<int>(ChangeType::CT_UPDATED))
             {
                 if(showTransaction && !inModel)
-                    status = CT_NEW; /* Not in model, but want to show, treat as new */
+                    status = static_cast<int>(ChangeType::CT_NEW); /* Not in model, but want to show, treat as new */
                 if(!showTransaction && inModel)
-                    status = CT_DELETED; /* In model, but want to hide, treat as deleted */
+                    status = static_cast<int>(ChangeType::CT_DELETED); /* In model, but want to hide, treat as deleted */
             }
 
             OutputDebugStringF("   inWallet=%i inModel=%i Index=%i-%i showTransaction=%i derivedStatus=%i\n",
@@ -119,7 +120,7 @@ public:
 
             switch(status)
             {
-            case CT_NEW:
+            case static_cast<int>(ChangeType::CT_NEW):
                 if(inModel)
                 {
                     OutputDebugStringF("Warning: updateWallet: Got CT_NEW, but transaction is already in model\n");
@@ -139,7 +140,7 @@ public:
                     {
                         parent->beginInsertRows(QModelIndex(), lowerIndex, lowerIndex+toInsert.size()-1);
                         int insert_idx = lowerIndex;
-                        foreach(const TransactionRecord &rec, toInsert)
+                        for (const TransactionRecord &rec : toInsert)
                         {
                             cachedWallet.insert(insert_idx, rec);
                             insert_idx += 1;
@@ -148,7 +149,7 @@ public:
                     }
                 }
                 break;
-            case CT_DELETED:
+            case static_cast<int>(ChangeType::CT_DELETED):
                 if(!inModel)
                 {
                     OutputDebugStringF("Warning: updateWallet: Got CT_DELETED, but transaction is not in model\n");
@@ -159,7 +160,7 @@ public:
                 cachedWallet.erase(lower, upper);
                 parent->endRemoveRows();
                 break;
-            case CT_UPDATED:
+            case static_cast<int>(ChangeType::CT_UPDATED):
                 // Miscellaneous updates -- nothing to do, status update will take care of this, and is only computed for
                 // visible transactions.
                 break;
@@ -541,7 +542,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
     case Qt::ToolTipRole:
         return formatTooltip(rec);
     case Qt::TextAlignmentRole:
-        return column_alignments[index.column()];
+        return QVariant(static_cast<int>(column_alignments[index.column()]));
     case Qt::ForegroundRole:
         // Non-confirmed transactions are grey
         if(!rec->status.confirmed)
@@ -560,7 +561,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
     case TypeRole:
         return rec->type;
     case DateRole:
-        return QDateTime::fromTime_t(static_cast<uint>(rec->time));
+        return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(rec->time));
     case LongDescriptionRole:
         return priv->describe(rec);
     case AddressRole:
@@ -591,7 +592,7 @@ QVariant TransactionTableModel::headerData(int section, Qt::Orientation orientat
         }
         else if (role == Qt::TextAlignmentRole)
         {
-            return column_alignments[section];
+            return QVariant(static_cast<int>(column_alignments[section]));
         } else if (role == Qt::ToolTipRole)
         {
             switch(section)

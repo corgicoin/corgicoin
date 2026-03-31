@@ -27,11 +27,11 @@ MiningPage::MiningPage(QWidget *parent) :
     connect(readTimer, &QTimer::timeout, this, &MiningPage::readProcessOutput);
 
     connect(ui->startButton, &QPushButton::pressed, this, &MiningPage::startPressed);
-    connect(ui->typeBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MiningPage::typeChanged);
+    connect(ui->typeBox, &QComboBox::currentIndexChanged, this, &MiningPage::typeChanged);
     connect(ui->debugCheckBox, &QCheckBox::toggled, this, &MiningPage::debugToggled);
     connect(minerProcess, &QProcess::started, this, &MiningPage::minerStarted);
     connect(minerProcess, &QProcess::errorOccurred, this, &MiningPage::minerError);
-    connect(minerProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &MiningPage::minerFinished);
+    connect(minerProcess, &QProcess::finished, this, &MiningPage::minerFinished);
     connect(minerProcess, &QProcess::readyRead, this, &MiningPage::readProcessOutput);
 }
 
@@ -86,19 +86,10 @@ void MiningPage::startPoolMining()
     QString urlLine = QString("%1:%2").arg(url, ui->portLine->text());
     QString userpassLine = QString("%1:%2").arg(ui->usernameLine->text(), ui->passwordLine->text());
     args << "--algo" << "scrypt";
-#if QT_VERSION >= 0x050000
-    // Qt 5+: Use QString::toLatin1() instead of deprecated toAscii()
     args << "--scantime" << ui->scantimeBox->text().toLatin1();
     args << "--url" << urlLine.toLatin1();
     args << "--userpass" << userpassLine.toLatin1();
     args << "--threads" << ui->threadsBox->text().toLatin1();
-#else
-    // Qt 4: Use toAscii()
-    args << "--scantime" << ui->scantimeBox->text().toAscii();
-    args << "--url" << urlLine.toAscii();
-    args << "--userpass" << userpassLine.toAscii();
-    args << "--threads" << ui->threadsBox->text().toAscii();
-#endif
     args << "--retries" << "-1"; // Retry forever.
     args << "-P"; // This is needed for this to work correctly on Windows. Extra protocol dump helps flush the buffer quicker.
 
@@ -165,7 +156,7 @@ void MiningPage::readProcessOutput()
 
     if (!outputString.isEmpty())
     {
-        QStringList list = outputString.split("\n", QString::SkipEmptyParts);
+        QStringList list = outputString.split("\n", Qt::SkipEmptyParts);
         int i;
         for (i=0; i<list.size(); i++)
         {

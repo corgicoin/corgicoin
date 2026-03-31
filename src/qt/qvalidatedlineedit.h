@@ -11,7 +11,7 @@ class QValidatedLineEdit : public QLineEdit
     Q_OBJECT
 public:
     explicit QValidatedLineEdit(QWidget *parent = 0);
-    void clear() override;
+    void clear();
 
 protected:
     void focusInEvent(QFocusEvent *evt) override;

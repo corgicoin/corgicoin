@@ -5,9 +5,8 @@ INCLUDEPATH += src src/json src/qt
 DEFINES += QT_GUI BOOST_THREAD_USE_LIB BOOST_SPIRIT_THREADSAFE BOOST_THREAD_PROVIDES_GENERIC_SHARED_MUTEX_ON_WIN __NO_SYSTEM_INCLUDES
 CONFIG += no_include_pwd c++17
 
-# Qt 4/5 compatibility: Add widgets module for Qt 5+
-QT += core gui
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+# Qt 5/6: widgets module is always required
+QT += core gui widgets
 
 win32 {
 
@@ -103,11 +102,6 @@ contains(USE_DBUS, 1) {
 contains(FIRST_CLASS_MESSAGING, 1) {
     message(Building with first-class messaging)
     DEFINES += FIRST_CLASS_MESSAGING
-}
-
-contains(BITCOIN_NEED_QT_PLUGINS, 1) {
-    DEFINES += BITCOIN_NEED_QT_PLUGINS
-    QTPLUGIN += qcncodecs qjpcodecs qtwcodecs qkrcodecs qtaccessiblewidgets
 }
 
 !windows {

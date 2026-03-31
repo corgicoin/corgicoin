@@ -2,6 +2,8 @@
 #define WALLETMODEL_H
 
 #include <QObject>
+#include <boost/signals2/connection.hpp>
+#include <vector>
 
 #include "allocators.h" /* for SecureString */
 
@@ -127,6 +129,8 @@ private:
     int cachedNumBlocks;
 
     QTimer *pollTimer;
+
+    std::vector<boost::signals2::connection> coreSignalConnections;
 
     void subscribeToCoreSignals();
     void unsubscribeFromCoreSignals();

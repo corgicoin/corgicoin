@@ -3,7 +3,7 @@
 QValueComboBox::QValueComboBox(QWidget *parent) :
         QComboBox(parent), role(Qt::UserRole)
 {
-    connect(this, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &QValueComboBox::handleSelectionChanged);
+    connect(this, &QComboBox::currentIndexChanged, this, &QValueComboBox::handleSelectionChanged);
 }
 
 QVariant QValueComboBox::value() const
