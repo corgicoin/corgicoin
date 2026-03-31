@@ -100,9 +100,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wno-deprecated-declarations
     )
 
-    # GCC-specific warning suppressions
+    # GCC-specific warning suppressions (C++ only — avoid passing to C compiler)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(-Wno-stringop-truncation -Wno-deprecated-copy)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-stringop-truncation> $<$<COMPILE_LANGUAGE:CXX>:-Wno-deprecated-copy>)
     endif()
 
     # Security hardening flags
@@ -186,6 +186,9 @@ set(DAEMON_SOURCES
     src/walletdb.cpp
     src/noui.cpp
 )
+
+# Suppress stack protector warning for scrypt.c (uses VLA for scratchpad)
+set_source_files_properties(src/scrypt.c PROPERTIES COMPILE_OPTIONS "-Wno-stack-protector")
 
 # JSON library (nlohmann/json with json_spirit compatibility layer)
 set(JSON_SOURCES
