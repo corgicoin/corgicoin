@@ -8,6 +8,7 @@
 
 #include "netbase.h"
 #include "util.h"
+#include "main.h"
 
 #ifndef WIN32
 #include <sys/fcntl.h>
@@ -22,7 +23,7 @@ using namespace std;
 using proxyType = std::pair<CService, int>;
 static proxyType proxyInfo[NET_MAX];
 static proxyType nameproxyInfo;
-int nConnectTimeout = 5000;
+int nConnectTimeout = DEFAULT_CONNECT_TIMEOUT_MS;
 bool fNameLookup = false;
 
 static constexpr unsigned char pchIPv4[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff };

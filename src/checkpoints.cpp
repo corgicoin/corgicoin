@@ -5,8 +5,6 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <boost/assign/list_of.hpp> // for 'map_list_of()'
-
 #include "checkpoints.h"
 
 #include "main.h"
@@ -25,9 +23,9 @@ namespace Checkpoints
     //
 
     static MapCheckpoints mapCheckpoints =
-            boost::assign::map_list_of
-            (  0, hashGenesisBlockOfficial )
-			;
+            {
+                {  0, hashGenesisBlockOfficial }
+            };
 
 
     bool CheckBlock(int nHeight, const uint256& hash)

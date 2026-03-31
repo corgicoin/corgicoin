@@ -13,8 +13,7 @@
 #include "ui_interface.h"
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
-#include <boost/random/mersenne_twister.hpp>
-#include <boost/random/uniform_int_distribution.hpp>
+#include <random>
 #include <memory>
 
 using namespace std;
@@ -185,7 +184,7 @@ bool AddOrphanTx(const CDataStream& vMsg)
     // have been mined or received.
     // 10,000 orphans, each of which is at most 5,000 bytes big is
     // at most 500 megabytes of orphans:
-    if (pvMsg->size() > 5000)
+    if (pvMsg->size() > DEFAULT_MAX_MESSAGE_SIZE)
     {
         printf("ignoring large orphan tx (size: %u, hash: %s)\n", pvMsg->size(), hash.ToString().substr(0,10).c_str());
         return false;
@@ -832,15 +831,15 @@ uint256 static GetOrphanRoot(std::shared_ptr<const CBlock> pblock)
 
 int static generateMTRandom(unsigned int s, int range)
 {
-	random::mt19937 gen(s);
-    random::uniform_int_distribution<> dist(1, range);
+	std::mt19937 gen(s);
+    std::uniform_int_distribution<> dist(1, range);
     return dist(gen);
 }
 
 
 int64 GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
 {
-        int64 nSubsidy = 10000 * COIN;
+        int64 nSubsidy = FLAT_BLOCK_REWARD;
          
         std::string cseed_str = prevHash.ToString().substr(7,7);
         const char* cseed = cseed_str.c_str();
@@ -1365,12 +1364,6 @@ bool CTransaction::ClientConnectInputs()
             ///// not sure which I want to get rid of
             ///// this has to go away now that posNext is gone
             // // Check for conflicts
-            // if (!txPrev.vout[prevout.n].posNext.IsNull())
-            //     return error("ConnectInputs() : prev tx already used");
-            //
-            // // Flag outpoints as used
-            // txPrev.vout[prevout.n].posNext = posThisTx;
-
             nValueIn += txPrev.vout[prevout.n].nValue;
 
             if (!MoneyRange(txPrev.vout[prevout.n].nValue) || !MoneyRange(nValueIn))
@@ -2116,7 +2109,6 @@ bool LoadBlockIndex(bool fAllowNew)
         printf("hashGenesisBlock = %s\n", hashGenesisBlock.ToString().c_str());
         printf("block.hashMerkleRoot = %s\n", block.hashMerkleRoot.ToString().c_str());
         // Merkle root will be recalculated after genesis mining
-        // assert(block.hashMerkleRoot == uint256("0x..."));
 
 		if (true && block.GetHash() != hashGenesisBlock) {
 		
@@ -2921,7 +2913,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         vRecv >> block;
 
         printf("received block %s\n", block.GetHash().ToString().substr(0,20).c_str());
-        // block.print();
 
         CInv inv(static_cast<int>(MsgType::Block), block.GetHash());
         pfrom->AddInventoryKnown(inv);
@@ -3048,8 +3039,6 @@ bool ProcessMessages(CNode* pfrom)
     CDataStream& vRecv = pfrom->vRecv;
     if (vRecv.empty())
         return true;
-    //if (fDebug)
-    //    printf("ProcessMessages(%u bytes)\n", vRecv.size());
 
     //
     // Message format
@@ -3722,7 +3711,7 @@ void static BitcoinMiner(CWallet *pwallet)
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
 
     // Make this thread recognisable as the mining thread
-    RenameThread("bitcoin-miner");
+    RenameThread("corgicoin-miner");
 
     // Each thread has its own key and counter
     CReserveKey reservekey(pwallet);

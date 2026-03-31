@@ -14,7 +14,7 @@
 #include "init.h"
 #include "ui_interface.h"
 #include "base58.h"
-#include "bitcoinrpc.h"
+#include "corgicoinrpc.h"
 
 #undef printf
 #include <boost/asio.hpp>
@@ -1617,7 +1617,7 @@ Value keypoolrefill(const Array& params, bool fHelp)
 void ThreadTopUpKeyPool(void* parg)
 {
     // Make this thread recognisable as the key-topping-up thread
-    RenameThread("bitcoin-key-top");
+    RenameThread("corgicoin-key-top");
 
     pwalletMain->TopUpKeyPool();
 }
@@ -1625,7 +1625,7 @@ void ThreadTopUpKeyPool(void* parg)
 void ThreadCleanWalletPassphrase(void* parg)
 {
     // Make this thread recognisable as the wallet relocking thread
-    RenameThread("bitcoin-lock-wa");
+    RenameThread("corgicoin-lock-wa");
 
     int64 nMyWakeTime = GetTimeMillis() + *static_cast<int64*>(parg) * 1000;
 
@@ -2743,7 +2743,7 @@ void ThreadRPCServer(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadRPCServer(parg));
 
     // Make this thread recognisable as the RPC listener
-    RenameThread("bitcoin-rpclist");
+    RenameThread("corgicoin-rpclist");
 
     try
     {
@@ -3029,7 +3029,7 @@ void ThreadRPCServer3(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadRPCServer3(parg));
 
     // Make this thread recognisable as the RPC handler
-    RenameThread("bitcoin-rpchand");
+    RenameThread("corgicoin-rpchand");
 
     {
         LOCK(cs_THREAD_RPCHANDLER);

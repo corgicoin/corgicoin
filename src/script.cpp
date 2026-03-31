@@ -5,10 +5,9 @@
 // Copyright (c) 2014-2026 Corgicoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include <boost/tuple/tuple.hpp>
+#include <tuple>
 
 using namespace std;
-using namespace boost;
 
 #include "script.h"
 #include "keystore.h"
@@ -1112,7 +1111,7 @@ class CSignatureCache
 {
 private:
      // sigdata_type is (signature hash, signature, public key):
-    using sigdata_type = boost::tuple<uint256, std::vector<unsigned char>, std::vector<unsigned char> >;
+    using sigdata_type = std::tuple<uint256, std::vector<unsigned char>, std::vector<unsigned char>>;
     std::set< sigdata_type> setValid;
     CCriticalSection cs_sigcache;
 

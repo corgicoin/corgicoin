@@ -75,6 +75,10 @@ extern unsigned char pchMessageStart[4];
 extern int64 nTransactionFee;
 extern int64 nMinimumInputValue;
 
+constexpr int DEFAULT_CONNECT_TIMEOUT_MS = 5000;
+constexpr int DEFAULT_MAX_MESSAGE_SIZE = 5000;
+constexpr int64 FLAT_BLOCK_REWARD = 10000 * COIN;
+
 // Minimum disk space required - used in CheckDiskSpace()
 constexpr uint64 nMinDiskSpace = 52428800;
 

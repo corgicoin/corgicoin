@@ -37,8 +37,7 @@
 // - boost::signals2         - Observer pattern (keystore)
 //
 // SERIALIZATION (must maintain binary compatibility):
-// - boost::tuple            - Used in serialization code
-// - boost::variant          - Used in transaction destination types
+// - boost::variant          - Used in transaction destination types (CTxDestination)
 //
 // REMOVED (replaced with C++17 standard library or modern alternatives):
 // ✅ boost::thread          → std::thread (v1.4.1.48)

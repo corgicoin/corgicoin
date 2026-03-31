@@ -51,7 +51,7 @@ enum class Local
     If,      // address a local interface listens on
     Bind,    // address explicit bound to
     Upnp,    // address reported by UPnP
-    Irc,     // address reported by IRC (deprecated)
+    Irc,     // deprecated, no longer used (kept for binary compatibility)
     Http,    // address reported by whatismyip.com and similars
     Manual,  // address explicitly specified (-externalip=)
 

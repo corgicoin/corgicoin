@@ -8,10 +8,11 @@
 
 #include "db.h"
 #include "walletdb.h"
-#include "bitcoinrpc.h"
+#include "corgicoinrpc.h"
 #include "net.h"
 #include "init.h"
 #include "util.h"
+#include "main.h"
 #include "ui_interface.h"
 #include "compat_openssl.h"
 #include "compat_boost.h"
@@ -37,7 +38,7 @@ CClientUIInterface uiInterface;
 void ExitTimeout(void* parg)
 {
 #ifdef WIN32
-    Sleep(5000);
+    Sleep(5000); // Wait 5s for graceful shutdown before forcing process exit
     ExitProcess(0);
 #endif
 }
@@ -59,7 +60,7 @@ void Shutdown(void* parg)
     static bool fTaken;
 
     // Make this thread recognisable as the shutdown thread
-    RenameThread("bitcoin-shutoff");
+    RenameThread("corgicoin-shutoff");
 
     bool fFirstThread = false;
     {
@@ -392,7 +393,7 @@ bool AppInit2()
 
     if (mapArgs.count("-timeout"))
     {
-        int nNewTimeout = GetArg("-timeout", 5000);
+        int nNewTimeout = GetArg("-timeout", DEFAULT_CONNECT_TIMEOUT_MS);
         if (nNewTimeout > 0 && nNewTimeout < 600000)
             nConnectTimeout = nNewTimeout;
     }
@@ -773,7 +774,7 @@ bool AppInit2()
     // Loop until process is exit()ed from shutdown() function,
     // called from ThreadRPCServer thread when a "stop" command is received.
     while (1)
-        Sleep(5000);
+        Sleep(5000); // Idle loop: wait for shutdown signal from RPC "stop" command
 #endif
 
     return true;

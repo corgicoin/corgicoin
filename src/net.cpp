@@ -348,7 +348,7 @@ bool GetMyExternalIP2(const CService& addrConnect, const char* pszGet, const cha
     return error("GetMyExternalIP() : connection closed");
 }
 
-// We now get our external IP from the IRC server first and only use this as a backup
+// Get our external IP via HTTP services
 bool GetMyExternalIP(CNetAddr& ipRet)
 {
     CService addrConnect;
@@ -411,7 +411,7 @@ bool GetMyExternalIP(CNetAddr& ipRet)
 void ThreadGetMyExternalIP(void* parg)
 {
     // Make this thread recognisable as the external IP detection thread
-    RenameThread("bitcoin-ext-ip");
+    RenameThread("corgicoin-ext-ip");
 
     CNetAddr addrLocalHost;
     if (GetMyExternalIP(addrLocalHost))
@@ -644,7 +644,7 @@ void ThreadSocketHandler(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadSocketHandler(parg));
 
     // Make this thread recognisable as the networking thread
-    RenameThread("bitcoin-net");
+    RenameThread("corgicoin-net");
 
     try
     {
@@ -1000,7 +1000,7 @@ void ThreadMapPort(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadMapPort(parg));
 
     // Make this thread recognisable as the UPnP thread
-    RenameThread("bitcoin-UPnP");
+    RenameThread("corgicoin-UPnP");
 
     try
     {
@@ -1165,7 +1165,7 @@ void ThreadDNSAddressSeed(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadDNSAddressSeed(parg));
 
     // Make this thread recognisable as the DNS seeding thread
-    RenameThread("bitcoin-dnsseed");
+    RenameThread("corgicoin-dnsseed");
 
     try
     {
@@ -1262,7 +1262,7 @@ void ThreadDumpAddress(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadDumpAddress(parg));
 
     // Make this thread recognisable as the address dumping thread
-    RenameThread("bitcoin-adrdump");
+    RenameThread("corgicoin-adrdump");
 
     try
     {
@@ -1279,7 +1279,7 @@ void ThreadOpenConnections(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadOpenConnections(parg));
 
     // Make this thread recognisable as the connection opening thread
-    RenameThread("bitcoin-opencon");
+    RenameThread("corgicoin-opencon");
 
     try
     {
@@ -1358,7 +1358,7 @@ void ThreadOpenConnections2(void* parg)
         if (fShutdown)
             return;
 
-        // Add seed nodes if IRC isn't working
+        // Add seed nodes if no addresses are known yet
         if (addrman.size()==0 && (GetTime() - nStart > 60) && !fTestNet)
         {
             std::vector<CAddress> vAdd;
@@ -1569,7 +1569,7 @@ void ThreadMessageHandler(void* parg)
     IMPLEMENT_RANDOMIZE_STACK(ThreadMessageHandler(parg));
 
     // Make this thread recognisable as the message handling thread
-    RenameThread("bitcoin-msghand");
+    RenameThread("corgicoin-msghand");
 
     try
     {

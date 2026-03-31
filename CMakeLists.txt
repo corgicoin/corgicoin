@@ -174,7 +174,7 @@ set(DAEMON_SOURCES
     src/main.cpp
     src/net.cpp
     src/protocol.cpp
-    src/bitcoinrpc.cpp
+    src/corgicoinrpc.cpp
     src/rpcdump.cpp
     src/rpcnet.cpp
     src/rpcrawtransaction.cpp

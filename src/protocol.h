@@ -10,8 +10,8 @@
 # error This header can only be compiled as C++.
 #endif
 
-#ifndef __INCLUDED_PROTOCOL_H__
-#define __INCLUDED_PROTOCOL_H__
+#ifndef BITCOIN_PROTOCOL_H
+#define BITCOIN_PROTOCOL_H
 
 #include "serialize.h"
 #include "netbase.h"
@@ -137,4 +137,4 @@ class CInv
         uint256 hash;
 };
 
-#endif // __INCLUDED_PROTOCOL_H__
+#endif // BITCOIN_PROTOCOL_H

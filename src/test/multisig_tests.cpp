@@ -1,6 +1,6 @@
 #include <boost/assert.hpp>
 #include <boost/test/unit_test.hpp>
-#include <boost/tuple/tuple.hpp>
+#include <tuple>
 
 #include <openssl/ec.h>
 #include <openssl/err.h>
