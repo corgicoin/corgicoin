@@ -1978,7 +1978,11 @@ Value getworkex(const Array& params, bool fHelp)
         if(coinbase.size() == 0)
             pblock->vtx[0].vin[0].scriptSig = mapNewBlock[pdata->hashMerkleRoot].second;
         else
-            CDataStream(coinbase, SER_NETWORK, PROTOCOL_VERSION) >> pblock->vtx[0]; // FIXME - HACK!
+        {
+            // Deserialize the coinbase transaction from the submitted data
+            CDataStream ssCoinbase(coinbase, SER_NETWORK, PROTOCOL_VERSION);
+            ssCoinbase >> pblock->vtx[0];
+        }
 
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
@@ -2005,9 +2009,12 @@ Value getwork(const Array& params, bool fHelp)
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
     using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
-    static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
+    static CCriticalSection cs_getwork;
+    static mapNewBlock_t mapNewBlock;
     static vector<CBlock*> vNewBlock;
     static CReserveKey reservekey(pwalletMain.get());
+
+    LOCK(cs_getwork);
 
     if (params.size() == 0)
     {
