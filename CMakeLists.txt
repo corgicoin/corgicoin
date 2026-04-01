@@ -44,7 +44,11 @@ find_package(OpenSSL REQUIRED)
 find_package(BerkeleyDB REQUIRED)
 
 # Boost components
-set(Boost_USE_STATIC_LIBS OFF)
+if(CMAKE_CROSSCOMPILING OR WIN32)
+    set(Boost_USE_STATIC_LIBS ON)
+else()
+    set(Boost_USE_STATIC_LIBS OFF)
+endif()
 set(Boost_USE_MULTITHREADED ON)
 set(BOOST_COMPONENTS program_options thread)
 if(BUILD_TESTS)
