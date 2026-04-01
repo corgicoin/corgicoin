@@ -110,8 +110,14 @@ jobs:
           # Patch: fix WinIoCtl.h case sensitivity for MinGW
           sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h 2>/dev/null || true
           ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-replication --prefix=$PREFIX
-          make -j$(nproc)
-          make install
+          make -j$(nproc) || true
+          # Install just the libraries and headers (utilities fail to cross-compile, that's OK)
+          mkdir -p $PREFIX/include $PREFIX/lib
+          cp db.h db_cxx.h db_config.h $PREFIX/include/
+          cp .libs/libdb-4.8.a $PREFIX/lib/
+          cp .libs/libdb_cxx-4.8.a $PREFIX/lib/
+          ln -sf libdb_cxx-4.8.a $PREFIX/lib/libdb_cxx.a
+          ln -sf libdb-4.8.a $PREFIX/lib/libdb.a
 
           # Verify BDB installed correctly
           echo "=== BDB installation ==="
