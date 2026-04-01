@@ -66,6 +66,7 @@ public slots:
     void reportToList(QString, int, QString);
 
     void minerStarted();
+    void stopSoloMining();
 
     void minerError(QProcess::ProcessError);
     void minerFinished();

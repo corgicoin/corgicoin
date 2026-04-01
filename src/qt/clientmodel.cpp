@@ -259,9 +259,10 @@ int ClientModel::getNumBlocksOfPeers() const
 
 void ClientModel::setMining(MiningType type, bool mining, int threads, int hashrate)
 {
-    if (type == SoloMining && mining != miningStarted)
+    if (type == SoloMining)
     {
-        GenerateBitcoins(mining ? 1 : 0, pwalletMain.get());
+        LogPrintf("GUI: setMining solo=%s threads=%d\n", mining ? "true" : "false", threads);
+        GenerateBitcoins(mining, pwalletMain.get());
     }
     miningType = type;
     miningStarted = mining;

@@ -71,7 +71,7 @@ void MiningPage::startPressed()
     else
     {
         if (getMiningType() == ClientModel::SoloMining)
-            minerFinished();
+            stopSoloMining();
         else
             stopPoolMining();
     }
@@ -216,12 +216,23 @@ void MiningPage::minerError(QProcess::ProcessError error)
     }
 }
 
+void MiningPage::stopSoloMining()
+{
+    reportToList("Solo mining stopped", STARTED, nullptr);
+    ui->list->addItem("");
+    minerActive = false;
+    resetMiningButton();
+    model->setMining(getMiningType(), false, initThreads, 0);
+}
+
 void MiningPage::minerFinished()
 {
+    // Only handle pool mining finish — solo mining uses the built-in miner,
+    // not the external minerd process, so QProcess signals should be ignored.
     if (getMiningType() == ClientModel::SoloMining)
-        reportToList("Solo strutting stopped", ERROR, nullptr);
-    else
-        reportToList("Strutting stopped", ERROR, nullptr);
+        return;
+
+    reportToList("Pool mining stopped", ERROR, nullptr);
     ui->list->addItem("");
     minerActive = false;
     resetMiningButton();
@@ -232,7 +243,7 @@ void MiningPage::minerStarted()
 {
     if (!minerActive)
         if (getMiningType() == ClientModel::SoloMining)
-            reportToList("Solo strutting started!", ERROR, nullptr);
+            reportToList("Solo mining started (built-in miner)", STARTED, nullptr);
         else
             reportToList("Strutting started!", STARTED, nullptr);
     minerActive = true;

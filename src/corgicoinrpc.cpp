@@ -440,7 +440,8 @@ Value getmininginfo(const Array& params, bool fHelp)
     obj.emplace_back("currentblocktx",(uint64_t)nLastBlockTx);
     obj.emplace_back("difficulty",    static_cast<double>(GetDifficulty()));
     obj.emplace_back("errors",        GetWarnings("statusbar"));
-    obj.emplace_back("generate",      GetBoolArg("-gen"));
+    extern bool fGenerateBitcoins;
+    obj.emplace_back("generate",      fGenerateBitcoins);
     obj.emplace_back("genproclimit",  static_cast<int>(GetArg("-genproclimit", -1)));
     obj.emplace_back("hashespersec",  gethashespersec(params, false));
     obj.emplace_back("networkhashps", getnetworkhashps(params, false));
