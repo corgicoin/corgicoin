@@ -2052,7 +2052,7 @@ bool LoadBlockIndex(bool fAllowNew)
         pchMessageStart[1] = 0xc1;
         pchMessageStart[2] = 0xb7;
         pchMessageStart[3] = 0xdc;
-        hashGenesisBlock = uint256("0x");
+        hashGenesisBlock = uint256("0xd2a9b071e7c7e37ad65898bb1abafa96934fd4df330d65857992201118c0ba8b");
     }
 
     //
@@ -2071,15 +2071,13 @@ bool LoadBlockIndex(bool fAllowNew)
         if (!fAllowNew)
             return false;
 
-        // Genesis Block:
-		// hashGenesisBlock = 80e8f750bbc1ffc3ec396227281bdb8963ec4eb0e3fadcd0b2808150edc7b5b7
-		// block.hashMerkleRoot = 6f80efd038566e1e3eab3e1d38131604d06481e77f2462235c6a9a94b1f8abf9
-		// CBlock(hash=9b7bce58999062b63bfb, PoW=caeb449903dc4f0e0ee2, ver=1, hashPrevBlock=00000000000000000000, 
-		//     hashMerkleRoot=6f80efd038, nTime=1369199888, nBits=1e0ffff0, nNonce=11288888, vtx=1)
-		//   CTransaction(hash=6f80efd038, ver=1, vin.size=1, vout.size=1, nLockTime=0)
-		//     CTxIn(COutPoint(0000000000, -1), coinbase 04ffff001d01044cd14d61792032322c20323031332c2031323a313620612e6d2e204544543a204a6170616e9273204e696b6b65692053746f636b2041766572616765204a503a4e494b202b312e3737252c20776869636820656e6465642061742074686569722068696768657374206c6576656c20696e206d6f7265207468616e206669766520796561727320696e2065616368206f6620746865206c6173742074687265652074726164696e672073657373696f6e732c20636c696d6265642061206675727468657220312e3225205765646e6573646179)
-		//     CTxOut(nValue=88.00000000, scriptPubKey=040184710fa689ad5023690c80f3a4)
-		//   vMerkleTree: 6f80efd038 
+        // Genesis Block — CorgiCoin v4.0.0.0 (2026 Relaunch)
+        // hash (SHA256d) = 9c470b340cab2862451303837e1d3ddfeea9ed2eba2c04d206551654cab0b82d
+        // PoW (scrypt)   = 00000ba0883f91d15d5dad3501ac6fec96e35f707df9de04e7941f15685c1a6f
+        // merkleRoot     = e1e5bb16b8b4368a267ee1f84a984a8360cca255897a9e1a854a57ce383070a0
+        // nTime          = 1774996800 (2026-03-31 22:40:00 UTC)
+        // nBits          = 0x1e0ffff0
+        // nNonce         = 2580018
 
         // Genesis block — CorgiCoin 2.0 Relaunch (2026)
         const char* pszTimestamp = "CorgiCoin Relaunch 2026 - The Return of the Short Chain";
@@ -2094,51 +2092,18 @@ bool LoadBlockIndex(bool fAllowNew)
         block.hashPrevBlock = 0;
         block.hashMerkleRoot = block.BuildMerkleTree();
         block.nVersion = 1;
-        block.nTime    = 1774828800;  // March 2026
+        block.nTime    = 1774996800;  // 2026-03-31 22:40:00 UTC
         block.nBits    = 0x1e0ffff0;
-        block.nNonce   = 0;  // Will be found by mining loop below
+        block.nNonce   = 2580018;
 
         if (fTestNet)
         {
-            block.nTime    = 1774828800;
-            block.nNonce   = 0;
+            block.nTime    = 1774996801;  // Testnet: 1 second after mainnet
+            block.nBits    = 0x1f00ffff;  // Testnet: easier difficulty
+            block.nNonce   = 150043;
         }
 
-        //// debug print
-        LogPrintf("block.GetHash() = %s\n", block.GetHash().ToString().c_str());
-        LogPrintf("hashGenesisBlock = %s\n", hashGenesisBlock.ToString().c_str());
-        LogPrintf("block.hashMerkleRoot = %s\n", block.hashMerkleRoot.ToString().c_str());
-        // Merkle root will be recalculated after genesis mining
-
-		if (true && block.GetHash() != hashGenesisBlock) {
-		
-            LogPrintf("Searching for genesis block...\n");
-            // This will figure out a valid hash and Nonce if you're
-            // creating a different genesis block:
-            uint256 hashTarget = CBigNum().SetCompact(block.nBits).getuint256();
-            uint256 thash;
-            char scratchpad[SCRYPT_SCRATCHPAD_SIZE];
-
-            while(true)
-            {
-                scrypt_1024_1_1_256_sp(BEGIN(block.nVersion), BEGIN(thash), scratchpad);
-                if (thash <= hashTarget)
-                    break;
-                if ((block.nNonce & 0xFFF) == 0)
-                {
-                    LogPrintf("nonce %08X: hash = %s (target = %s)\n", block.nNonce, thash.ToString().c_str(), hashTarget.ToString().c_str());
-                }
-                ++block.nNonce;
-                if (block.nNonce == 0)
-                {
-                    LogPrintf("NONCE WRAPPED, incrementing time\n");
-                    ++block.nTime;
-                }
-            }
-            LogPrintf("block.nTime = %u \n", block.nTime);
-            LogPrintf("block.nNonce = %u \n", block.nNonce);
-            LogPrintf("block.GetHash = %s\n", block.GetHash().ToString().c_str());
-        }
+        assert(block.GetHash() == hashGenesisBlock);
 
         // Start new block file
         unsigned int nFile;

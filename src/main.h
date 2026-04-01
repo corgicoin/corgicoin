@@ -49,8 +49,7 @@ constexpr int fHaveUPnP = false;
 
 extern CScript COINBASE_FLAGS;
 
-// TODO: Replace with actual hash after mining the new genesis block
-static const uint256 hashGenesisBlockOfficial("0x0000000000000000000000000000000000000000000000000000000000000000");
+static const uint256 hashGenesisBlockOfficial("0x9c470b340cab2862451303837e1d3ddfeea9ed2eba2c04d206551654cab0b82d");
 
 extern CCriticalSection cs_main;
 extern std::map<uint256, CBlockIndex*> mapBlockIndex;

@@ -585,7 +585,7 @@ inline void SetThreadPriority(int nPriority)
     SetThreadPriority(GetCurrentThread(), nPriority);
 }
 #else
-inline pthread_t CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
+inline bool CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
 {
     pthread_t hthread{};
     // pthread_create requires void*(*)(void*) but our thread functions are void(*)(void*).
@@ -605,14 +605,11 @@ inline pthread_t CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=fa
     if (ret != 0)
     {
         LogPrintf("Error: pthread_create() returned %d\n", ret);
-        return pthread_t{};
+        return false;
     }
     if (!fWantHandle)
-    {
         pthread_detach(hthread);
-        return pthread_t{};
-    }
-    return hthread;
+    return true;
 }
 
 #define THREAD_PRIORITY_LOWEST          PRIO_MAX

@@ -1155,10 +1155,8 @@ void MapPort()
 // The first name is used as information source for addrman.
 // The second name should resolve to a list of seed addresses.
 static const char *strDNSSeed[][2] = {
-       // DNS seeds for CorgiCoin 2.0 network
-       {"seed1.corgicoin.com", "seed1.corgicoin.com"},
-       {"seed2.corgicoin.com", "seed2.corgicoin.com"},
-       {"seed.vannatter.com", "seed.vannatter.com"},
+       {"seed1.corgicoin.co", "seed1.corgicoin.co"},
+       {"seed2.corgicoin.co", "seed2.corgicoin.co"},
 };
 
 void ThreadDNSAddressSeed(void* parg)
@@ -1229,9 +1227,11 @@ void ThreadDNSAddressSeed2(void* parg)
 
 
 
-// Seed node IPs — add VPS addresses in network byte order after deployment
+// Seed node IPs in network byte order
 unsigned int pnSeed[] =
 {
+    0x135a8368,  // 104.131.90.19  (seed1.corgicoin.co)
+    0x2fa1419f,  // 159.65.161.47  (seed2.corgicoin.co)
 };
 
 void DumpAddresses()
