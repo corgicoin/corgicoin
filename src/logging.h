@@ -12,7 +12,7 @@
 // Log levels
 enum class LogLevel {
     NONE,
-    ERROR,
+    ERR,      // "ERROR" is a macro on Windows
     WARNING,
     INFO,
     DEBUG

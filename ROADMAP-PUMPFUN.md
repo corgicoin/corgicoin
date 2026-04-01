@@ -125,7 +125,7 @@ This is **not** an exclusive partnership. The burn bridge and partner program ar
 
 | Phase | Target | Dependencies |
 |---|---|---|
-| Phase 1: Burn Bridge | Q3 2026 | v4.0 mainnet launch, Solana program deployment |
+| Phase 1: Burn Bridge | Q2 2026 | v4.1 mainnet live, `burncoin` RPC ready, Solana program deployment |
 | Phase 2: Partner Program | Q3-Q4 2026 | Phase 1 + pump.fun CORG community coordination |
 | Phase 3: Mining Rewards | Q4 2026 | Phase 1-2 operational |
 | Phase 4: NFTs | Q1 2027 | Phase 1 + art/metadata pipeline |

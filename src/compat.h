@@ -30,7 +30,9 @@
 #endif
 
 // Modern C++11 type alias for socket type
+#ifndef WIN32
 using SOCKET = u_int;
+#endif
 #ifdef WIN32
 #define MSG_NOSIGNAL        0
 #define MSG_DONTWAIT        0

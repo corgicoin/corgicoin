@@ -142,6 +142,7 @@ jobs:
             -DOPENSSL_ROOT_DIR=$PREFIX \
             -DBERKELEYDB_INCLUDE_DIR=$PREFIX/include \
             -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx-5.3.a \
+            -DCMAKE_CXX_FLAGS="-I$PREFIX/include" \
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
             -DMINIUPNPC_LIBRARY=$PREFIX/lib/libminiupnpc.a \

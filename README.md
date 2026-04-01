@@ -6,12 +6,13 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.0.0.0** represents a complete relaunch with:
+**Version 4.1.0.0** — fully modernized, network live, with cross-chain burn bridge:
 - C++17 codebase (modernized from C++03)
-- OpenSSL 3.x support (1.0.x dropped)
-- Protocol version 70001 (incompatible with legacy 1.x nodes)
-- CI/CD pipeline with actions
-- Planned cross-chain integration with Solana/pump.fun (proof-of-burn bridge, partner token program)
+- OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
+- Proper logging framework with categories
+- On-chain burn mechanism (`burncoin` RPC) for Solana/pump.fun cross-chain integration
+- Genesis block mined, mainnet running with seed nodes
+- Protocol version 70001
 
 ## Chain Specifications
 
@@ -95,30 +96,30 @@ rpcport=62555
 
 ## Version History
 
+### v4.1.0.0 — Network Launch + Cross-Chain Burns
+- Genesis block mined, mainnet live with seed nodes
+- On-chain burn mechanism: `burncoin` RPC with OP_RETURN data embedding
+- TX_NULL_DATA script type for provably unspendable burn outputs
+- Cross-platform consensus fix (portable random number generation for block rewards)
+- Logging framework: LogPrintf/LogError/LogPrint with categories (replaced 400+ printfs)
+- Qt wallet: fixed mining page, tab navigation, signal/slot compatibility
+- CreateThread return type fix (was causing false "could not start node" errors)
+- Version bump to 4.1.0.0
+
 ### v4.0.0.0 — 2026 Relaunch
 - C++17 standard across all build systems
 - OpenSSL 3.x migration complete (1.0.x dropped)
 - Protocol version 70001 (breaks compatibility with 1.x nodes)
-- Client identity renamed from "Satoshi" to "CorgiCoin"
-- `boost::filesystem` replaced with `std::filesystem` (C++17)
-- `json_spirit` replaced with nlohmann/json (modern, maintained JSON library)
+- `boost::filesystem` → `std::filesystem`, `json_spirit` → nlohmann/json
 - Qt 6 support (Qt 4 dropped, Qt 5/6 dual compatibility)
-- `std::random_shuffle` replaced with `std::shuffle` (C++17 compliance)
-- ECDSA_SIG direct member access replaced with accessor functions
-- DNS seeds updated for new network
+- `boost::tuple/assign/random/type_traits` → C++17 stdlib equivalents
 - GitHub Actions CI/CD with tests on Linux and macOS
-- 79 unit tests covering scrypt, addresses, block rewards, serialization, and more
-- Full rebranding: share/ assets, icons, installer scripts updated to CorgiCoin
+- 79 unit tests, full rebranding, dead code cleanup
+- Client identity renamed from "Satoshi" to "CorgiCoin"
 
-### v1.4.1.42 - v1.4.1.67 — Modernization Era
+### v1.4.1.42 - v1.4.1.67 — Modernization Era (2025)
 - 16 releases, ~645+ individual modernizations
-- C++11/14 migration: nullptr, smart pointers, range-based for, enum classes, structured bindings
-- OpenSSL 1.1.x/3.x compatibility layer
-- Boost 1.70+ compatibility (70% dependency reduction)
-- Berkeley DB 4.8-6.2 compatibility
-- Qt 4/5 dual support
-- IRC peer discovery removal
-- See [MODERNIZATION.md](MODERNIZATION.md) for full changelog
+- C++11/14 migration: nullptr, smart pointers, range-based for, enum classes
 
 ### v1.0 - v1.4.1.41 — Original Era (2014)
 - Initial Dogecoin fork with Scrypt PoW
@@ -136,13 +137,15 @@ rpcport=62555
 - [x] Full asset rebranding (icons, installer, share/ directory)
 - [x] Unit test suite (79 tests: scrypt, addresses, block rewards, serialization, etc.)
 - [x] Qt 6 support (Qt 4 dropped, Qt 5/6 dual support)
-- [x] Copyright headers updated to 2014-2026
-- [x] DNS seed infrastructure update
+- [x] Logging framework with categories
+- [x] Genesis block mined (mainnet + testnet)
+- [x] Seed node deployment (2 nodes live)
+- [x] On-chain burn mechanism (`burncoin` RPC + OP_RETURN)
 
 ### In Progress
-- [ ] Gen block mining and hash finalization
-- [ ] Seed node deployment (VPS infrastructure)
-- [ ] Historical holder airdrop mechanism (previous chain data recovery)
+- [ ] Windows cross-compiled build
+- [ ] Pump.fun partner token integration
+- [ ] Burn oracle service (monitors chain, distributes rewards on Solana)
 
 ### Planned
 - [ ] Block explorer
