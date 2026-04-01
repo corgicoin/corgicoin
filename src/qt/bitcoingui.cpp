@@ -262,23 +262,24 @@ void BitcoinGUI::createActions()
     tabGroup->addAction(firstClassMessagingAction);
 #endif
 
-    connect(overviewAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(overviewAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(overviewAction, &QAction::triggered, this, &BitcoinGUI::gotoOverviewPage);
+    connect(miningAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(miningAction, &QAction::triggered, this, &BitcoinGUI::gotoMiningPage);
-    connect(historyAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(historyAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(historyAction, &QAction::triggered, this, &BitcoinGUI::gotoHistoryPage);
-    connect(addressBookAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(addressBookAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(addressBookAction, &QAction::triggered, this, &BitcoinGUI::gotoAddressBookPage);
-    connect(receiveCoinsAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(receiveCoinsAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(receiveCoinsAction, &QAction::triggered, this, &BitcoinGUI::gotoReceiveCoinsPage);
-    connect(sendCoinsAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(sendCoinsAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(sendCoinsAction, &QAction::triggered, this, &BitcoinGUI::gotoSendCoinsPage);
-    connect(signMessageAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(signMessageAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(signMessageAction, &QAction::triggered, this, [this]() { gotoSignMessageTab(); });
-    connect(verifyMessageAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(verifyMessageAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     connect(verifyMessageAction, &QAction::triggered, this, [this]() { gotoVerifyMessageTab(); });
 #ifdef FIRST_CLASS_MESSAGING
-    connect(firstClassMessagingAction, &QAction::triggered, this, &BitcoinGUI::showNormalIfMinimized);
+    connect(firstClassMessagingAction, &QAction::triggered, this, [this]() { showNormalIfMinimized(); });
     // Always start with the sign message tab for FIRST_CLASS_MESSAGING
     connect(firstClassMessagingAction, &QAction::triggered, this, [this]() { gotoSignMessageTab(); });
 #endif

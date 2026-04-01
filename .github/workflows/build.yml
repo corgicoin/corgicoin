@@ -37,7 +37,7 @@ jobs:
   build-macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -58,3 +58,26 @@ jobs:
         run: |
           cd build
           ./test_corgicoin
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install vcpkg dependencies
+        run: |
+          vcpkg install boost-filesystem:x64-windows boost-program-options:x64-windows boost-thread:x64-windows boost-signals2:x64-windows boost-interprocess:x64-windows boost-variant:x64-windows boost-date-time:x64-windows boost-asio:x64-windows boost-algorithm:x64-windows boost-test:x64-windows openssl:x64-windows berkeleydb:x64-windows miniupnpc:x64-windows
+        env:
+          VCPKG_DEFAULT_TRIPLET: x64-windows
+
+      - name: Build daemon
+        run: |
+          mkdir build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --build . --config Release
+
+      - name: Run tests
+        run: |
+          cd build
+          .\Release\test_corgicoin.exe

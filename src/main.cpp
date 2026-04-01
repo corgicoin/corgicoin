@@ -831,9 +831,11 @@ uint256 static GetOrphanRoot(std::shared_ptr<const CBlock> pblock)
 
 int static generateMTRandom(unsigned int s, int range)
 {
-	std::mt19937 gen(s);
-    std::uniform_int_distribution<> dist(1, range);
-    return dist(gen);
+    // Use mt19937 directly with modulo instead of uniform_int_distribution,
+    // because uniform_int_distribution is NOT portable across stdlib implementations
+    // (libstdc++ and libc++ produce different results for the same seed).
+    std::mt19937 gen(s);
+    return 1 + (gen() % range);
 }
 
 
@@ -1486,8 +1488,13 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 		prevHash = pindex->pprev->GetBlockHash();
 	}
 
-    if (vtx[0].GetValueOut() > GetBlockValue(pindex->nHeight, nFees, prevHash))
+    int64 nBlockReward = GetBlockValue(pindex->nHeight, nFees, prevHash);
+    if (vtx[0].GetValueOut() > nBlockReward)
+    {
+        LogPrintf("ERROR: ConnectBlock() : coinbase pays too much (actual=%" PRI64d " vs limit=%" PRI64d " height=%d prevHash=%s)\n",
+            vtx[0].GetValueOut(), nBlockReward, pindex->nHeight, prevHash.ToString().c_str());
         return false;
+    }
 
     // Update block index on disk without changing it in memory.
     // The memory index structure will be changed after the db commits.
