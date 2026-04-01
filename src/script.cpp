@@ -90,6 +90,7 @@ const char* GetTxnOutputType(txnouttype t)
     case TX_PUBKEYHASH: return "pubkeyhash";
     case TX_SCRIPTHASH: return "scripthash";
     case TX_MULTISIG: return "multisig";
+    case TX_NULL_DATA: return "nulldata";
     }
     return nullptr;
 }
@@ -1391,6 +1392,8 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
     case TX_MULTISIG:
         scriptSigRet << OP_0; // workaround CHECKMULTISIG bug
         return (SignN(vSolutions, keystore, hash, nHashType, scriptSigRet));
+    case TX_NULL_DATA:
+        return false; // OP_RETURN outputs cannot be signed
     }
     return false;
 }
@@ -1411,6 +1414,8 @@ int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned c
         return vSolutions[0][0] + 1;
     case TX_SCRIPTHASH:
         return 1; // doesn't include args needed by the script
+    case TX_NULL_DATA:
+        return 0; // OP_RETURN needs no signature
     }
     return -1;
 }
@@ -1501,6 +1506,8 @@ bool IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
         vector<valtype> keys(vSolutions.begin()+1, vSolutions.begin()+vSolutions.size()-1);
         return HaveKeys(keys, keystore) == keys.size();
     }
+    case TX_NULL_DATA:
+        return false; // OP_RETURN outputs are never "mine"
     }
     return false;
 }
@@ -1758,6 +1765,8 @@ static CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo,
         }
     case TX_MULTISIG:
         return CombineMultisig(scriptPubKey, txTo, nIn, vSolutions, sigs1, sigs2);
+    case TX_NULL_DATA:
+        return CScript(); // OP_RETURN has no signatures to combine
     }
 
     return CScript();
