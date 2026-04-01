@@ -134,14 +134,18 @@ jobs:
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
             -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
             -DCMAKE_FIND_ROOT_PATH=$PREFIX \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_QT_GUI=OFF \
             -DBUILD_TESTS=OFF \
             -DOPENSSL_ROOT_DIR=$PREFIX \
-            -DBerkeleyDB_ROOT=$PREFIX \
-            -DBoost_ROOT=$PREFIX
+            -DBERKELEYDB_INCLUDE_DIR=$PREFIX/include \
+            -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx-5.3.a \
+            -DBoost_ROOT=$PREFIX \
+            -DBoost_NO_SYSTEM_PATHS=ON \
+            -DMINIUPNPC_LIBRARY=$PREFIX/lib/libminiupnpc.a \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -lws2_32 -lshlwapi"
           make -j$(nproc)
 
       - name: Upload Windows binary
