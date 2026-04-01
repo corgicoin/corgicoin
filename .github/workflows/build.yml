@@ -108,14 +108,13 @@ jobs:
           curl -sL https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz | tar xz
           cd db-5.3.28/build_unix
           ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-replication --prefix=$PREFIX
-          make -j$(nproc) 2>&1 | tail -3
-          make install 2>&1 | tail -3
+          make -j$(nproc)
+          make install
 
-          # Debug: show what BDB installed
-          echo "=== BDB headers ==="
-          find $PREFIX/include -name "db*.h" 2>/dev/null
-          echo "=== BDB libs ==="
-          find $PREFIX/lib -name "libdb*" 2>/dev/null
+          # Verify BDB installed correctly
+          echo "=== BDB installation ==="
+          ls -la $PREFIX/include/db_cxx.h || (echo "FATAL: db_cxx.h not found!" && exit 1)
+          ls -la $PREFIX/lib/libdb_cxx*.a || (echo "FATAL: libdb_cxx not found!" && exit 1)
 
           # miniupnpc
           cd /tmp/deps
@@ -148,8 +147,7 @@ jobs:
             -DOPENSSL_ROOT_DIR=$PREFIX \
             -DBERKELEYDB_INCLUDE_DIR=$PREFIX/include \
             -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx-5.3.a \
-            -DCMAKE_CXX_FLAGS="-I$PREFIX/include" \
-            -DCMAKE_C_FLAGS="-I$PREFIX/include" \
+            -DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$PREFIX/include \
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
             -DMINIUPNPC_LIBRARY=$PREFIX/lib/libminiupnpc.a \

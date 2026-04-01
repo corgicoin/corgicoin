@@ -163,10 +163,6 @@ include_directories(
     ${Boost_INCLUDE_DIRS}
     ${BERKELEYDB_INCLUDE_DIR}
 )
-# Cross-compile: ensure BDB include dir is always added
-if(BERKELEYDB_INCLUDE_DIR)
-    include_directories(${BERKELEYDB_INCLUDE_DIR})
-endif()
 
 # Source files for daemon
 set(DAEMON_SOURCES
@@ -218,6 +214,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 # Daemon executable
 add_executable(corgicoind ${DAEMON_SOURCES} ${JSON_SOURCES})
 add_dependencies(corgicoind generate_build_info)
+target_include_directories(corgicoind PRIVATE ${BERKELEYDB_INCLUDE_DIR})
 
 target_link_libraries(corgicoind
     ${OPENSSL_LIBRARIES}
