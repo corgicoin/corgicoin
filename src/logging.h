@@ -7,6 +7,7 @@
 
 #include <string>
 #include <cstdarg>
+#include <cstdint>
 
 // Log levels
 enum class LogLevel {
