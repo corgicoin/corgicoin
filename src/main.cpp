@@ -286,9 +286,17 @@ bool CTransaction::IsStandard() const
         if (!txin.scriptSig.IsPushOnly())
             return false;
     }
+    unsigned int nDataOut = 0;
     for (const CTxOut& txout : vout)
+    {
         if (!::IsStandard(txout.scriptPubKey))
             return false;
+        // Only allow one OP_RETURN output per transaction
+        if (txout.scriptPubKey.size() >= 1 && txout.scriptPubKey[0] == OP_RETURN)
+            nDataOut++;
+    }
+    if (nDataOut > 1)
+        return false;
     return true;
 }
 

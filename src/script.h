@@ -38,6 +38,7 @@ enum txnouttype
     TX_PUBKEYHASH,
     TX_SCRIPTHASH,
     TX_MULTISIG,
+    TX_NULL_DATA,    // OP_RETURN with data (provably unspendable, used for burns)
 };
 
 class CNoDestination {

@@ -671,6 +671,64 @@ Value sendtoaddress(const Array& params, bool fHelp)
     return wtx.GetHash().GetHex();
 }
 
+Value burncoin(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 2 || params.size() > 2)
+        throw runtime_error(
+            "burncoin <amount> <data>\n"
+            "Burn CORG by sending to a provably unspendable OP_RETURN output.\n"
+            "<amount> is the amount of CORG to burn.\n"
+            "<data> is a hex string (max 80 bytes) embedded in the burn transaction.\n"
+            "Use this for cross-chain burn proofs (e.g., Solana wallet address + partner token ID).\n"
+            "The burned coins are permanently destroyed and cannot be recovered.\n"
+            "\nExample: burncoin 1000 \"<partner_id><solana_wallet_hex>\"");
+
+    if (pwalletMain->IsLocked())
+        throw JSONRPCError(-13, "Error: Please enter the wallet passphrase with walletpassphrase first.");
+
+    // Amount to burn
+    int64 nAmount = AmountFromValue(params[0]);
+    if (nAmount < COIN)
+        throw JSONRPCError(-3, "Burn amount must be at least 1 CORG");
+
+    // Data to embed (hex string)
+    string strData = params[1].get_str();
+    vector<unsigned char> vData = ParseHex(strData);
+    if (vData.empty() || vData.size() > 80)
+        throw JSONRPCError(-3, "Data must be 1-80 bytes (as hex string, so 2-160 hex chars)");
+
+    // Build the OP_RETURN script
+    CScript scriptBurn;
+    scriptBurn << OP_RETURN << vData;
+
+    // Create the transaction
+    CWalletTx wtx;
+    CReserveKey keyChange(pwalletMain.get());
+    int64 nFeeRequired;
+
+    vector<pair<CScript, int64>> vecSend;
+    vecSend.push_back({scriptBurn, nAmount});
+
+    bool fCreated = pwalletMain->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired);
+    if (!fCreated)
+    {
+        if (nAmount + nFeeRequired > pwalletMain->GetBalance())
+            throw JSONRPCError(-6, "Insufficient funds (amount + fee exceeds balance)");
+        throw JSONRPCError(-4, "Transaction creation failed");
+    }
+
+    if (!pwalletMain->CommitTransaction(wtx, keyChange))
+        throw JSONRPCError(-4, "Transaction commit failed");
+
+    // Return burn details
+    Object result;
+    result.emplace_back("txid", wtx.GetHash().GetHex());
+    result.emplace_back("amount", ValueFromAmount(nAmount));
+    result.emplace_back("data", strData);
+    result.emplace_back("status", "burned");
+    return result;
+}
+
 Value signmessage(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 2)
@@ -2347,6 +2405,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getaccount",             &getaccount,             false },
     { "getaddressesbyaccount",  &getaddressesbyaccount,  true },
     { "sendtoaddress",          &sendtoaddress,          false },
+    { "burncoin",               &burncoin,               false },
     { "getreceivedbyaddress",   &getreceivedbyaddress,   false },
     { "getreceivedbyaccount",   &getreceivedbyaccount,   false },
     { "listreceivedbyaddress",  &listreceivedbyaddress,  false },
@@ -3245,6 +3304,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "sendtoaddress"          && n > 1) ConvertTo<double>(params[1]);
+    if (strMethod == "burncoin"              && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "setmininput"            && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "getreceivedbyaddress"   && n > 1) ConvertTo<boost::int64_t>(params[1]);
