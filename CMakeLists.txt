@@ -163,6 +163,10 @@ include_directories(
     ${Boost_INCLUDE_DIRS}
     ${BERKELEYDB_INCLUDE_DIR}
 )
+# Cross-compile: ensure BDB include dir is always added
+if(BERKELEYDB_INCLUDE_DIR)
+    include_directories(${BERKELEYDB_INCLUDE_DIR})
+endif()
 
 # Source files for daemon
 set(DAEMON_SOURCES

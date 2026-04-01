@@ -111,6 +111,12 @@ jobs:
           make -j$(nproc) 2>&1 | tail -3
           make install 2>&1 | tail -3
 
+          # Debug: show what BDB installed
+          echo "=== BDB headers ==="
+          find $PREFIX/include -name "db*.h" 2>/dev/null
+          echo "=== BDB libs ==="
+          find $PREFIX/lib -name "libdb*" 2>/dev/null
+
           # miniupnpc
           cd /tmp/deps
           curl -sL https://miniupnp.tuxfamily.org/files/miniupnpc-2.2.7.tar.gz | tar xz
@@ -143,6 +149,7 @@ jobs:
             -DBERKELEYDB_INCLUDE_DIR=$PREFIX/include \
             -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx-5.3.a \
             -DCMAKE_CXX_FLAGS="-I$PREFIX/include" \
+            -DCMAKE_C_FLAGS="-I$PREFIX/include" \
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
             -DMINIUPNPC_LIBRARY=$PREFIX/lib/libminiupnpc.a \
