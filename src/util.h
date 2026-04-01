@@ -554,13 +554,12 @@ public:
 // Note: It turns out we might have been able to use std::thread
 // by using TerminateThread(std::thread.native_handle(), 0);
 #ifdef WIN32
-typedef HANDLE pthread_thread;
 
-inline pthread_thread CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
+inline bool CreateThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
 {
     DWORD nUnused = 0;
     HANDLE hthread =
-        CreateThread(
+        ::CreateThread(
             nullptr,                     // default security
             0,                           // inherit stack size from parent
             (LPTHREAD_START_ROUTINE)pfn, // function pointer
@@ -570,14 +569,11 @@ inline pthread_thread CreateThread(void(*pfn)(void*), void* parg, bool fWantHand
     if (hthread == nullptr)
     {
         LogPrintf("Error: CreateThread() returned %d\n", GetLastError());
-        return static_cast<pthread_thread>(0);
+        return false;
     }
     if (!fWantHandle)
-    {
         CloseHandle(hthread);
-        return static_cast<pthread_thread>(-1);
-    }
-    return hthread;
+    return true;
 }
 
 inline void SetThreadPriority(int nPriority)

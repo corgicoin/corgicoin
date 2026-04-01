@@ -58,3 +58,94 @@ jobs:
         run: |
           cd build
           ./test_corgicoin
+
+  build-windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install MinGW cross-compiler and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++-mingw-w64-x86-64 \
+            mingw-w64-x86-64-dev \
+            cmake \
+            curl \
+            bzip2 \
+            pkg-config \
+            autoconf \
+            automake \
+            libtool
+
+      - name: Build dependencies from source
+        run: |
+          mkdir -p /tmp/deps/install
+          export HOST=x86_64-w64-mingw32
+          export PREFIX=/tmp/deps/install
+
+          # Boost
+          cd /tmp/deps
+          curl -sL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 | tar xj
+          cd boost_1_84_0
+          echo "using gcc : mingw : x86_64-w64-mingw32-g++ ;" > user-config.jam
+          ./bootstrap.sh --without-icu
+          ./b2 --user-config=user-config.jam toolset=gcc-mingw target-os=windows address-model=64 \
+            variant=release link=static threading=multi \
+            --with-filesystem --with-program_options --with-thread --with-system --with-date_time \
+            --prefix=$PREFIX install -j$(nproc) 2>&1 | tail -5
+
+          # OpenSSL
+          cd /tmp/deps
+          curl -sL https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz | tar xz
+          cd openssl-3.3.2
+          ./Configure mingw64 no-shared --cross-compile-prefix=x86_64-w64-mingw32- --prefix=$PREFIX
+          make -j$(nproc) 2>&1 | tail -3
+          make install_sw 2>&1 | tail -3
+
+          # Berkeley DB
+          cd /tmp/deps
+          curl -sL https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz | tar xz
+          cd db-5.3.28/build_unix
+          ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-replication --prefix=$PREFIX
+          make -j$(nproc) 2>&1 | tail -3
+          make install 2>&1 | tail -3
+
+          # miniupnpc
+          cd /tmp/deps
+          curl -sL https://miniupnp.tuxfamily.org/files/miniupnpc-2.2.7.tar.gz | tar xz
+          cd miniupnpc-2.2.7
+          mkdir build && cd build
+          cmake .. -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_INSTALL_PREFIX=$PREFIX \
+            -DUPNPC_BUILD_SHARED=OFF \
+            -DUPNPC_BUILD_TESTS=OFF \
+            -DUPNPC_BUILD_SAMPLE=OFF
+          make -j$(nproc) 2>&1 | tail -3
+          make install 2>&1 | tail -3
+
+      - name: Build CorgiCoin for Windows
+        run: |
+          export PREFIX=/tmp/deps/install
+          mkdir build-win && cd build-win
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_FIND_ROOT_PATH=$PREFIX \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_QT_GUI=OFF \
+            -DBUILD_TESTS=OFF \
+            -DOPENSSL_ROOT_DIR=$PREFIX \
+            -DBerkeleyDB_ROOT=$PREFIX \
+            -DBoost_ROOT=$PREFIX
+          make -j$(nproc)
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: corgicoind-windows-x64
+          path: build-win/corgicoind.exe
