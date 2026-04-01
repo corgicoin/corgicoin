@@ -38,6 +38,7 @@ find_library(BERKELEYDB_LIBRARY
     NAMES
         db_cxx-5.3
         db_cxx-5
+        db_cxx-4.8
         db_cxx-6
         db_cxx-6.2
         db_cxx-18

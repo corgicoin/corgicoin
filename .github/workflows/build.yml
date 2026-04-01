@@ -103,10 +103,12 @@ jobs:
           make -j$(nproc) 2>&1 | tail -3
           make install_sw 2>&1 | tail -3
 
-          # Berkeley DB
+          # Berkeley DB 4.8 (cross-compiles cleanly with MinGW, unlike 5.3)
           cd /tmp/deps
-          curl -sL https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz | tar xz
-          cd db-5.3.28/build_unix
+          curl -sL https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz | tar xz
+          cd db-4.8.30/build_unix
+          # Patch: fix WinIoCtl.h case sensitivity for MinGW
+          sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h 2>/dev/null || true
           ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-replication --prefix=$PREFIX
           make -j$(nproc)
           make install
@@ -146,7 +148,7 @@ jobs:
             -DBUILD_TESTS=OFF \
             -DOPENSSL_ROOT_DIR=$PREFIX \
             -DBERKELEYDB_INCLUDE_DIR=$PREFIX/include \
-            -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx-5.3.a \
+            -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx.a \
             -DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$PREFIX/include \
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
