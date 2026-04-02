@@ -5,6 +5,15 @@
 #ifndef BITCOIN_COMPAT_BDB_H
 #define BITCOIN_COMPAT_BDB_H
 
+// BDB 4.8 needs db_threadid_t defined before including headers
+// On Windows/MinGW, it's not auto-defined from db_config.h
+#ifndef db_threadid_t
+#ifdef _WIN32
+#include <windows.h>
+typedef uintptr_t db_threadid_t;
+#endif
+#endif
+
 #include <db_cxx.h>
 
 #include "logging.h"
