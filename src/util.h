@@ -16,7 +16,10 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #else
-typedef int pid_t; /* define for windows compatiblity */
+#ifndef _PID_T_DEFINED
+typedef int pid_t; /* define for windows compatibility */
+#define _PID_T_DEFINED
+#endif
 #endif
 #include <map>
 #include <vector>
