@@ -16,10 +16,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #else
-#ifndef _PID_T_DEFINED
-typedef int pid_t; /* define for windows compatibility */
-#define _PID_T_DEFINED
-#endif
+#include <sys/types.h>  // provides pid_t on MinGW
 #endif
 #include <map>
 #include <vector>
