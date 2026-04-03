@@ -152,6 +152,7 @@ if(WINDOWS)
         oleaut32
         uuid
         gdi32
+        crypt32
     )
 endif()
 
