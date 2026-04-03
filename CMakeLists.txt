@@ -229,6 +229,10 @@ if(LINUX)
     target_link_libraries(corgicoind rt)
 endif()
 
+if(WINDOWS)
+    target_link_libraries(corgicoind ws2_32 shlwapi mswsock iphlpapi crypt32 gdi32)
+endif()
+
 if(USE_UPNP)
     target_link_libraries(corgicoind ${MINIUPNPC_LIBRARY})
 endif()
