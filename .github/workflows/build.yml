@@ -166,8 +166,54 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="-static"
           make -j$(nproc)
 
-      - name: Upload Windows binary
+      - name: Upload Windows daemon
         uses: actions/upload-artifact@v4
         with:
           name: corgicoind-windows-x64
           path: build-win/corgicoind.exe
+
+  build-windows-qt:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-boost
+            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-db
+            mingw-w64-x86_64-qt6-base
+            mingw-w64-x86_64-miniupnpc
+            make
+
+      - name: Build daemon and Qt wallet
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -G "MSYS Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_QT_GUI=ON \
+            -DBUILD_TESTS=OFF \
+            -DUSE_UPNP=OFF
+          make -j$(nproc)
+
+      - name: Upload Windows Qt wallet
+        uses: actions/upload-artifact@v4
+        with:
+          name: corgicoin-qt-windows-x64
+          path: build/corgicoin-qt.exe
+
+      - name: Upload Windows daemon
+        uses: actions/upload-artifact@v4
+        with:
+          name: corgicoind-msys2-windows-x64
+          path: build/corgicoind.exe
