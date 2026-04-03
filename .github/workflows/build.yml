@@ -163,7 +163,7 @@ jobs:
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
             -DMINIUPNPC_LIBRARY=$PREFIX/lib/libminiupnpc.a \
-            -DCMAKE_EXE_LINKER_FLAGS="-static -lws2_32 -lshlwapi"
+            -DCMAKE_EXE_LINKER_FLAGS="-static -lws2_32 -lshlwapi -lcrypt32 -lgdi32"
           make -j$(nproc)
 
       - name: Upload Windows binary
