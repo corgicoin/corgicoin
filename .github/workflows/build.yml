@@ -156,14 +156,14 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_QT_GUI=OFF \
             -DBUILD_TESTS=OFF \
+            -DUSE_UPNP=OFF \
             -DOPENSSL_ROOT_DIR=$PREFIX \
             -DBERKELEYDB_INCLUDE_DIR=$PREFIX/include \
             -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx.a \
             -DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$PREFIX/include \
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
-            -DMINIUPNPC_LIBRARY=$PREFIX/lib/libminiupnpc.a \
-            -DCMAKE_EXE_LINKER_FLAGS="-static -lws2_32 -lshlwapi -lcrypt32 -lgdi32"
+            -DCMAKE_EXE_LINKER_FLAGS="-static"
           make -j$(nproc)
 
       - name: Upload Windows binary
