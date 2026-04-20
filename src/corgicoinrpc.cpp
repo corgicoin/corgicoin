@@ -14,6 +14,7 @@
 #include "init.h"
 #include "ui_interface.h"
 #include "base58.h"
+#include "burnpayload.h"
 #include "corgicoinrpc.h"
 
 #include "logging.h"
@@ -726,6 +727,102 @@ Value burncoin(const Array& params, bool fHelp)
     result.emplace_back("amount", ValueFromAmount(nAmount));
     result.emplace_back("data", strData);
     result.emplace_back("status", "burned");
+    return result;
+}
+
+Value burnforpartner(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 3)
+        throw runtime_error(
+            "burnforpartner <amount> <partner_tag> <solana_address>\n"
+            "Burn CORG to a partner-addressed OP_RETURN output, per the\n"
+            "bridge payload spec (doc/burn-payload-spec.md).\n"
+            "<amount> is the amount of CORG to burn.\n"
+            "<partner_tag> is a 4-character ASCII tag registered in the bridge\n"
+            "  (e.g. \"CORG\"). Must match partners.json on the bridge side.\n"
+            "<solana_address> is a base58-encoded 32-byte Solana public key.\n"
+            "The burned coins are permanently destroyed and cannot be recovered.");
+
+    if (pwalletMain->IsLocked())
+        throw JSONRPCError(-13, "Error: Please enter the wallet passphrase with walletpassphrase first.");
+
+    int64 nAmount = AmountFromValue(params[0]);
+    if (nAmount < COIN)
+        throw JSONRPCError(-3, "Burn amount must be at least 1 CORG");
+
+    string strPartner = params[1].get_str();
+    if (!burnpayload::IsValidPartnerTag(strPartner))
+        throw JSONRPCError(-3, "partner_tag must be exactly 4 printable ASCII characters");
+
+    string strSolAddr = params[2].get_str();
+    vector<unsigned char> vSolDest;
+    if (!DecodeBase58(strSolAddr.c_str(), vSolDest))
+        throw JSONRPCError(-3, "solana_address is not valid base58");
+    if (vSolDest.size() != burnpayload::SOL_DEST_LEN)
+        throw JSONRPCError(-3, "solana_address must decode to exactly 32 bytes");
+
+    vector<unsigned char> vPayload;
+    try {
+        vPayload = burnpayload::Encode(strPartner, vSolDest);
+    } catch (const std::exception& e) {
+        throw JSONRPCError(-3, e.what());
+    }
+
+    CScript scriptBurn;
+    scriptBurn << OP_RETURN << vPayload;
+
+    CWalletTx wtx;
+    CReserveKey keyChange(pwalletMain.get());
+    int64 nFeeRequired;
+
+    vector<pair<CScript, int64>> vecSend;
+    vecSend.push_back({scriptBurn, nAmount});
+
+    bool fCreated = pwalletMain->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired);
+    if (!fCreated)
+    {
+        if (nAmount + nFeeRequired > pwalletMain->GetBalance())
+            throw JSONRPCError(-6, "Insufficient funds (amount + fee exceeds balance)");
+        throw JSONRPCError(-4, "Transaction creation failed");
+    }
+
+    if (!pwalletMain->CommitTransaction(wtx, keyChange))
+        throw JSONRPCError(-4, "Transaction commit failed");
+
+    Object result;
+    result.emplace_back("txid", wtx.GetHash().GetHex());
+    result.emplace_back("amount", ValueFromAmount(nAmount));
+    result.emplace_back("partner", strPartner);
+    result.emplace_back("sol_dest", strSolAddr);
+    result.emplace_back("payload_hex", HexStr(vPayload));
+    result.emplace_back("status", "burned");
+    return result;
+}
+
+Value decodeburn(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "decodeburn <scriptPubKey_hex>\n"
+            "Parse a hex-encoded scriptPubKey and, if it matches the bridge\n"
+            "burn payload spec (doc/burn-payload-spec.md), return the decoded\n"
+            "partner tag and Solana destination.\n"
+            "Returns an error if the script is not a valid bridge burn.");
+
+    string strHex = params[0].get_str();
+    vector<unsigned char> vScript = ParseHex(strHex);
+    CScript script(vScript.begin(), vScript.end());
+
+    string partner;
+    vector<unsigned char> solDest;
+    if (!burnpayload::DecodeScript(script, partner, solDest))
+        throw JSONRPCError(-3, "scriptPubKey is not a valid bridge burn payload");
+
+    Object result;
+    result.emplace_back("magic", string(burnpayload::MAGIC, burnpayload::MAGIC_LEN));
+    result.emplace_back("partner", partner);
+    result.emplace_back("sol_dest_hex", HexStr(solDest));
+    result.emplace_back("sol_dest_base58", EncodeBase58(solDest));
     return result;
 }
 
@@ -2406,6 +2503,8 @@ static const CRPCCommand vRPCCommands[] =
     { "getaddressesbyaccount",  &getaddressesbyaccount,  true },
     { "sendtoaddress",          &sendtoaddress,          false },
     { "burncoin",               &burncoin,               false },
+    { "burnforpartner",         &burnforpartner,         false },
+    { "decodeburn",             &decodeburn,             true  },
     { "getreceivedbyaddress",   &getreceivedbyaddress,   false },
     { "getreceivedbyaccount",   &getreceivedbyaccount,   false },
     { "listreceivedbyaddress",  &listreceivedbyaddress,  false },
@@ -3305,6 +3404,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "sendtoaddress"          && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "burncoin"              && n > 0) ConvertTo<double>(params[0]);
+    if (strMethod == "burnforpartner"         && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "setmininput"            && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "getreceivedbyaddress"   && n > 1) ConvertTo<boost::int64_t>(params[1]);

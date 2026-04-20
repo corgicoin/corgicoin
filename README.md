@@ -6,11 +6,11 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.1.0.0** — fully modernized, network live, with cross-chain burn bridge:
+**Version 4.2.0.0** — fully modernized, network live, with multipartner cross-chain burn bridge:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
-- On-chain burn mechanism (`burncoin` RPC) for Solana/pump.fun cross-chain integration
+- On-chain burn mechanism: `burncoin` (raw) + `burnforpartner` / `decodeburn` (structured, multipartner) for Solana cross-chain integration
 - Genesis block mined, mainnet running with seed nodes
 - Protocol version 70001
 
@@ -96,6 +96,13 @@ rpcport=62555
 
 ## Version History
 
+### v4.2.0.0 — Multipartner Burn Bridge
+- `burnforpartner <amount> <partner_tag> <solana_address>` RPC: structured, multipartner burns
+- `decodeburn <scriptPubKey_hex>` RPC: parses bridge burn payloads off-chain
+- 39-byte OP_RETURN payload spec (`doc/burn-payload-spec.md`): `"SOL"` magic + 4-byte partner tag + 32-byte Solana pubkey
+- 8 new unit tests covering the payload encode/decode round-trip
+- Wallet builds now available for macOS, Windows, and Linux
+
 ### v4.1.0.0 — Network Launch + Cross-Chain Burns
 - Genesis block mined, mainnet live with seed nodes
 - On-chain burn mechanism: `burncoin` RPC with OP_RETURN data embedding
@@ -135,17 +142,18 @@ rpcport=62555
 - [x] Replace `boost::filesystem` with `std::filesystem`
 - [x] Replace `json_spirit` with nlohmann/json
 - [x] Full asset rebranding (icons, installer, share/ directory)
-- [x] Unit test suite (79 tests: scrypt, addresses, block rewards, serialization, etc.)
+- [x] Unit test suite (scrypt, addresses, block rewards, serialization, burn payloads, etc.)
 - [x] Qt 6 support (Qt 4 dropped, Qt 5/6 dual support)
 - [x] Logging framework with categories
 - [x] Genesis block mined (mainnet + testnet)
 - [x] Seed node deployment (2 nodes live)
 - [x] On-chain burn mechanism (`burncoin` RPC + OP_RETURN)
+- [x] Windows cross-compiled wallet build
+- [x] Multipartner burn payload spec + `burnforpartner` / `decodeburn` RPCs
 
 ### In Progress
-- [ ] Windows cross-compiled build
+- [ ] Burn bridge oracle PoC (devnet): watches chain, dispatches SPL rewards per partner
 - [ ] Pump.fun partner token integration
-- [ ] Burn oracle service (monitors chain, distributes rewards on Solana)
 
 ### Planned
 - [ ] Block explorer

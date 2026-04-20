@@ -8,7 +8,7 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
 
-project(CorgiCoin VERSION 4.1.0.0 LANGUAGES CXX C)
+project(CorgiCoin VERSION 4.2.0.0 LANGUAGES CXX C)
 
 # Add custom CMake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
@@ -508,6 +508,7 @@ if(BUILD_TESTS)
         src/test/address_tests.cpp
         src/test/blockreward_tests.cpp
         src/test/serialize_tests.cpp
+        src/test/burnpayload_tests.cpp
     )
 
     # Tests use the daemon sources minus init.cpp (test_bitcoin.cpp provides its own main/setup)
@@ -578,5 +579,5 @@ if(BUILD_QT_GUI)
     endif()
 endif()
 message(STATUS "")
-message(STATUS "CorgiCoin v4.1.0.0 — C++17, OpenSSL 3.x, Qt 5/6, nlohmann/json")
+message(STATUS "CorgiCoin v4.2.0.0 — C++17, OpenSSL 3.x, Qt 5/6, nlohmann/json")
 message(STATUS "")
