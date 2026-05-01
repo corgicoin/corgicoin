@@ -67,8 +67,11 @@ class CorgiRPC:
             json={"jsonrpc": "1.0", "id": self._id, "method": method, "params": list(params)},
             timeout=30,
         )
-        resp.raise_for_status()
-        body = resp.json()
+        try:
+            body = resp.json()
+        except ValueError:
+            resp.raise_for_status()
+            raise RuntimeError(f"corgicoind RPC non-JSON response on {method}: {resp.text[:200]}")
         if body.get("error"):
             raise RuntimeError(f"corgicoind RPC error on {method}: {body['error']}")
         return body["result"]

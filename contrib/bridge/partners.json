@@ -1,6 +1,6 @@
 {
   "CORG": {
-    "token_mint": "REPLACE_WITH_DEVNET_MINT_ADDRESS",
+    "token_mint": "8xudSD6kdeFu1nu5sEiy9zBm2iYhKnnsZfyfF6HGyPq4",
     "decimals": 6,
     "reward_ratio": 1.0,
     "treasury_keypair": "corg-treasury.json"
