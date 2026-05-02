@@ -141,3 +141,12 @@ Verify on a Solana devnet explorer using the returned signature.
 - **Unknown partners** are logged and skipped. Useful if someone burns with
   a partner tag we haven't registered yet — we can backfill later by
   looking at `state.json`.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/
+```
+
+Tests are pure-mock — they don't need corgicoind or Solana RPC.
