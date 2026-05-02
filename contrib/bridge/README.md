@@ -135,11 +135,9 @@ Verify on a Solana devnet explorer using the returned signature.
   marker hits disk *before* `send_reward` is called, so a crash between
   submission and result-recording leaves a `pending` entry on restart. The
   bridge will NOT auto-retry these (it cannot tell whether the original
-  RPC actually landed on Solana, so retry could double-send). Reconcile
-  manually: check the treasury's recent Solana TX history and either
-  - set `status: "dispatched"` + add `sol_sig` if the reward did land, or
-  - delete the entry to allow reprocess if you've confirmed it didn't.
-  Restart logs a warning listing any `pending` txids found at startup.
+  RPC actually landed on Solana, so retry could double-send). Restart logs
+  a warning listing any `pending` txids; use the reconcile commands below
+  to clear them.
 - **Confirmation depth** defaults to 10. CorgiCoin's coinbase maturity is
   30 blocks and reorgs past that are vanishingly rare, but 10 is already
   much deeper than realistic chain churn in PoC conditions.
@@ -148,6 +146,28 @@ Verify on a Solana devnet explorer using the returned signature.
 - **Unknown partners** are logged and skipped. Useful if someone burns with
   a partner tag we haven't registered yet — we can backfill later by
   looking at `state.json`.
+
+## Reconcile commands
+
+When the bridge has `pending` or `dispatch_error` entries (from a crash
+mid-dispatch or a Solana RPC error), use these instead of editing
+`state.json` by hand:
+
+```bash
+# Show all pending and dispatch_error entries
+python bridge.py --list-pending
+
+# Confirmed the reward landed on Solana — promote to dispatched
+python bridge.py --mark-dispatched <CORG_TXID> <SOL_SIG>
+
+# Confirmed the reward did NOT land — delete the entry and rewind so the
+# next tick reprocesses it from scratch
+python bridge.py --reset <CORG_TXID>
+```
+
+`--reset` refuses already-`dispatched` entries (would double-send), and
+auto-rewinds `last_height` to `entry.height - 1` so the bridge re-scans
+the burn's block on next tick.
 
 ## Tests
 

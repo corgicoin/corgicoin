@@ -285,6 +285,77 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
 
 
 # ---------------------------------------------------------------------------
+# Reconciliation (operator actions on stuck entries)
+# ---------------------------------------------------------------------------
+
+RECONCILABLE_STATUSES = ("pending", "dispatch_error")
+
+
+def reconcile_list_pending(state: "State") -> int:
+    rows = [(t, e) for t, e in state.processed.items()
+            if e.get("status") in RECONCILABLE_STATUSES]
+    if not rows:
+        print("no pending or dispatch_error entries")
+        return 0
+    for txid, e in rows:
+        line = f"{e['status'].upper():15s} {txid}  partner={e.get('partner')}  "\
+               f"amount={e.get('amount_corg')}  reward={e.get('reward')}  "\
+               f"sol_dest={e.get('sol_dest')}"
+        if e.get("status") == "dispatch_error":
+            line += f"  error={e.get('error', '?')}"
+        print(line)
+    return 0
+
+
+def reconcile_mark_dispatched(state: "State", txid: str, sol_sig: str) -> int:
+    entry = state.processed.get(txid)
+    if entry is None:
+        print(f"error: txid {txid} not found in state.json", file=sys.stderr)
+        return 2
+    if entry.get("status") == "dispatched":
+        print(f"error: txid {txid} is already dispatched (sig={entry.get('sol_sig')})",
+              file=sys.stderr)
+        return 2
+    if entry.get("status") not in RECONCILABLE_STATUSES:
+        print(f"error: txid {txid} has status {entry.get('status')!r}, not reconcilable",
+              file=sys.stderr)
+        return 2
+    new_entry = {k: v for k, v in entry.items() if k != "error"}
+    new_entry["status"] = "dispatched"
+    new_entry["sol_sig"] = sol_sig
+    state.record(txid, new_entry)
+    state.save()
+    print(f"marked {txid} dispatched with sig {sol_sig}")
+    return 0
+
+
+def reconcile_reset(state: "State", txid: str) -> int:
+    entry = state.processed.get(txid)
+    if entry is None:
+        print(f"error: txid {txid} not found in state.json", file=sys.stderr)
+        return 2
+    if entry.get("status") == "dispatched":
+        print(f"error: refusing to reset dispatched entry {txid} "
+              f"(would risk double-send on reprocess)", file=sys.stderr)
+        return 2
+    if entry.get("status") not in RECONCILABLE_STATUSES:
+        print(f"error: txid {txid} has status {entry.get('status')!r}, not resettable",
+              file=sys.stderr)
+        return 2
+    burn_height = entry.get("height")
+    state.processed.pop(txid)
+    # Rewind so the next tick re-scans the block this burn was in. Without
+    # this, last_height being past burn_height means the bridge silently
+    # skips it forever. Already-processed entries in the rewound range
+    # are protected by the already_processed check.
+    if isinstance(burn_height, int) and state.last_height >= burn_height:
+        state.last_height = max(0, burn_height - 1)
+    state.save()
+    print(f"reset {txid} (entry removed; last_height={state.last_height} for reprocess)")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -294,12 +365,30 @@ def main() -> int:
     parser.add_argument("--confirmations", type=int, default=DEFAULT_CONFIRMATIONS)
     parser.add_argument("--poll-seconds", type=int, default=DEFAULT_POLL_SECONDS)
     parser.add_argument("--once", action="store_true", help="run a single tick and exit")
+    rec = parser.add_mutually_exclusive_group()
+    rec.add_argument("--list-pending", action="store_true",
+                     help="list pending and dispatch_error entries, then exit")
+    rec.add_argument("--mark-dispatched", nargs=2, metavar=("TXID", "SOL_SIG"),
+                     help="mark a pending/dispatch_error entry as dispatched and exit")
+    rec.add_argument("--reset", metavar="TXID",
+                     help="delete a pending/dispatch_error entry and rewind for reprocess, then exit")
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    state_path = args.config_dir / "state.json"
+    if args.list_pending:
+        return reconcile_list_pending(State(state_path))
+    if args.mark_dispatched:
+        s = State(state_path)
+        rc = reconcile_mark_dispatched(s, args.mark_dispatched[0], args.mark_dispatched[1])
+        return rc
+    if args.reset:
+        s = State(state_path)
+        return reconcile_reset(s, args.reset)
 
     rpc = CorgiRPC(
         url=os.environ.get("CORGI_RPC_URL", "http://127.0.0.1:62555"),
