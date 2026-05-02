@@ -34,6 +34,12 @@ jobs:
           cd build
           ./test_corgicoin
 
+      - name: Upload Linux daemon
+        uses: actions/upload-artifact@v4
+        with:
+          name: corgicoind-linux-x64
+          path: build/corgicoind
+
   build-macos:
     runs-on: macos-14
     steps:
@@ -58,6 +64,12 @@ jobs:
         run: |
           cd build
           ./test_corgicoin
+
+      - name: Upload macOS daemon
+        uses: actions/upload-artifact@v4
+        with:
+          name: corgicoind-macos-arm64
+          path: build/corgicoind
 
   build-windows:
     runs-on: ubuntu-24.04
