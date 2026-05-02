@@ -1,6 +1,9 @@
-"""Tests for process_burn: routes a Burn to the right partner's dispatcher,
-records the outcome in State, and intentionally leaves no record on dispatch
-failure so the next tick retries."""
+"""Tests for process_burn: routes a Burn to the right partner's dispatcher
+and records the outcome in State.
+
+The dispatch flow is at-most-once: a 'pending' marker is written before the
+Solana RPC call, so a crash between submission and result-recording is
+recoverable (manually) without double-sending."""
 from decimal import Decimal
 from unittest.mock import Mock
 
@@ -64,9 +67,12 @@ def test_unknown_partner_is_recorded_as_skipped(tmp_path):
     assert entry["partner"] == "WHAT"
 
 
-def test_dispatch_failure_leaves_no_record(tmp_path):
-    """If Solana dispatch throws (network error, treasury underfunded, etc.),
-    process_burn must NOT record the txid — the next tick will retry."""
+def test_dispatch_failure_records_dispatch_error(tmp_path):
+    """When dispatch raises, process_burn must record 'dispatch_error' so the
+    next tick treats the txid as already_processed and refuses to re-dispatch.
+    Operator must reconcile manually (the alternative — auto-retry — could
+    double-send if the original RPC actually landed on Solana before the
+    client error)."""
     partner = _make_partner()
     burn = _make_burn()
     dispatcher = Mock()
@@ -75,7 +81,36 @@ def test_dispatch_failure_leaves_no_record(tmp_path):
 
     bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
 
-    assert burn.txid not in state.processed
+    entry = state.processed[burn.txid]
+    assert entry["status"] == "dispatch_error"
+    assert "treasury empty" in entry["error"]
+    assert entry["partner"] == "CORG"
+    # already_processed must return True so reprocess on restart is blocked
+    assert state.already_processed(burn.txid)
+
+
+def test_pending_recorded_before_dispatch(tmp_path):
+    """The 'pending' marker must hit disk BEFORE send_reward is called —
+    otherwise a crash mid-RPC could leave no marker and re-dispatch on restart."""
+    partner = _make_partner()
+    burn = _make_burn()
+    state = bridge.State(tmp_path / "state.json")
+    captured = {}
+
+    def capture_state_at_dispatch(*_args, **_kwargs):
+        # Re-read state.json from disk to verify the pending record was saved,
+        # not just held in memory.
+        reloaded = bridge.State(tmp_path / "state.json")
+        captured["status"] = reloaded.processed.get(burn.txid, {}).get("status")
+        return "fake-sig"
+
+    dispatcher = Mock()
+    dispatcher.send_reward.side_effect = capture_state_at_dispatch
+
+    bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
+
+    assert captured["status"] == "pending"
+    assert state.processed[burn.txid]["status"] == "dispatched"
 
 
 def test_reward_ratio_scales_payout(tmp_path):

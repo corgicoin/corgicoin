@@ -129,10 +129,17 @@ Verify on a Solana devnet explorer using the returned signature.
 
 ## Operational notes
 
-- **Idempotency** is on CORG txid. If the bridge crashes mid-dispatch, a
-  retry may produce a duplicate Solana transfer. The current PoC does not
-  detect this — any future hardening should move the dedupe check onto the
-  Solana side (e.g. a program that records processed CORG txids).
+- **Idempotency** is on CORG txid, with at-most-once dispatch. Each burn
+  walks the state machine `pending` → `dispatched` (success) or `pending`
+  → `dispatch_error` (exception during the Solana RPC call). The `pending`
+  marker hits disk *before* `send_reward` is called, so a crash between
+  submission and result-recording leaves a `pending` entry on restart. The
+  bridge will NOT auto-retry these (it cannot tell whether the original
+  RPC actually landed on Solana, so retry could double-send). Reconcile
+  manually: check the treasury's recent Solana TX history and either
+  - set `status: "dispatched"` + add `sol_sig` if the reward did land, or
+  - delete the entry to allow reprocess if you've confirmed it didn't.
+  Restart logs a warning listing any `pending` txids found at startup.
 - **Confirmation depth** defaults to 10. CorgiCoin's coinbase maturity is
   30 blocks and reorgs past that are vanishingly rare, but 10 is already
   much deeper than realistic chain churn in PoC conditions.

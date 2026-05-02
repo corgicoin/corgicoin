@@ -254,24 +254,33 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
         return
 
     reward = burn.amount_corg * partner.reward_ratio
-    try:
-        sol_sig = dispatcher.send_reward(partner, burn.sol_dest, reward)
-    except Exception as e:
-        log.error("dispatch failed for %s -> %s: %s", burn.txid, burn.partner, e)
-        # Intentionally do NOT record - next tick will retry.
-        return
-
-    log.info("dispatched %s %s -> %s (corg tx %s, sol sig %s)",
-             reward, partner.tag, burn.sol_dest, burn.txid, sol_sig)
-    state.record(burn.txid, {
-        "status": "dispatched",
+    base_entry = {
         "partner": partner.tag,
         "height": burn.height,
         "amount_corg": str(burn.amount_corg),
         "reward": str(reward),
         "sol_dest": str(burn.sol_dest),
-        "sol_sig": sol_sig,
-    })
+    }
+
+    # Write 'pending' BEFORE the Solana RPC call. If we crash between
+    # send_reward dispatching and recording the result, the next tick will see
+    # this entry as already_processed and refuse to re-dispatch. The operator
+    # reconciles manually (see README).
+    state.record(burn.txid, {**base_entry, "status": "pending"})
+    state.save()
+
+    try:
+        sol_sig = dispatcher.send_reward(partner, burn.sol_dest, reward)
+    except Exception as e:
+        log.error("dispatch failed for %s -> %s: %s — marked dispatch_error, manual review required",
+                  burn.txid, burn.partner, e)
+        state.record(burn.txid, {**base_entry, "status": "dispatch_error", "error": str(e)})
+        state.save()
+        return
+
+    log.info("dispatched %s %s -> %s (corg tx %s, sol sig %s)",
+             reward, partner.tag, burn.sol_dest, burn.txid, sol_sig)
+    state.record(burn.txid, {**base_entry, "status": "dispatched", "sol_sig": sol_sig})
     state.save()
 
 
@@ -309,6 +318,13 @@ def main() -> int:
     state = State(args.config_dir / "state.json")
     log.info("resuming from height %d (%d burns in log)",
              state.last_height, len(state.processed))
+
+    pending = [t for t, e in state.processed.items() if e.get("status") == "pending"]
+    if pending:
+        log.warning("%d burn(s) left in 'pending' state from a previous run: %s", len(pending), pending)
+        log.warning("these will NOT be auto-retried (would risk double-send). Verify on Solana, "
+                    "then edit state.json: set status='dispatched' (with sol_sig) if the reward "
+                    "landed, or remove the entry to allow reprocess.")
 
     stopping = False
     def _stop(*_): nonlocal stopping; stopping = True
