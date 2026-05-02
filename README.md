@@ -100,8 +100,9 @@ rpcport=62555
 - `burnforpartner <amount> <partner_tag> <solana_address>` RPC: structured, multipartner burns
 - `decodeburn <scriptPubKey_hex>` RPC: parses bridge burn payloads off-chain
 - 39-byte OP_RETURN payload spec (`doc/burn-payload-spec.md`): `"SOL"` magic + 4-byte partner tag + 32-byte Solana pubkey
-- 8 new unit tests covering the payload encode/decode round-trip
+- 8 new unit tests covering the payload encode/decode round-trip (suite now ~87 tests)
 - Wallet builds now available for macOS, Windows, and Linux
+- Bridge PoC (`contrib/bridge/bridge.py`): first end-to-end devnet dispatch — CORG burn → Solana SPL mint
 
 ### v4.1.0.0 — Network Launch + Cross-Chain Burns
 - Genesis block mined, mainnet live with seed nodes
@@ -150,9 +151,10 @@ rpcport=62555
 - [x] On-chain burn mechanism (`burncoin` RPC + OP_RETURN)
 - [x] Windows cross-compiled wallet build
 - [x] Multipartner burn payload spec + `burnforpartner` / `decodeburn` RPCs
+- [x] Burn bridge oracle PoC: first end-to-end devnet dispatch (CORG burn → Solana SPL mint)
 
 ### In Progress
-- [ ] Burn bridge oracle PoC (devnet): watches chain, dispatches SPL rewards per partner
+- [ ] Bridge hardening: idempotency, Python test coverage
 - [ ] Pump.fun partner token integration
 
 ### Planned
