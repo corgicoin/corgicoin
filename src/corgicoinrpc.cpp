@@ -185,7 +185,7 @@ void WalletTxToJSON(const CWalletTx& wtx, Object& entry)
         entry.emplace_back("blockindex", wtx.nIndex);
     }
     entry.emplace_back("txid", wtx.GetHash().GetHex());
-    entry.emplace_back("time", (boost::int64_t)wtx.GetTxTime());
+    entry.emplace_back("time", (int64_t)wtx.GetTxTime());
     for (const auto& item : wtx.mapValue)
         entry.emplace_back(item.first, item.second);
 }
@@ -213,8 +213,8 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex)
     for (const CTransaction&tx : block.vtx)
         txs.push_back(tx.GetHash().GetHex());
     result.emplace_back("tx", txs);
-    result.emplace_back("time", (boost::int64_t)block.GetBlockTime());
-    result.emplace_back("nonce", (boost::uint64_t)block.nNonce);
+    result.emplace_back("time", (int64_t)block.GetBlockTime());
+    result.emplace_back("nonce", (uint64_t)block.nNonce);
     result.emplace_back("bits", HexBits(block.nBits));
     result.emplace_back("difficulty", GetDifficulty(blockindex));
 
@@ -332,7 +332,7 @@ Value GetNetworkHashPS(int lookup) {
     double timeDiff = pindexBest->GetBlockTime() - pindexPrev->GetBlockTime();
     double timePerBlock = timeDiff / lookup;
 
-    return static_cast<boost::int64_t>((static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock);
+    return static_cast<int64_t>((static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock);
 }
 
 Value getnetworkhashps(const Array& params, bool fHelp)
@@ -392,8 +392,8 @@ Value gethashespersec(const Array& params, bool fHelp)
             "Returns a recent hashes per second performance measurement while generating.");
 
     if (GetTimeMillis() - nHPSTimerStart > 8000)
-        return (boost::int64_t)0;
-    return (boost::int64_t)dHashesPerSec;
+        return (int64_t)0;
+    return (int64_t)dHashesPerSec;
 }
 
 
@@ -417,12 +417,12 @@ Value getinfo(const Array& params, bool fHelp)
     obj.emplace_back("proxy",         (addrProxy.IsValid() ? addrProxy.ToStringIPPort() : string()));
     obj.emplace_back("difficulty",    static_cast<double>(GetDifficulty()));
     obj.emplace_back("testnet",       fTestNet);
-    obj.emplace_back("keypoololdest", (boost::int64_t)pwalletMain->GetOldestKeyPoolTime());
+    obj.emplace_back("keypoololdest", (int64_t)pwalletMain->GetOldestKeyPoolTime());
     obj.emplace_back("keypoolsize",   pwalletMain->GetKeyPoolSize());
     obj.emplace_back("paytxfee",      ValueFromAmount(nTransactionFee));
     obj.emplace_back("mininput",      ValueFromAmount(nMinimumInputValue));
     if (pwalletMain->IsCrypted())
-        obj.emplace_back("unlocked_until", (boost::int64_t)nWalletUnlockTime / 1000);
+        obj.emplace_back("unlocked_until", (int64_t)nWalletUnlockTime / 1000);
     obj.emplace_back("errors",        GetWarnings("statusbar"));
     return obj;
 }
@@ -1505,7 +1505,7 @@ void AcentryToJSON(const CAccountingEntry& acentry, const string& strAccount, Ar
         Object entry;
         entry.emplace_back("account", acentry.strAccount);
         entry.emplace_back("category", "move");
-        entry.emplace_back("time", (boost::int64_t)acentry.nTime);
+        entry.emplace_back("time", (int64_t)acentry.nTime);
         entry.emplace_back("amount", ValueFromAmount(acentry.nCreditDebit));
         entry.emplace_back("otheraccount", acentry.strOtherAccount);
         entry.emplace_back("comment", acentry.strComment);
@@ -3401,37 +3401,37 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     // Special case non-string parameter types
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
-    if (strMethod == "setgenerate"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
+    if (strMethod == "setgenerate"            && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "sendtoaddress"          && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "burncoin"              && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "burnforpartner"         && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "setmininput"            && n > 0) ConvertTo<double>(params[0]);
-    if (strMethod == "getreceivedbyaddress"   && n > 1) ConvertTo<boost::int64_t>(params[1]);
-    if (strMethod == "getreceivedbyaccount"   && n > 1) ConvertTo<boost::int64_t>(params[1]);
-    if (strMethod == "listreceivedbyaddress"  && n > 0) ConvertTo<boost::int64_t>(params[0]);
+    if (strMethod == "getreceivedbyaddress"   && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "getreceivedbyaccount"   && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "listreceivedbyaddress"  && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "listreceivedbyaddress"  && n > 1) ConvertTo<bool>(params[1]);
-    if (strMethod == "listreceivedbyaccount"  && n > 0) ConvertTo<boost::int64_t>(params[0]);
+    if (strMethod == "listreceivedbyaccount"  && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "listreceivedbyaccount"  && n > 1) ConvertTo<bool>(params[1]);
-    if (strMethod == "getbalance"             && n > 1) ConvertTo<boost::int64_t>(params[1]);
-    if (strMethod == "getblockhash"           && n > 0) ConvertTo<boost::int64_t>(params[0]);
+    if (strMethod == "getbalance"             && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "getblockhash"           && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "move"                   && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "move"                   && n > 3) ConvertTo<boost::int64_t>(params[3]);
+    if (strMethod == "move"                   && n > 3) ConvertTo<int64_t>(params[3]);
     if (strMethod == "sendfrom"               && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "sendfrom"               && n > 3) ConvertTo<boost::int64_t>(params[3]);
-    if (strMethod == "listtransactions"       && n > 1) ConvertTo<boost::int64_t>(params[1]);
-    if (strMethod == "listtransactions"       && n > 2) ConvertTo<boost::int64_t>(params[2]);
-    if (strMethod == "listaccounts"           && n > 0) ConvertTo<boost::int64_t>(params[0]);
-    if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<boost::int64_t>(params[1]);
+    if (strMethod == "sendfrom"               && n > 3) ConvertTo<int64_t>(params[3]);
+    if (strMethod == "listtransactions"       && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "listtransactions"       && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "listaccounts"           && n > 0) ConvertTo<int64_t>(params[0]);
+    if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
-    if (strMethod == "listsinceblock"         && n > 1) ConvertTo<boost::int64_t>(params[1]);
+    if (strMethod == "listsinceblock"         && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "sendmany"               && n > 1) ConvertTo<Object>(params[1]);
-    if (strMethod == "sendmany"               && n > 2) ConvertTo<boost::int64_t>(params[2]);
-    if (strMethod == "addmultisigaddress"     && n > 0) ConvertTo<boost::int64_t>(params[0]);
+    if (strMethod == "sendmany"               && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "addmultisigaddress"     && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "addmultisigaddress"     && n > 1) ConvertTo<Array>(params[1]);
-    if (strMethod == "listunspent"            && n > 0) ConvertTo<boost::int64_t>(params[0]);
-    if (strMethod == "listunspent"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
-    if (strMethod == "getrawtransaction"      && n > 1) ConvertTo<boost::int64_t>(params[1]);
+    if (strMethod == "listunspent"            && n > 0) ConvertTo<int64_t>(params[0]);
+    if (strMethod == "listunspent"            && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "getrawtransaction"      && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "createrawtransaction"   && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "createrawtransaction"   && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "signrawtransaction"     && n > 1) ConvertTo<Array>(params[1]);

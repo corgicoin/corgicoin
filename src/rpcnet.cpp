@@ -52,13 +52,13 @@ Value getpeerinfo(const Array& params, bool fHelp)
 
         obj.emplace_back("addr", stats.addrName);
         obj.emplace_back("services", strprintf("%08" PRI64x, stats.nServices));
-        obj.emplace_back("lastsend", (boost::int64_t)stats.nLastSend);
-        obj.emplace_back("lastrecv", (boost::int64_t)stats.nLastRecv);
-        obj.emplace_back("conntime", (boost::int64_t)stats.nTimeConnected);
+        obj.emplace_back("lastsend", (int64_t)stats.nLastSend);
+        obj.emplace_back("lastrecv", (int64_t)stats.nLastRecv);
+        obj.emplace_back("conntime", (int64_t)stats.nTimeConnected);
         obj.emplace_back("version", stats.nVersion);
         obj.emplace_back("subver", stats.strSubVer);
         obj.emplace_back("inbound", stats.fInbound);
-        obj.emplace_back("releasetime", (boost::int64_t)stats.nReleaseTime);
+        obj.emplace_back("releasetime", (int64_t)stats.nReleaseTime);
         obj.emplace_back("startingheight", stats.nStartingHeight);
         obj.emplace_back("banscore", stats.nMisbehavior);
 

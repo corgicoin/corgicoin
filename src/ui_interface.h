@@ -97,12 +97,13 @@ public:
 extern CClientUIInterface uiInterface;
 
 /**
- * Translation function: Call Translate signal on UI interface, which returns a boost::optional result.
- * If no translation slot is registered, nothing is returned, and simply return the input.
+ * Translation function: Call Translate signal on UI interface, which returns an
+ * optional result (the signals2 combiner yields no value when no slot is
+ * registered). If nothing is returned, simply return the input.
  */
 inline std::string _(const char* psz)
 {
-    boost::optional<std::string> rv = uiInterface.Translate(psz);
+    auto rv = uiInterface.Translate(psz);
     return rv ? (*rv) : psz;
 }
 

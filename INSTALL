@@ -1,37 +1,20 @@
-Building Corgicoin
+Building CorgiCoin
 ==================
 
-IMPORTANT: Before building, please read MODERNIZATION.md for critical security
-information about outdated dependencies and recommended versions.
+CorgiCoin builds with CMake. See BUILD.cmake.md for full, current
+instructions covering the daemon (corgicoind) and the Qt wallet
+(corgicoin-qt) on Linux, macOS, and Windows.
 
-Quick Start
+Quick start
 -----------
 
-For GUI wallet (Corgicoin-QT):
-    See doc/readme-qt.rst for detailed build instructions
+    mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Release
+    cmake --build . -j
 
-For daemon (corgicoind):
-    See doc/build-unix.txt (Linux/Unix)
-    See doc/build-osx.txt (macOS)
-    See doc/build-msw.txt (Windows)
+Common options:
+    -DBUILD_QT_GUI=ON|OFF    build the Qt5/6 wallet (default ON)
+    -DBUILD_TESTS=ON|OFF     build the unit test suite
 
-Modernization Status
---------------------
-
-This codebase (v1.4.1.6) has been modernized with C++11 support but still
-requires dependency upgrades for production use. See MODERNIZATION.md for:
-- Critical security warnings (OpenSSL 1.0.x vulnerabilities)
-- Recommended modern dependency versions
-- Build configuration updates
-- Testing requirements
-
-Recommended Dependencies for Modern Systems
--------------------------------------------
-
-- OpenSSL 3.x (CRITICAL - 1.0.x has known vulnerabilities)
-- Boost 1.70+ (for C++11/14/17 compatibility)
-- Berkeley DB 5.3.28+ or 6.x (for wallet storage)
-- Qt 5.15 LTS (for GUI builds)
-- GCC 7+ or Clang 7+ (C++11 support required)
-
-See MODERNIZATION.md for complete dependency information and migration guide.
+Dependencies: C++17 compiler, OpenSSL 3.x, Boost 1.55+, Berkeley DB 5.3+,
+and (for the GUI) Qt 5.15+ or Qt 6. See BUILD.cmake.md for details.
