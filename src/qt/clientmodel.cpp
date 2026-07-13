@@ -159,8 +159,8 @@ void ClientModel::setMiningPassword(QString password)
 int ClientModel::getHashrate() const
 {
     if (GetTimeMillis() - nHPSTimerStart > 8000)
-        return (boost::int64_t)0;
-    return (boost::int64_t)dHashesPerSec;
+        return (int64_t)0;
+    return (int64_t)dHashesPerSec;
 }
 
 // Litecoin: copied from corgicoinrpc.cpp.

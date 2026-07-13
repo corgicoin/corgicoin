@@ -54,7 +54,7 @@ TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
 {
     entry.emplace_back("txid", tx.GetHash().GetHex());
     entry.emplace_back("version", tx.nVersion);
-    entry.emplace_back("locktime", (boost::int64_t)tx.nLockTime);
+    entry.emplace_back("locktime", (int64_t)tx.nLockTime);
     Array vin;
     for (const CTxIn& txin : tx.vin)
     {
@@ -64,13 +64,13 @@ TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
         else
         {
             in.emplace_back("txid", txin.prevout.hash.GetHex());
-            in.emplace_back("vout", (boost::int64_t)txin.prevout.n);
+            in.emplace_back("vout", (int64_t)txin.prevout.n);
             Object o;
             o.emplace_back("asm", txin.scriptSig.ToString());
             o.emplace_back("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
             in.emplace_back("scriptSig", o);
         }
-        in.emplace_back("sequence", (boost::int64_t)txin.nSequence);
+        in.emplace_back("sequence", (int64_t)txin.nSequence);
         vin.push_back(in);
     }
     entry.emplace_back("vin", vin);
@@ -80,7 +80,7 @@ TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
         const CTxOut& txout = tx.vout[i];
         Object out;
         out.emplace_back("value", ValueFromAmount(txout.nValue));
-        out.emplace_back("n", (boost::int64_t)i);
+        out.emplace_back("n", (int64_t)i);
         Object o;
         ScriptPubKeyToJSON(txout.scriptPubKey, o);
         out.emplace_back("scriptPubKey", o);
@@ -98,7 +98,7 @@ TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
             if (pindex->IsInMainChain())
             {
                 entry.emplace_back("confirmations", 1 + nBestHeight - pindex->nHeight);
-                entry.emplace_back("time", (boost::int64_t)pindex->nTime);
+                entry.emplace_back("time", (int64_t)pindex->nTime);
             }
             else
                 entry.emplace_back("confirmations", 0);
