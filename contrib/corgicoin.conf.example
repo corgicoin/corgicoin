@@ -1,0 +1,29 @@
+# CorgiCoin example configuration file
+# Copy to your data directory as corgicoin.conf:
+#   Linux:   ~/.corgicoin/corgicoin.conf
+#   macOS:   ~/Library/Application Support/CorgiCoin/corgicoin.conf
+#   Windows: %APPDATA%\CorgiCoin\corgicoin.conf
+
+# RPC credentials — required to use corgicoind as a server.
+# CHANGE THE PASSWORD. Anyone with these credentials controls your wallet.
+rpcuser=corgirpc
+rpcpassword=CHANGE_THIS_PASSWORD
+
+# RPC port (default 62555). Only listen locally unless you know what you're doing.
+#rpcport=62555
+#rpcallowip=127.0.0.1
+
+# P2P port (default 62556)
+#port=62556
+
+# Seed nodes are built in (seed1.corgicoin.co / seed2.corgicoin.co), but you
+# can pin them explicitly:
+#addnode=seed1.corgicoin.co
+#addnode=seed2.corgicoin.co
+
+# Run as a daemon (Linux/macOS)
+#daemon=1
+
+# CPU mining: generate blocks with N threads (or use `setgenerate true N` via RPC)
+#gen=1
+#genproclimit=2

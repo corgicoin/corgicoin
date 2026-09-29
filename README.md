@@ -41,6 +41,17 @@ Random block rewards seeded from previous block hash:
 | 500,001 - 600,000 | 31,250 CORG |
 | 600,001+ | 10,000 CORG (flat) |
 
+## Getting Started
+
+Prebuilt binaries for Linux, macOS, and Windows are on the
+[Releases page](https://github.com/corgicoin/corgicoin/releases) — verify
+downloads against the attached `SHA256SUMS`.
+
+Want to mine? Network hashrate is low right now, so CPU mining finds
+blocks. See **[doc/mining.md](doc/mining.md)** for a five-minute setup
+guide, and [contrib/corgicoin.conf.example](contrib/corgicoin.conf.example)
+for an annotated config.
+
 ## Building
 
 ### Requirements
