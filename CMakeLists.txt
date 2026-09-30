@@ -489,6 +489,7 @@ if(BUILD_TESTS)
         src/test/base58_tests.cpp
         src/test/base64_tests.cpp
         src/test/bignum_tests.cpp
+        src/test/difficulty_tests.cpp
         src/test/getarg_tests.cpp
         src/test/key_tests.cpp
         src/test/miner_tests.cpp

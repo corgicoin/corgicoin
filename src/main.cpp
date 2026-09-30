@@ -915,6 +915,63 @@ static constexpr int64 nTargetTimespan = 4 * 60 * 60; // CorgiCoin: every 4 hour
 static constexpr int64 nTargetSpacing = 60; // CorgiCoin: 1 minutes
 static constexpr int64 nInterval = nTargetTimespan / nTargetSpacing;
 
+int GetLwmaForkHeight()
+{
+    return fTestNet ? LWMA_FORK_HEIGHT_TESTNET : LWMA_FORK_HEIGHT_MAINNET;
+}
+
+// LWMA-1 (Zawy) per-block retarget: next target is the average target of
+// the last N blocks scaled by the linearly-weighted average of their
+// solvetimes. Consensus-critical from GetLwmaForkHeight() onward — the
+// exact integer operation order below must not change.
+// See doc/lwma-retarget-spec.md.
+unsigned int CalculateNextWorkRequiredLWMA(const CBlockIndex* pindexLast)
+{
+    constexpr int64 N = LWMA_WINDOW;
+    constexpr int64 T = nTargetSpacing;
+    constexpr int64 k = N * (N + 1) / 2 * T;
+
+    if (pindexLast == nullptr || pindexLast->nHeight < N)
+        return bnProofOfWorkLimit.GetCompact();
+
+    // Walk back to collect the window's N+1 headers, oldest first
+    std::vector<const CBlockIndex*> window(N + 1);
+    const CBlockIndex* pindex = pindexLast;
+    for (int64 i = N; i >= 0; i--)
+    {
+        window[i] = pindex;
+        pindex = pindex->pprev;
+    }
+
+    int64 nSumWeightedSolvetime = 0;
+    CBigNum bnSumTarget = 0;
+    int64 nPrevTime = window[0]->GetBlockTime();
+    for (int64 i = 1; i <= N; i++)
+    {
+        // Monotonic view of timestamps, solvetime capped at 6*T, so a
+        // single dishonest timestamp has bounded influence either way
+        int64 nThisTime = std::max(window[i]->GetBlockTime(), nPrevTime + 1);
+        int64 nSolvetime = std::min(nThisTime - nPrevTime, 6 * T);
+        nPrevTime = nThisTime;
+
+        nSumWeightedSolvetime += nSolvetime * i; // newest block gets weight N
+
+        CBigNum bnTarget;
+        bnTarget.SetCompact(window[i]->nBits);
+        bnSumTarget += bnTarget;
+    }
+
+    // next = (sumTarget / N) * sumWeightedSolvetime / k, multiplied first:
+    // CBigNum is arbitrary precision, so defer division to keep precision
+    CBigNum bnNew = bnSumTarget;
+    bnNew *= nSumWeightedSolvetime;
+    bnNew /= (N * k);
+
+    if (bnNew > bnProofOfWorkLimit)
+        bnNew = bnProofOfWorkLimit;
+    return bnNew.GetCompact();
+}
+
 //
 // minimum amount of work that could possibly be required nTime after
 // minimum work required was nBase
@@ -947,6 +1004,12 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     // Genesis block
     if (pindexLast == nullptr)
         return nProofOfWorkLimit;
+
+    // v4.3 hard fork: per-block LWMA retarget. Takes precedence over the
+    // testnet min-difficulty escape — post-fork difficulty decays on its
+    // own (doc/lwma-retarget-spec.md)
+    if (pindexLast->nHeight + 1 >= GetLwmaForkHeight())
+        return CalculateNextWorkRequiredLWMA(pindexLast);
 
     // Only change once per interval
     if ((pindexLast->nHeight+1) % nInterval != 0)
@@ -1883,6 +1946,12 @@ bool CBlock::AcceptBlock()
     // Check timestamp against prev
     if (GetBlockTime() <= pindexPrev->GetMedianTimePast())
         return LogError("AcceptBlock() : block's timestamp is too early");
+
+    // v4.3 hard fork: per-block retargeting needs a tight future time
+    // limit — 5*T instead of CheckBlock()'s 2 hours (no DoS score: an
+    // honest peer with a skewed clock can trip this)
+    if (nHeight >= GetLwmaForkHeight() && GetBlockTime() > GetAdjustedTime() + LWMA_FUTURE_TIME_LIMIT)
+        return LogError("AcceptBlock() : block timestamp too far in the future for LWMA");
 
     // Check that all transactions are finalized
     for (const CTransaction& tx : vtx)

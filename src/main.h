@@ -105,6 +105,14 @@ void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash
 bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey);
 bool CheckProofOfWork(uint256 hash, unsigned int nBits);
 unsigned int ComputeMinWork(unsigned int nBase, int64 nTime);
+
+/** v4.3 hard fork: LWMA per-block difficulty retarget (doc/lwma-retarget-spec.md) */
+static constexpr int LWMA_FORK_HEIGHT_MAINNET = 34000;
+static constexpr int LWMA_FORK_HEIGHT_TESTNET = 100;
+static constexpr int64 LWMA_WINDOW = 90;
+static constexpr int64 LWMA_FUTURE_TIME_LIMIT = 5 * 60;
+int GetLwmaForkHeight();
+unsigned int CalculateNextWorkRequiredLWMA(const CBlockIndex* pindexLast);
 int GetNumBlocksOfPeers();
 bool IsInitialBlockDownload();
 std::string GetWarnings(std::string strFor);
