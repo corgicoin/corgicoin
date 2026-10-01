@@ -128,6 +128,20 @@ Rules:
   difficulty decays quickly on its own, which is what the escape existed
   to approximate.
 
+## Pre-existing testnet bug found during rehearsal
+
+The first fork rehearsal (2026-10-01) surfaced a latent testnet bug,
+unrelated to LWMA but blocking any testnet use: testnet genesis nBits is
+`0x1f00ffff`, easier than the mainnet pow limit (`~0 >> 20`), and the
+code never relaxed `bnProofOfWorkLimit` for testnet. The pre-fork
+min-difficulty rule returns genesis nBits for any block solved within
+`2*T` of the previous one, which `CheckProofOfWork` then rejects as
+"below minimum work" — so testnet mining deadlocked at height 1 whenever
+blocks came faster than 2 minutes. Fixed in this change: testnet
+initialization sets `bnProofOfWorkLimit = ~0 >> 16`, covering genesis
+bits. Mainnet consensus is unaffected (the assignment is inside the
+`fTestNet` branch).
+
 ## Deployment plan
 
 1. Implement behind the height gate; unit tests (see below).

@@ -2136,6 +2136,12 @@ bool LoadBlockIndex(bool fAllowNew)
         pchMessageStart[1] = 0xc1;
         pchMessageStart[2] = 0xb7;
         pchMessageStart[3] = 0xdc;
+        // Testnet genesis nBits is 0x1f00ffff; the mainnet pow limit (>>20)
+        // is stricter, so without relaxing it here CheckProofOfWork rejects
+        // any testnet block whose difficulty falls back to genesis bits
+        // (which the pre-fork min-difficulty rule does for every block
+        // solved within 2*nTargetSpacing of the previous one)
+        bnProofOfWorkLimit = CBigNum(~uint256(0) >> 16);
         hashGenesisBlock = uint256("0xd2a9b071e7c7e37ad65898bb1abafa96934fd4df330d65857992201118c0ba8b");
     }
 
