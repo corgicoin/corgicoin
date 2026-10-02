@@ -18,6 +18,7 @@
 
 #include <string>
 #include <vector>
+#include "bech32.h"
 #include "bignum.h"
 #include "key.h"
 #include "script.h"
@@ -326,6 +327,62 @@ public:
                 return false;
         }
         return fExpectTestNet == fTestNet && vchData.size() == nExpectedSize;
+    }
+
+    // --- Bech32m address encoding (doc: src/bech32.h) ---------------------
+    // HRP "corg" mainnet / "tcorg" testnet; data part is one 5-bit type
+    // value (0 = P2PKH key hash, 1 = P2SH script hash) followed by the
+    // 20-byte hash repacked to 5-bit groups. An alternative *encoding* of
+    // the same destinations — base58 remains the default everywhere.
+
+    static const char* Bech32HRP() { return fTestNet ? "tcorg" : "corg"; }
+
+    std::string ToBech32() const
+    {
+        if (!IsValid())
+            return "";
+        uint8_t type;
+        if (nVersion == PUBKEY_ADDRESS || nVersion == PUBKEY_ADDRESS_TEST)
+            type = 0;
+        else
+            type = 1;
+        std::vector<uint8_t> data{type};
+        bech32::ConvertBits(8, 5, true, data, vchData);
+        return bech32::Encode(bech32::Encoding::BECH32M, Bech32HRP(), data);
+    }
+
+    bool SetBech32(const std::string& str)
+    {
+        bech32::DecodeResult dec = bech32::Decode(str);
+        if (dec.encoding != bech32::Encoding::BECH32M || dec.hrp != Bech32HRP() || dec.data.empty())
+            return false;
+        uint8_t type = dec.data[0];
+        if (type > 1)
+            return false;
+        std::vector<uint8_t> hash;
+        if (!bech32::ConvertBits(5, 8, false, hash,
+                                 std::vector<uint8_t>(dec.data.begin() + 1, dec.data.end())))
+            return false;
+        if (hash.size() != 20)
+            return false;
+        if (type == 0)
+            SetData(fTestNet ? PUBKEY_ADDRESS_TEST : PUBKEY_ADDRESS, hash.data(), 20);
+        else
+            SetData(fTestNet ? SCRIPT_ADDRESS_TEST : SCRIPT_ADDRESS, hash.data(), 20);
+        return true;
+    }
+
+    // Shadows CBase58Data::SetString: accept either encoding on input
+    bool SetString(const std::string& str)
+    {
+        if (SetBech32(str))
+            return true;
+        return CBase58Data::SetString(str);
+    }
+
+    bool SetString(const char* psz)
+    {
+        return SetString(std::string(psz));
     }
 
     CBitcoinAddress() = default;

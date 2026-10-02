@@ -2000,6 +2000,7 @@ Value validateaddress(const Array& params, bool fHelp)
         CTxDestination dest = address.Get();
         string currentAddress = address.ToString();
         ret.emplace_back("address", currentAddress);
+        ret.emplace_back("bech32", address.ToBech32());
         bool fMine = IsMine(*pwalletMain, dest);
         ret.emplace_back("ismine", fMine);
         if (fMine) {
