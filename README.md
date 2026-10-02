@@ -175,6 +175,7 @@ rpcport=62555
 - [x] Bridge hardening: at-most-once dispatch idempotency + Python test suite
 - [x] Tag-triggered release pipeline with binaries for all platforms
 - [x] LWMA per-block difficulty retarget (v4.3 hard fork)
+- [x] Bech32m address encoding (`corg1…` / `tcorg1…`, accepted everywhere addresses are parsed)
 
 ### In Progress
 - [ ] Pump.fun partner token integration
@@ -182,7 +183,6 @@ rpcport=62555
 ### Planned
 - [ ] Block explorer
 - [ ] Wallet UX improvements
-- [ ] Bech32 address support (BIP173)
 - [ ] P2P encryption (BIP151)
 
 ### Pump.fun / Solana Integration (Future)
