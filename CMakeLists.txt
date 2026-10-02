@@ -8,7 +8,19 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
 
-project(CorgiCoin VERSION 4.2.0.0 LANGUAGES CXX C)
+# Single source of truth for the version is src/version.h — parse it so the
+# CMake banner can never drift from what the binary reports
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/src/version.h" _corgi_ver_defines
+     REGEX "^#define CLIENT_VERSION_(MAJOR|MINOR|REVISION|BUILD) ")
+foreach(_line ${_corgi_ver_defines})
+    if(_line MATCHES "CLIENT_VERSION_([A-Z]+)[ \t]+([0-9]+)")
+        set(_corgi_ver_${CMAKE_MATCH_1} ${CMAKE_MATCH_2})
+    endif()
+endforeach()
+set(CORGICOIN_VERSION
+    "${_corgi_ver_MAJOR}.${_corgi_ver_MINOR}.${_corgi_ver_REVISION}.${_corgi_ver_BUILD}")
+
+project(CorgiCoin VERSION ${CORGICOIN_VERSION} LANGUAGES CXX C)
 
 # Add custom CMake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
@@ -582,5 +594,5 @@ if(BUILD_QT_GUI)
     endif()
 endif()
 message(STATUS "")
-message(STATUS "CorgiCoin v4.2.0.0 — C++17, OpenSSL 3.x, Qt 5/6, nlohmann/json")
+message(STATUS "CorgiCoin v${PROJECT_VERSION} — C++17, OpenSSL 3.x, Qt 5/6, nlohmann/json")
 message(STATUS "")
