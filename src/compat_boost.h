@@ -38,10 +38,8 @@
 // - boost::program_options  - Command-line argument parsing
 // - boost::signals2         - Observer pattern (keystore)
 //
-// SERIALIZATION (must maintain binary compatibility):
-// - boost::variant          - Used in transaction destination types (CTxDestination)
-//
 // REMOVED (replaced with C++17 standard library or modern alternatives):
+// ✅ boost::variant         → std::variant (v4.3, CTxDestination — in-memory only, never serialized)
 // ✅ boost::thread          → std::thread (v1.4.1.48)
 // ✅ boost::mutex           → std::mutex (v1.4.1.48)
 // ✅ boost::shared_ptr      → std::shared_ptr (v1.4.1.45, v1.4.1.50)

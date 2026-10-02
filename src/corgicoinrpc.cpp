@@ -1948,7 +1948,7 @@ Value encryptwallet(const Array& params, bool fHelp)
     return "wallet encrypted; CorgiCoin server stopping, restart to run with encrypted wallet";
 }
 
-class DescribeAddressVisitor : public boost::static_visitor<Object>
+class DescribeAddressVisitor
 {
 public:
     Object operator()(const CNoDestination &dest) const { return Object(); }
@@ -2003,7 +2003,7 @@ Value validateaddress(const Array& params, bool fHelp)
         bool fMine = IsMine(*pwalletMain, dest);
         ret.emplace_back("ismine", fMine);
         if (fMine) {
-            Object detail = boost::apply_visitor(DescribeAddressVisitor(), dest);
+            Object detail = std::visit(DescribeAddressVisitor(), dest);
             ret.insert(ret.end(), detail.begin(), detail.end());
         }
         if (pwalletMain->mapAddressBook.count(dest))
