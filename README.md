@@ -6,11 +6,12 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.2.0.0** — fully modernized, network live, with multipartner cross-chain burn bridge:
+**Version 4.3.0.0** — fully modernized, network live, with multipartner cross-chain burn bridge and modern per-block difficulty retargeting:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
 - On-chain burn mechanism: `burncoin` (raw) + `burnforpartner` / `decodeburn` (structured, multipartner) for Solana cross-chain integration
+- LWMA per-block difficulty retarget (hard fork at block 34,000 — see `doc/lwma-retarget-spec.md`)
 - Genesis block mined, mainnet running with seed nodes
 - Protocol version 70001
 
@@ -20,7 +21,7 @@ CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in
 |-----------|-------|
 | **Algorithm** | Scrypt (1024, 1, 1, 256) |
 | **Block Time** | 1 minute |
-| **Difficulty Retarget** | Every 4 hours (240 blocks) |
+| **Difficulty Retarget** | LWMA per-block from height 34,000 (every 4 hours before) |
 | **Max Supply** | 100,000,000,000 CORG |
 | **Coinbase Maturity** | 30 blocks |
 | **P2P Port** | 62556 |
@@ -107,6 +108,14 @@ rpcport=62555
 
 ## Version History
 
+### v4.3.0.0 — LWMA Difficulty Hard Fork
+- LWMA-1 per-block difficulty retarget (90-block window), activating at height 34,000 mainnet / 100 testnet — fixes the hash-and-run stall failure mode of the 4-hour interval retarget (spec: `doc/lwma-retarget-spec.md`)
+- Future time limit tightened from 2 hours to 300 seconds post-fork
+- Fixed latent testnet bug: pow limit was stricter than testnet genesis bits, deadlocking testnet mining at height 1
+- Fork rehearsed end-to-end on a fresh testnet: two nodes mined through activation with no consensus split
+- Tag-triggered release pipeline: Linux/macOS/Windows binaries + Qt wallet bundle + SHA256SUMS published automatically on version tags
+- First public GitHub release shipped (v4.2.0.0 binaries), mining guide (`doc/mining.md`), seed node upgrade runbook
+
 ### v4.2.0.0 — Multipartner Burn Bridge
 - `burnforpartner <amount> <partner_tag> <solana_address>` RPC: structured, multipartner burns
 - `decodeburn <scriptPubKey_hex>` RPC: parses bridge burn payloads off-chain
@@ -163,9 +172,11 @@ rpcport=62555
 - [x] Windows cross-compiled wallet build
 - [x] Multipartner burn payload spec + `burnforpartner` / `decodeburn` RPCs
 - [x] Burn bridge oracle PoC: first end-to-end devnet dispatch (CORG burn → Solana SPL mint)
+- [x] Bridge hardening: at-most-once dispatch idempotency + Python test suite
+- [x] Tag-triggered release pipeline with binaries for all platforms
+- [x] LWMA per-block difficulty retarget (v4.3 hard fork)
 
 ### In Progress
-- [ ] Bridge hardening: idempotency, Python test coverage
 - [ ] Pump.fun partner token integration
 
 ### Planned
