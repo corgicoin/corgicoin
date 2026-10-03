@@ -2470,7 +2470,10 @@ Value createauxblock(const Array& params, bool fHelp)
     result.emplace_back("hash", hash.GetHex());
     result.emplace_back("chainid", (int)AUXPOW_CHAIN_ID);
     result.emplace_back("previousblockhash", pblock->hashPrevBlock.GetHex());
-    result.emplace_back("coinbasevalue", (int64)pblock->vtx[0].vout[0].nValue);
+    // Cast to int64_t exactly (the json Value ctor type): the codebase's
+    // int64 is long long, but int64_t is long on LP64 Linux, so passing a
+    // bare int64 is an ambiguous overload on GCC.
+    result.emplace_back("coinbasevalue", (int64_t)pblock->vtx[0].vout[0].nValue);
     result.emplace_back("bits", strprintf("%08x", pblock->nBits));
     result.emplace_back("height", (int)(pindexBest->nHeight + 1));
     result.emplace_back("_target", HexStr(BEGIN(hashTarget), END(hashTarget)));
