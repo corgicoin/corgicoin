@@ -18,6 +18,8 @@
 #else
 #include <sys/types.h>  // provides pid_t on MinGW
 #endif
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <vector>
 #include <string>
