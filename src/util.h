@@ -139,6 +139,17 @@ void LogException(std::exception* pex, const char* pszThread);
 void PrintException(std::exception* pex, const char* pszThread);
 void PrintExceptionContinue(std::exception* pex, const char* pszThread);
 void ParseString(const std::string& str, char c, std::vector<std::string>& v);
+
+// Small string helpers (replace the boost::algorithm::string uses).
+std::string ToLower(const std::string& str);
+std::string TrimString(const std::string& str);
+// Case-insensitive ASCII prefix test (boost::algorithm::istarts_with).
+bool IStartsWith(const std::string& str, const std::string& prefix);
+// Shell-style tokenizer matching boost::escaped_list_separator('\\',' ','"'):
+// space-separated, double-quoted sections kept whole, backslash escapes the
+// next char. Throws std::runtime_error on a trailing escape or unterminated
+// quote. Consecutive separators yield empty tokens, as the boost version did.
+std::vector<std::string> ParseCommandLine(const std::string& str);
 std::string FormatMoney(int64 n, bool fPlus=false);
 bool ParseMoney(const std::string& str, int64& nRet);
 bool ParseMoney(const char* pszIn, int64& nRet);

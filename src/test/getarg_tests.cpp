@@ -1,6 +1,6 @@
-#include <boost/algorithm/string.hpp>
-#include <boost/foreach.hpp>
 #include <boost/test/unit_test.hpp>
+
+#include <sstream>
 
 #include "util.h"
 
@@ -9,8 +9,13 @@ BOOST_AUTO_TEST_SUITE(getarg_tests)
 static void
 ResetArgs(const std::string& strArg)
 {
+    // Split on whitespace (compressed), matching the former
+    // boost::split(..., is_space(), token_compress_on) behavior
     std::vector<std::string> vecArg;
-    boost::split(vecArg, strArg, boost::is_space(), boost::token_compress_on);
+    std::istringstream iss(strArg);
+    std::string word;
+    while (iss >> word)
+        vecArg.push_back(word);
 
     // Insert dummy executable name:
     vecArg.insert(vecArg.begin(), "testbitcoin");
