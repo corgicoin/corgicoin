@@ -6,6 +6,7 @@
 #include "walletmodel.h"
 #include "optionsmodel.h"
 #include "guiutil.h"
+#include "util.h"
 #include "guiconstants.h"
 
 #include "init.h"
@@ -20,7 +21,6 @@
 #include <QLibraryInfo>
 
 #include <boost/interprocess/ipc/message_queue.hpp>
-#include <boost/algorithm/string/predicate.hpp>
 
 // Need a global reference for the notifications to find the GUI
 static BitcoinGUI *guiref;
@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
     // Do this early as we don't want to bother initializing if we are just calling IPC
     for (int i = 1; i < argc; i++)
     {
-        if (boost::algorithm::istarts_with(argv[i], "corgicoin:"))
+        if (IStartsWith(argv[i], "corgicoin:"))
         {
             const char *strURI = argv[i];
             try {
@@ -262,7 +262,7 @@ int main(int argc, char *argv[])
                 // Check for URI in argv
                 for (int i = 1; i < argc; i++)
                 {
-                    if (boost::algorithm::istarts_with(argv[i], "corgicoin:"))
+                    if (IStartsWith(argv[i], "corgicoin:"))
                     {
                         const char *strURI = argv[i];
                         try {

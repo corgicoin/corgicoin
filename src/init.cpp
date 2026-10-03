@@ -19,7 +19,6 @@
 #include "logging.h"
 #include <filesystem>
 #include <boost/interprocess/sync/file_lock.hpp>
-#include <boost/algorithm/string/predicate.hpp>
 
 #ifndef WIN32
 #include <signal.h>
@@ -152,7 +151,7 @@ bool AppInit(int argc, char* argv[])
 
         // Command-line RPC
         for (int i = 1; i < argc; i++)
-            if (!IsSwitchChar(argv[i][0]) && !boost::algorithm::istarts_with(argv[i], "corgicoin:"))
+            if (!IsSwitchChar(argv[i][0]) && !IStartsWith(argv[i], "corgicoin:"))
                 fCommandLine = true;
 
         if (fCommandLine)

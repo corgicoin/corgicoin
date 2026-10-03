@@ -10,7 +10,6 @@
 #include "ui_interface.h"
 #include "base58.h"
 
-#include <boost/lexical_cast.hpp>
 
 using namespace json_spirit;
 using namespace std;

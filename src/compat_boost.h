@@ -32,13 +32,17 @@
 // Boost library usage in this codebase:
 //
 // ESSENTIAL (cannot be replaced without major refactoring):
-// - boost::filesystem        - REMOVED/REPLACED with std::filesystem (C++17)
 // - boost::asio             - Async I/O for RPC server
 // - boost::interprocess     - Inter-process communication
 // - boost::program_options  - Command-line argument parsing
 // - boost::signals2         - Observer pattern (keystore)
+// - boost::date_time/posix  - Timestamps in a few spots
 //
 // REMOVED (replaced with C++17 standard library or modern alternatives):
+// ✅ boost::algorithm/string → std util helpers (v4.3: ToLower/TrimString/
+//      IStartsWith/ParseCommandLine in util; trim/to_lower/split/
+//      istarts_with/join/escaped_list_separator tokenizer all gone)
+// ✅ boost::lexical_cast     → (dead includes removed, v4.3)
 // ✅ boost::variant         → std::variant (v4.3, CTxDestination — in-memory only, never serialized)
 // ✅ boost::thread          → std::thread (v1.4.1.48)
 // ✅ boost::mutex           → std::mutex (v1.4.1.48)

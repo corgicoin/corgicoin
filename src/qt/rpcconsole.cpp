@@ -4,6 +4,7 @@
 #include "clientmodel.h"
 #include "corgicoinrpc.h"
 #include "guiutil.h"
+#include "util.h"
 
 #include <QTime>
 #include <QTimer>
@@ -13,7 +14,6 @@
 #include <QUrl>
 #include <QScrollBar>
 
-#include <boost/tokenizer.hpp>
 #include <openssl/crypto.h>
 
 // TODO: make it possible to filter out categories (esp debug messages when implemented)
@@ -60,21 +60,16 @@ void RPCExecutor::request(const QString &command)
     std::string strMethod;
     std::vector<std::string> strParams;
     try {
-        boost::escaped_list_separator<char> els('\\',' ','\"');
-        std::string strCommand = command.toStdString();
-        boost::tokenizer<boost::escaped_list_separator<char> > tok(strCommand, els);
-
-        int n = 0;
-        for(const auto& item : tok)
+        std::vector<std::string> tokens = ParseCommandLine(command.toStdString());
+        for (size_t n = 0; n < tokens.size(); n++)
         {
-            if(n == 0) // First parameter is the command
-                strMethod = item;
+            if (n == 0) // First parameter is the command
+                strMethod = tokens[n];
             else
-                strParams.push_back(item);
-            ++n;
+                strParams.push_back(tokens[n]);
         }
     }
-    catch(boost::escaped_list_error &e)
+    catch(std::exception &e)
     {
         emit reply(RPCConsole::CMD_ERROR, QString("Parse error"));
         return;

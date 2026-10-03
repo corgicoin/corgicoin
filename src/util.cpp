@@ -12,7 +12,6 @@
 #include "version.h"
 #include "ui_interface.h"
 #include "logging.h"
-#include <boost/algorithm/string/join.hpp>
 
 // Work around clang compilation problem in Boost 1.46:
 // /usr/include/boost/program_options/detail/config_file.hpp:163:17: error: call to function 'to_internal' that is neither visible in the template definition nor found by argument-dependent lookup
@@ -329,6 +328,69 @@ bool error(const char *format, ...)
     return false;
 }
 
+
+std::string ToLower(const std::string& str)
+{
+    std::string r(str);
+    for (char& c : r)
+        c = (char)tolower((unsigned char)c);
+    return r;
+}
+
+std::string TrimString(const std::string& str)
+{
+    std::string::size_type b = str.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos)
+        return "";
+    std::string::size_type e = str.find_last_not_of(" \t\r\n");
+    return str.substr(b, e - b + 1);
+}
+
+bool IStartsWith(const std::string& str, const std::string& prefix)
+{
+    if (str.size() < prefix.size())
+        return false;
+    for (std::string::size_type i = 0; i < prefix.size(); i++)
+        if (tolower((unsigned char)str[i]) != tolower((unsigned char)prefix[i]))
+            return false;
+    return true;
+}
+
+std::vector<std::string> ParseCommandLine(const std::string& str)
+{
+    std::vector<std::string> out;
+    if (str.empty())
+        return out;
+    std::string cur;
+    bool inQuotes = false;
+    for (std::string::size_type i = 0; i < str.size(); i++)
+    {
+        char c = str[i];
+        if (c == '\\')
+        {
+            if (i + 1 >= str.size())
+                throw std::runtime_error("trailing escape character");
+            cur += str[++i];
+        }
+        else if (c == '"')
+        {
+            inQuotes = !inQuotes;
+        }
+        else if (c == ' ' && !inQuotes)
+        {
+            out.push_back(cur);
+            cur.clear();
+        }
+        else
+        {
+            cur += c;
+        }
+    }
+    if (inQuotes)
+        throw std::runtime_error("unterminated quote");
+    out.push_back(cur);
+    return out;
+}
 
 void ParseString(const string& str, char c, vector<string>& v)
 {
@@ -1298,7 +1360,12 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const 
     ss << "/";
     ss << name << ":" << FormatVersion(nClientVersion);
     if (!comments.empty())
-        ss << "(" << boost::algorithm::join(comments, "; ") << ")";
+    {
+        ss << "(";
+        for (size_t i = 0; i < comments.size(); i++)
+            ss << (i ? "; " : "") << comments[i];
+        ss << ")";
+    }
     ss << "/";
     return ss.str();
 }

@@ -259,4 +259,42 @@ BOOST_AUTO_TEST_CASE(util_IsHex)
     BOOST_CHECK(!IsHex("0x0000"));
 }
 
+BOOST_AUTO_TEST_CASE(util_StringHelpers)
+{
+    BOOST_CHECK_EQUAL(ToLower("HeLLo-World"), "hello-world");
+    BOOST_CHECK_EQUAL(ToLower(""), "");
+
+    BOOST_CHECK_EQUAL(TrimString("  hi \t\r\n"), "hi");
+    BOOST_CHECK_EQUAL(TrimString("no-trim"), "no-trim");
+    BOOST_CHECK_EQUAL(TrimString("   "), "");
+    BOOST_CHECK_EQUAL(TrimString(""), "");
+
+    BOOST_CHECK(IStartsWith("corgicoin:abc", "corgicoin:"));
+    BOOST_CHECK(IStartsWith("CORGICOIN:abc", "corgicoin:"));
+    BOOST_CHECK(IStartsWith("CorgiCoin:", "corgicoin:"));
+    BOOST_CHECK(!IStartsWith("bitcoin:abc", "corgicoin:"));
+    BOOST_CHECK(!IStartsWith("corg", "corgicoin:"));
+}
+
+BOOST_AUTO_TEST_CASE(util_ParseCommandLine)
+{
+    using V = std::vector<std::string>;
+
+    BOOST_CHECK(ParseCommandLine("") == V{});
+    BOOST_CHECK((ParseCommandLine("getinfo") == V{"getinfo"}));
+    BOOST_CHECK((ParseCommandLine("sendto addr 1.0") == V{"sendto", "addr", "1.0"}));
+
+    // Quoted section kept whole, quotes stripped
+    BOOST_CHECK((ParseCommandLine("cmd \"hello world\"") == V{"cmd", "hello world"}));
+    // Backslash escapes the next char
+    BOOST_CHECK((ParseCommandLine("cmd a\\ b") == V{"cmd", "a b"}));
+    BOOST_CHECK((ParseCommandLine("cmd \\\"quoted\\\"") == V{"cmd", "\"quoted\""}));
+    // Consecutive separators yield empty tokens (as boost did)
+    BOOST_CHECK((ParseCommandLine("a  b") == V{"a", "", "b"}));
+
+    // Malformed input throws (preserving the old parse-error path)
+    BOOST_CHECK_THROW(ParseCommandLine("bad\\"), std::runtime_error);
+    BOOST_CHECK_THROW(ParseCommandLine("\"unterminated"), std::runtime_error);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
