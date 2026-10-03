@@ -520,6 +520,7 @@ if(BUILD_TESTS)
         src/test/wallet_tests.cpp
         src/test/scrypt_tests.cpp
         src/test/address_tests.cpp
+        src/test/auxpow_tests.cpp
         src/test/bech32_tests.cpp
         src/test/blockreward_tests.cpp
         src/test/serialize_tests.cpp
