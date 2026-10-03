@@ -3,7 +3,7 @@
 //
 #include <algorithm>
 
-#include <boost/date_time/posix_time/posix_time_types.hpp>
+#include <chrono>
 #include <boost/test/unit_test.hpp>
 
 #include "main.h"
@@ -259,25 +259,23 @@ BOOST_AUTO_TEST_CASE(DoS_checkSig)
         tx.vin[j].prevout.hash = orphans[j].GetHash();
     }
     // Creating signatures primes the cache:
-    boost::posix_time::ptime mst1 = boost::posix_time::microsec_clock::local_time();
+    auto mst1 = std::chrono::steady_clock::now();
     for (unsigned int j = 0; j < tx.vin.size(); j++)
         BOOST_CHECK(SignSignature(keystore, orphans[j], tx, j));
-    boost::posix_time::ptime mst2 = boost::posix_time::microsec_clock::local_time();
-    boost::posix_time::time_duration msdiff = mst2 - mst1;
-    long nOneValidate = msdiff.total_milliseconds();
+    auto mst2 = std::chrono::steady_clock::now();
+    long nOneValidate = std::chrono::duration_cast<std::chrono::milliseconds>(mst2 - mst1).count();
     if (fDebug) printf("DoS_Checksig sign: %ld\n", nOneValidate);
 
     // ... now validating repeatedly should be quick:
     // 2.8GHz machine, -g build: Sign takes ~760ms,
     // uncached Verify takes ~250ms, cached Verify takes ~50ms
     // (for 100 single-signature inputs)
-    mst1 = boost::posix_time::microsec_clock::local_time();
+    mst1 = std::chrono::steady_clock::now();
     for (unsigned int i = 0; i < 5; i++)
         for (unsigned int j = 0; j < tx.vin.size(); j++)
             BOOST_CHECK(VerifySignature(orphans[j], tx, j, true, SIGHASH_ALL));
-    mst2 = boost::posix_time::microsec_clock::local_time();
-    msdiff = mst2 - mst1;
-    long nManyValidate = msdiff.total_milliseconds();
+    mst2 = std::chrono::steady_clock::now();
+    long nManyValidate = std::chrono::duration_cast<std::chrono::milliseconds>(mst2 - mst1).count();
     if (fDebug) printf("DoS_Checksig five: %ld\n", nManyValidate);
 
     BOOST_CHECK_MESSAGE(nManyValidate < nOneValidate, "Signature cache timing failed");

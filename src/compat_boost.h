@@ -33,12 +33,15 @@
 //
 // ESSENTIAL (cannot be replaced without major refactoring):
 // - boost::asio             - Async I/O for RPC server
-// - boost::interprocess     - Inter-process communication
+// - boost::interprocess     - Inter-process communication (URI message queue);
+//                             its timed ops require a boost::posix_time::ptime,
+//                             the one remaining boost::date_time use (qtipcserver)
 // - boost::program_options  - Command-line argument parsing
 // - boost::signals2         - Observer pattern (keystore)
-// - boost::date_time/posix  - Timestamps in a few spots
 //
 // REMOVED (replaced with C++17 standard library or modern alternatives):
+// ✅ boost::date_time       → std::chrono (v4.4: GetTimeMillis + DoS timing
+//      test; only the interprocess-coupled qtipcserver deadline remains)
 // ✅ boost::algorithm/string → std util helpers (v4.3: ToLower/TrimString/
 //      IStartsWith/ParseCommandLine in util; trim/to_lower/split/
 //      istarts_with/join/escaped_list_separator tokenizer all gone)

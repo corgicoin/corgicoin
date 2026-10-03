@@ -26,8 +26,6 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
-#include <boost/date_time/gregorian/gregorian_types.hpp>
-#include <boost/date_time/posix_time/posix_time_types.hpp>
 
 #include <openssl/sha.h>
 #include <openssl/ripemd.h>
@@ -298,8 +296,9 @@ inline int64 GetPerformanceCounter()
 
 inline int64 GetTimeMillis()
 {
-    return (boost::posix_time::ptime(boost::posix_time::microsec_clock::universal_time()) -
-            boost::posix_time::ptime(boost::gregorian::date(1970,1,1))).total_milliseconds();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
 }
 
 inline std::string DateTimeStrFormat(const char* pszFormat, int64 nTime)
