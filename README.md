@@ -6,12 +6,14 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.3.0.0** — fully modernized, network live, with multipartner cross-chain burn bridge and modern per-block difficulty retargeting:
+**Version 4.4.0.0** — fully modernized, network live, with multipartner cross-chain burn bridge, modern per-block difficulty retargeting, and AuxPoW merged mining:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
 - On-chain burn mechanism: `burncoin` (raw) + `burnforpartner` / `decodeburn` (structured, multipartner) for Solana cross-chain integration
 - LWMA per-block difficulty retarget (hard fork at block 34,000 — see `doc/lwma-retarget-spec.md`)
+- AuxPoW merged mining (hard fork at block 50,000 — see `doc/auxpow-spec.md`)
+- Bech32m addresses (`corg1…` / `tcorg1…`) alongside legacy base58
 - Genesis block mined, mainnet running with seed nodes
 - Protocol version 70001
 
@@ -107,6 +109,15 @@ rpcport=62555
 ```
 
 ## Version History
+
+### v4.4.0.0 — AuxPoW Merged Mining Hard Fork
+- AuxPoW (merged mining) consensus: a high-hashrate Scrypt pool (Litecoin/Dogecoin) can secure CorgiCoin at near-zero marginal cost, closing the 51%-attack exposure of a low-hashrate chain — hard fork at block **50,000 mainnet / 200 testnet**, chain ID `0x00C6` (spec: `doc/auxpow-spec.md`)
+- `CPureBlockHeader` / `CAuxPow` types; non-merged blocks serialize byte-identically (no reindex); solo CPU mining preserved post-fork
+- `createauxblock` / `submitauxblock` RPCs (standard Dogecoin/Namecoin pool interface)
+- Bech32m address encoding (`corg1…` / `tcorg1…`) accepted everywhere addresses are parsed
+- `boost::variant` → `std::variant` for `CTxDestination`; `boost::algorithm::string` / `lexical_cast` replaced with std helpers
+- Block explorer with burn auditing (`contrib/explorer/`)
+- Fork rehearsed end-to-end on testnet; 11 AuxPoW + 8 bech32 unit tests
 
 ### v4.3.0.0 — LWMA Difficulty Hard Fork
 - LWMA-1 per-block difficulty retarget (90-block window), activating at height 34,000 mainnet / 100 testnet — fixes the hash-and-run stall failure mode of the 4-hour interval retarget (spec: `doc/lwma-retarget-spec.md`)
