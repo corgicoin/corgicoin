@@ -2414,6 +2414,107 @@ Value getblocktemplate(const Array& params, bool fHelp)
     throw JSONRPCError(-8, "Invalid mode");
 }
 
+// Pending aux blocks handed out by createauxblock, keyed by block hash.
+// Cleared whenever the chain tip moves. See doc/auxpow-spec.md.
+static std::map<uint256, CBlock*> mapAuxBlocks;
+static std::vector<CBlock*> vAuxBlocks;
+static CBlockIndex* pindexPrevAux = nullptr;
+
+Value createauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "createauxblock <paytoaddress>\n"
+            "Create a new block for merged mining and return its target.\n"
+            "The caller commits the returned 'hash' in its parent-chain\n"
+            "coinbase, then returns the proof via submitauxblock.");
+
+    if (vNodes.empty())
+        throw JSONRPCError(-9, "CorgiCoin is not connected!");
+    if (IsInitialBlockDownload())
+        throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
+
+    CBitcoinAddress address(params[0].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(-5, "Invalid CorgiCoin address");
+
+    static CReserveKey reservekey(pwalletMain.get());
+
+    // Flush pending blocks when the tip advances
+    if (pindexPrevAux != pindexBest)
+    {
+        mapAuxBlocks.clear();
+        for (CBlock* p : vAuxBlocks)
+            delete p;
+        vAuxBlocks.clear();
+        pindexPrevAux = pindexBest;
+    }
+
+    CBlock* pblock = CreateNewBlock(reservekey);
+    if (!pblock)
+        throw JSONRPCError(-7, "Out of memory");
+    vAuxBlocks.push_back(pblock);
+
+    // Pay the coinbase to the requested address and flag the block for AuxPoW
+    // (chain ID + AuxPoW bit) so the committed hash matches the final block.
+    pblock->vtx[0].vout[0].scriptPubKey.SetDestination(address.Get());
+    pblock->nVersion = MakeVersion(CBlock::CURRENT_VERSION, AUXPOW_CHAIN_ID, true);
+    pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+
+    uint256 hash = pblock->GetHash();
+    mapAuxBlocks[hash] = pblock;
+
+    uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+
+    Object result;
+    result.emplace_back("hash", hash.GetHex());
+    result.emplace_back("chainid", (int)AUXPOW_CHAIN_ID);
+    result.emplace_back("previousblockhash", pblock->hashPrevBlock.GetHex());
+    result.emplace_back("coinbasevalue", (int64)pblock->vtx[0].vout[0].nValue);
+    result.emplace_back("bits", strprintf("%08x", pblock->nBits));
+    result.emplace_back("height", (int)(pindexBest->nHeight + 1));
+    result.emplace_back("_target", HexStr(BEGIN(hashTarget), END(hashTarget)));
+    return result;
+}
+
+Value submitauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 2)
+        throw runtime_error(
+            "submitauxblock <hash> <auxpow>\n"
+            "Submit a solved AuxPoW for a block from createauxblock.\n"
+            "<hash> is the block hash returned by createauxblock; <auxpow>\n"
+            "is the serialized CAuxPow proof as a hex string.");
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+
+    auto it = mapAuxBlocks.find(hash);
+    if (it == mapAuxBlocks.end())
+        throw JSONRPCError(-8, "block hash unknown (expired or never created)");
+    CBlock* pblock = it->second;
+
+    std::vector<unsigned char> vchAuxPow = ParseHex(params[1].get_str());
+    CDataStream ss(vchAuxPow, SER_NETWORK, PROTOCOL_VERSION);
+    auto auxpow = std::make_shared<CAuxPow>();
+    try {
+        ss >> *auxpow;
+    } catch (std::exception& e) {
+        throw JSONRPCError(-22, "AuxPoW decode failed");
+    }
+    pblock->auxpow = auxpow;
+
+    static CReserveKey reservekey(pwalletMain.get());
+    bool fAccepted = CheckWork(pblock, *pwalletMain, reservekey);
+    if (fAccepted)
+    {
+        // Block was consumed by the chain; drop it from the pending set
+        mapAuxBlocks.erase(it);
+        vAuxBlocks.erase(std::remove(vAuxBlocks.begin(), vAuxBlocks.end(), pblock), vAuxBlocks.end());
+    }
+    return fAccepted;
+}
+
 Value getrawmempool(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 0)
@@ -2533,6 +2634,8 @@ static const CRPCCommand vRPCCommands[] =
     { "settxfee",               &settxfee,               false },
     { "setmininput",            &setmininput,            false },
     { "getblocktemplate",       &getblocktemplate,       true },
+    { "createauxblock",         &createauxblock,         true },
+    { "submitauxblock",         &submitauxblock,         true },
     { "listsinceblock",         &listsinceblock,         false },
     { "dumpprivkey",            &dumpprivkey,            false },
     { "importprivkey",          &importprivkey,          false },
