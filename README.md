@@ -176,14 +176,16 @@ rpcport=62555
 - [x] Tag-triggered release pipeline with binaries for all platforms
 - [x] LWMA per-block difficulty retarget (v4.3 hard fork)
 - [x] Bech32m address encoding (`corg1…` / `tcorg1…`, accepted everywhere addresses are parsed)
+- [x] Block explorer with burn auditing (`contrib/explorer/` — indexes the chain over RPC, decodes bridge burns)
 
 ### In Progress
+- [ ] AuxPoW merged mining (consensus core + mining RPCs landed; hard fork at block 50,000 — see `doc/auxpow-spec.md`)
 - [ ] Pump.fun partner token integration
 
 ### Planned
-- [ ] Block explorer
 - [ ] Wallet UX improvements
-- [ ] P2P encryption (BIP151)
+- [ ] Encrypted P2P transport (BIP324; BIP151 was withdrawn and superseded)
+- [ ] Headers-first block sync
 
 ### Pump.fun / Solana Integration (Future)
 
