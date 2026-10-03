@@ -1104,6 +1104,108 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits)
     return true;
 }
 
+int GetAuxPowForkHeight()
+{
+    return fTestNet ? AUXPOW_FORK_HEIGHT_TESTNET : AUXPOW_FORK_HEIGHT_MAINNET;
+}
+
+// Merged-mining coinbase commitment magic: "\xfa\xbe" "mm"
+static const unsigned char MERGED_MINING_HEADER[4] = { 0xfa, 0xbe, 'm', 'm' };
+
+// Deterministic slot an aux chain's hash must occupy in the merged-mining
+// merkle tree, from the coinbase nonce and chain ID (Namecoin/Dogecoin).
+static unsigned int GetExpectedAuxIndex(uint32_t nNonce, int32_t nChainId, unsigned int h)
+{
+    uint32_t rand = nNonce;
+    rand = rand * 1103515245 + 12345;
+    rand += nChainId;
+    rand = rand * 1103515245 + 12345;
+    return rand % (1u << h);
+}
+
+// See doc/auxpow-spec.md. hashAuxBlock is the aux block's GetHash().
+bool CAuxPow::Check(uint256 hashAuxBlock, int32_t nChainId) const
+{
+    if (nIndex != 0)
+        return LogError("AuxPow::Check() : parent coinbase is not the first tx");
+
+    if (!IsCoinBase())
+        return LogError("AuxPow::Check() : parent tx is not a coinbase");
+
+    // The parent block must be from a different chain and not itself merged
+    if (GetChainId(parentBlock.nVersion) == nChainId)
+        return LogError("AuxPow::Check() : parent has the same chain ID");
+    if (IsAuxPowVersion(parentBlock.nVersion))
+        return LogError("AuxPow::Check() : parent block is itself AuxPoW");
+
+    if (vChainMerkleBranch.size() > 30)
+        return LogError("AuxPow::Check() : chain merkle branch too long");
+
+    // The coinbase (this tx) must be committed under the parent merkle root
+    if (CBlock::CheckMerkleBranch(CTransaction::GetHash(), vMerkleBranch, nIndex) != parentBlock.hashMerkleRoot)
+        return LogError("AuxPow::Check() : coinbase not in parent block merkle tree");
+
+    // The aux block hash must fold to the committed aux merkle root
+    uint256 nRootHash = CBlock::CheckMerkleBranch(hashAuxBlock, vChainMerkleBranch, nChainIndex);
+    std::vector<unsigned char> vchRootHash(nRootHash.begin(), nRootHash.end());
+    std::reverse(vchRootHash.begin(), vchRootHash.end()); // stored byte-reversed
+
+    const CScript& script = vin[0].scriptSig;
+    CScript::const_iterator pcHead =
+        std::search(script.begin(), script.end(), MERGED_MINING_HEADER, MERGED_MINING_HEADER + 4);
+    CScript::const_iterator pc =
+        std::search(script.begin(), script.end(), vchRootHash.begin(), vchRootHash.end());
+
+    if (pc == script.end())
+        return LogError("AuxPow::Check() : aux merkle root not found in parent coinbase");
+
+    if (pcHead != script.end())
+    {
+        // Magic present: it must be unique and immediately precede the root
+        if (std::search(pcHead + 1, script.end(), MERGED_MINING_HEADER, MERGED_MINING_HEADER + 4) != script.end())
+            return LogError("AuxPow::Check() : multiple merged-mining headers");
+        if (pcHead + sizeof(MERGED_MINING_HEADER) != pc)
+            return LogError("AuxPow::Check() : merged-mining header not just before merkle root");
+    }
+    else
+    {
+        // No magic: anti-spoof requires the root within the first 20 bytes
+        if (pc - script.begin() > 20)
+            return LogError("AuxPow::Check() : aux merkle root too far into coinbase");
+    }
+
+    // Followed by merkle tree size (LE u32) and nonce (LE u32)
+    pc += vchRootHash.size();
+    if (script.end() - pc < 8)
+        return LogError("AuxPow::Check() : missing merkle tree size and nonce");
+
+    uint32_t nSize;
+    memcpy(&nSize, &pc[0], 4);
+    if (nSize != (1u << vChainMerkleBranch.size()))
+        return LogError("AuxPow::Check() : merkle tree size does not match branch length");
+
+    uint32_t nNonce;
+    memcpy(&nNonce, &pc[4], 4);
+    if ((unsigned int)nChainIndex != GetExpectedAuxIndex(nNonce, nChainId, vChainMerkleBranch.size()))
+        return LogError("AuxPow::Check() : chain index does not match expected slot");
+
+    return true;
+}
+
+// AuxPoW-aware proof-of-work check. Context-free: dispatches on the version
+// AuxPoW bit. A merged block's work lives in its parent header.
+bool CheckAuxProofOfWork(const CBlock& block, unsigned int nBits)
+{
+    if (!block.IsAuxPow())
+        return CheckProofOfWork(block.GetPoWHash(), nBits);
+
+    if (!block.auxpow)
+        return LogError("CheckAuxProofOfWork() : AuxPoW bit set but no AuxPoW present");
+    if (!block.auxpow->Check(block.GetHash(), block.GetChainId()))
+        return LogError("CheckAuxProofOfWork() : AuxPoW proof invalid");
+    return CheckProofOfWork(block.auxpow->parentBlock.GetPoWHash(), nBits);
+}
+
 // Return maximum amount of blocks that other nodes claim to have
 int GetNumBlocksOfPeers()
 {
@@ -1880,8 +1982,9 @@ bool CBlock::CheckBlock() const
     if (vtx.empty() || vtx.size() > MAX_BLOCK_SIZE || ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > MAX_BLOCK_SIZE)
         return DoS(100, LogError("CheckBlock() : size limits failed"));
 
-    // Check proof of work matches claimed amount
-    if (!CheckProofOfWork(GetPoWHash(), nBits))
+    // Check proof of work matches claimed amount (AuxPoW-aware: for a merged
+    // block the parent header carries the work; see doc/auxpow-spec.md)
+    if (!CheckAuxProofOfWork(*this, nBits))
         return DoS(50, LogError("CheckBlock() : proof of work failed"));
 
     // Check timestamp
@@ -1942,6 +2045,21 @@ bool CBlock::AcceptBlock()
     // Check proof of work
     if (nBits != GetNextWorkRequired(pindexPrev, this))
         return DoS(100, LogError("AcceptBlock() : incorrect proof of work"));
+
+    // AuxPoW hard fork: enforce the chain-ID / merged-mining rules by height
+    // (doc/auxpow-spec.md). The PoW itself is already verified in CheckBlock.
+    if (nHeight >= GetAuxPowForkHeight())
+    {
+        // After the fork every block must carry our chain ID (solo or merged)
+        if (GetChainId() != AUXPOW_CHAIN_ID)
+            return DoS(100, LogError("AcceptBlock() : block does not have our chain ID"));
+    }
+    else
+    {
+        // Before the fork, merged mining is not yet allowed
+        if (IsAuxPow())
+            return DoS(100, LogError("AcceptBlock() : AuxPoW block before fork height"));
+    }
 
     // Check timestamp against prev
     if (GetBlockTime() <= pindexPrev->GetMedianTimePast())
@@ -3639,6 +3757,10 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
 
     // Fill in header
     pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
+    // From the AuxPoW fork height, tag blocks with our chain ID (solo blocks
+    // leave the AuxPoW bit clear; doc/auxpow-spec.md)
+    if (pindexPrev->nHeight + 1 >= GetAuxPowForkHeight())
+        pblock->nVersion = MakeVersion(CBlock::CURRENT_VERSION, AUXPOW_CHAIN_ID, false);
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
     pblock->UpdateTime(pindexPrev);
     pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock.get());

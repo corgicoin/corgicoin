@@ -16,8 +16,10 @@
 #include "db.h"
 #include "scrypt.h"
 #include "logging.h"
+#include "auxpow.h"
 
 #include <list>
+#include <memory>
 
 class CWallet;
 class CBlock;
@@ -104,6 +106,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
 void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1);
 bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey);
 bool CheckProofOfWork(uint256 hash, unsigned int nBits);
+bool CheckAuxProofOfWork(const CBlock& block, unsigned int nBits);
 unsigned int ComputeMinWork(unsigned int nBase, int64 nTime);
 
 /** v4.3 hard fork: LWMA per-block difficulty retarget (doc/lwma-retarget-spec.md) */
@@ -746,6 +749,43 @@ public:
 };
 
 
+/** Merged-mining proof of work (doc/auxpow-spec.md).
+ *
+ *  Proves that an auxiliary (CorgiCoin) block hash was committed in the
+ *  coinbase of a parent-chain block whose Scrypt header meets our target.
+ *  Extends CMerkleTx: the base transaction is the parent coinbase, and the
+ *  inherited vMerkleBranch/nIndex prove it under parentBlock.hashMerkleRoot.
+ */
+class CAuxPow : public CMerkleTx
+{
+public:
+    // Merkle branch linking the aux block hash to the aux merkle root that is
+    // committed in the parent coinbase.
+    std::vector<uint256> vChainMerkleBranch;
+    int nChainIndex;
+
+    // Parent-chain block header — carries the actual proof of work.
+    CPureBlockHeader parentBlock;
+
+    CAuxPow() : CMerkleTx(), nChainIndex(0) {}
+    explicit CAuxPow(const CTransaction& txIn) : CMerkleTx(txIn), nChainIndex(0) {}
+
+    IMPLEMENT_SERIALIZE
+    (
+        nSerSize += SerReadWrite(s, *const_cast<CMerkleTx*>(static_cast<const CMerkleTx*>(this)), nType, nVersion, ser_action);
+        nVersion = this->nVersion;
+        READWRITE(vChainMerkleBranch);
+        READWRITE(nChainIndex);
+        READWRITE(parentBlock);
+    )
+
+    // Verify this proof commits hashAuxBlock for chain nChainId and that the
+    // parent header's Scrypt PoW meets nBits. Does NOT check nBits range (the
+    // caller's CheckProofOfWork does). See doc/auxpow-spec.md.
+    bool Check(uint256 hashAuxBlock, int32_t nChainId) const;
+};
+
+
 
 
 /**  A txdb record that contains the disk location of a transaction and the
@@ -831,6 +871,10 @@ public:
     // network and disk
     std::vector<CTransaction> vtx;
 
+    // Optional merged-mining proof (present iff IsAuxPow(nVersion)); see
+    // doc/auxpow-spec.md. Serialized after the header, before vtx.
+    std::shared_ptr<CAuxPow> auxpow;
+
     // memory only
     mutable std::vector<uint256> vMerkleTree;
 
@@ -853,6 +897,21 @@ public:
         READWRITE(nBits);
         READWRITE(nNonce);
 
+        // Merged-mining proof: present iff the AuxPoW version bit is set.
+        // Excluded under SER_GETHASH so the block hash stays header-only
+        // (the committed aux hash is GetHash(), computed before any AuxPoW).
+        if (!(nType & SER_GETHASH))
+        {
+            if (IsAuxPowVersion(this->nVersion))
+            {
+                if (fRead)
+                    const_cast<CBlock*>(this)->auxpow = std::make_shared<CAuxPow>();
+                READWRITE(*auxpow);
+            }
+            else if (fRead)
+                const_cast<CBlock*>(this)->auxpow.reset();
+        }
+
         // ConnectBlock depends on vtx being last so it can calculate offset
         if (!(nType & (SER_GETHASH|SER_BLOCKHEADERONLY)))
             READWRITE(vtx);
@@ -869,9 +928,13 @@ public:
         nBits = 0;
         nNonce = 0;
         vtx.clear();
+        auxpow.reset();
         vMerkleTree.clear();
         nDoS = 0;
     }
+
+    int32_t GetChainId() const { return ::GetChainId(nVersion); }
+    bool IsAuxPow() const      { return ::IsAuxPowVersion(nVersion); }
 
     bool IsNull() const
     {
@@ -994,8 +1057,8 @@ public:
             return LogError("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
         }
 
-        // Check the header
-        if (!CheckProofOfWork(GetPoWHash(), nBits))
+        // Check the header (AuxPoW-aware)
+        if (!CheckAuxProofOfWork(*this, nBits))
             return LogError("CBlock::ReadFromDisk() : errors in block header");
 
         return true;
