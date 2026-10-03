@@ -3834,7 +3834,10 @@ void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash
 
 bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
 {
-    uint256 hash = pblock->GetPoWHash();
+    // For a merged-mined block the proof of work lives in the parent header.
+    uint256 hash = (pblock->IsAuxPow() && pblock->auxpow)
+                       ? pblock->auxpow->parentBlock.GetPoWHash()
+                       : pblock->GetPoWHash();
     uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
     if (hash > hashTarget)

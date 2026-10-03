@@ -1,9 +1,17 @@
 # AuxPoW (Merged Mining) — Hard Fork Spec
 
-Status: **draft** — chain ID and activation heights to be confirmed before
-implementation lands. This is the design document; implementation will
-follow in a separate change, with a testnet rehearsal before release
-(same process as the LWMA fork, `doc/lwma-retarget-spec.md`).
+Status: **implemented** — chain ID `0x00C6` and heights 50,000 mainnet /
+200 testnet confirmed. Consensus core landed in PR #38; mining RPCs
+(`createauxblock`/`submitauxblock`) and the fork-activation testnet
+rehearsal in the follow-up. Activation is at mainnet height 50,000, so no
+mainnet behavior changes until then.
+
+> **Note on merged mining in practice:** the code is necessary but not
+> sufficient. Merged mining only improves security once a real high-hashrate
+> Scrypt pool (Litecoin/Dogecoin) configures CorgiCoin as an aux chain and
+> commits our block hashes in its coinbase. The RPCs below are the interface
+> such a pool drives; until one adopts the chain, solo CPU mining continues
+> unchanged.
 
 ## Motivation
 
