@@ -72,6 +72,7 @@ private:
     QLabel *labelMiningIcon;
     QLabel *labelConnectionsIcon;
     QLabel *labelBlocksIcon;
+    QLabel *labelSyncStatus;
     QLabel *progressBarLabel;
     QProgressBar *progressBar;
 

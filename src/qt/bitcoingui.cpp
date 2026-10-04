@@ -173,8 +173,13 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     progressBar->setAlignment(Qt::AlignCenter);
     progressBar->setVisible(false);
 
+    // Always-visible sync status text (e.g. "Up to date" / "Synchronizing")
+    labelSyncStatus = new QLabel();
+    labelSyncStatus->setText(tr("Connecting..."));
+
     statusBar()->addWidget(progressBarLabel);
     statusBar()->addWidget(progressBar);
+    statusBar()->addPermanentWidget(labelSyncStatus);
     statusBar()->addPermanentWidget(frameBlocks);
 
     syncIconMovie = new QMovie(":/movies/update_spinner", "mng", this);
@@ -527,6 +532,11 @@ void BitcoinGUI::setNumConnections(int count)
     }
     labelConnectionsIcon->setPixmap(QIcon(icon).pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
     labelConnectionsIcon->setToolTip(tr("%n active connection(s) to CorgiCoin network", "", count));
+
+    // Refresh the sync status text: when the wallet opens already synced,
+    // no new block arrives to fire numBlocksChanged, so update it here too.
+    if (clientModel)
+        setNumBlocks(clientModel->getNumBlocks(), clientModel->getNumBlocksOfPeers());
 }
 
 void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
@@ -536,7 +546,7 @@ void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
     {
         progressBarLabel->setVisible(false);
         progressBar->setVisible(false);
-
+        labelSyncStatus->setText(tr("No block source available"));
         return;
     }
 
@@ -551,6 +561,7 @@ void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
         {
             progressBarLabel->setText(tr("Synchronizing with network..."));
             progressBarLabel->setVisible(true);
+            labelSyncStatus->setText(tr("Synchronizing (%1 blocks left)").arg(nRemainingBlocks));
             progressBar->setFormat(tr("~%n block(s) remaining", "", nRemainingBlocks));
             progressBar->setMaximum(nTotalBlocks);
             progressBar->setValue(count);
@@ -610,6 +621,8 @@ void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
     if(secs < 90*60 && count >= nTotalBlocks)
     {
         tooltip = tr("Up to date") + QString(".<br>") + tooltip;
+        labelSyncStatus->setText(tr("Up to date"));
+        if (syncIconMovie) syncIconMovie->stop();
         labelBlocksIcon->setPixmap(QIcon(":/icons/synced").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
 
         overviewPage->showOutOfSyncWarning(false);
@@ -617,6 +630,8 @@ void BitcoinGUI::setNumBlocks(int count, int nTotalBlocks)
     else
     {
         tooltip = tr("Catching up...") + QString("<br>") + tooltip;
+        if (labelSyncStatus->text().isEmpty() || !(count < nTotalBlocks))
+            labelSyncStatus->setText(tr("Catching up..."));
         labelBlocksIcon->setMovie(syncIconMovie);
         syncIconMovie->start();
 
