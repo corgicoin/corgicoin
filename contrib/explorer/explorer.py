@@ -267,6 +267,14 @@ PAGE_HOME = """{% extends "base" %}{% block body %}
   <div class="card"><div class="muted">Transactions indexed</div><div class="v">{{ txcount }}</div></div>
   <div class="card"><div class="muted">CORG burned</div><div class="v">{{ fmt(burned) }}</div></div>
 </div>
+{% if forks %}
+<div class="cards">
+{% for f in forks %}
+  <div class="card"><div class="muted">{{ f.name|upper }} fork</div>
+  <div class="v">{% if f.active %}active{% else %}at {{ f.height }}{% endif %}</div></div>
+{% endfor %}
+</div>
+{% endif %}
 <table>
 <tr><th>Height</th><th>Time (UTC)</th><th class="num">Txs</th><th class="num">Size</th><th>Difficulty</th><th>Hash</th></tr>
 {% for b in blocks %}
@@ -396,9 +404,22 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         diff = blocks[0]["difficulty"] if blocks else 0.0
         txcount = d.execute("SELECT COUNT(*) c FROM txs").fetchone()["c"]
         burned = d.execute("SELECT COALESCE(SUM(value),0) s FROM burns").fetchone()["s"]
+        # Live chain + fork-activation status (getblockchaininfo, v4.4+).
+        # Degrades gracefully against older nodes that lack the RPC.
+        forks = []
+        try:
+            info = rpc.call("getblockchaininfo")
+            for name, sf in sorted((info.get("softforks") or {}).items()):
+                forks.append({
+                    "name": name,
+                    "height": sf.get("height"),
+                    "active": sf.get("active"),
+                })
+        except Exception:
+            pass
         return render_template_string(
             PAGE_HOME, blocks=blocks, tip=tip, diff=diff, txcount=txcount,
-            burned=burned, **helpers())
+            burned=burned, forks=forks, **helpers())
 
     @app.route("/block/<ref>")
     def block(ref):
