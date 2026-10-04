@@ -2745,6 +2745,126 @@ Value uptime(const Array& params, bool fHelp)
     return (int64_t)(GetTime() - nNodeStartTime);
 }
 
+extern int64 GetBlockValue(int nHeight, int64 nFees, uint256 prevHash);
+
+// Resolve a block index from a param that is either a height or a block hash.
+static CBlockIndex* BlockIndexFromParam(const Value& p)
+{
+    if (p.type() == str_type && p.get_str().size() == 64)
+    {
+        uint256 h(p.get_str());
+        auto it = mapBlockIndex.find(h);
+        if (it == mapBlockIndex.end())
+            throw JSONRPCError(-5, "Block not found");
+        return it->second;
+    }
+    int nHeight = (p.type() == int_type) ? p.get_int() : atoi(p.get_str().c_str());
+    if (nHeight < 0 || nHeight > nBestHeight)
+        throw JSONRPCError(-8, "Block height out of range");
+    CBlockIndex* idx = mapBlockIndex[hashBestChain];
+    while (idx->nHeight > nHeight)
+        idx = idx->pprev;
+    return idx;
+}
+
+Value getblockstats(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "getblockstats <hash_or_height>\n"
+            "Returns per-block statistics for the given block.\n"
+            "totalfee is derived from the coinbase output above the subsidy.");
+
+    CBlockIndex* pindex = BlockIndexFromParam(params[0]);
+    CBlock block;
+    if (!block.ReadFromDisk(pindex, true))
+        throw JSONRPCError(-5, "Block not readable from disk");
+
+    int64 total_out = 0, total_size = 0, mintx = -1, maxtx = 0;
+    int nins = 0, nouts = 0;
+    for (const CTransaction& tx : block.vtx)
+    {
+        int64 sz = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+        total_size += sz;
+        if (mintx < 0 || sz < mintx) mintx = sz;
+        if (sz > maxtx) maxtx = sz;
+        total_out += tx.GetValueOut();
+        if (!tx.IsCoinBase()) nins += (int)tx.vin.size();
+        nouts += (int)tx.vout.size();
+    }
+    uint256 prevHash = pindex->pprev ? pindex->pprev->GetBlockHash() : uint256(0);
+    int64 subsidy = GetBlockValue(pindex->nHeight, 0, prevHash);
+    int64 totalfee = block.vtx[0].GetValueOut() - subsidy;
+    if (totalfee < 0) totalfee = 0;
+
+    Object o;
+    o.emplace_back("height", pindex->nHeight);
+    o.emplace_back("blockhash", pindex->GetBlockHash().GetHex());
+    o.emplace_back("time", (int64_t)pindex->nTime);
+    o.emplace_back("mediantime", (int64_t)pindex->GetMedianTimePast());
+    o.emplace_back("txs", (int)block.vtx.size());
+    o.emplace_back("ins", nins);
+    o.emplace_back("outs", nouts);
+    o.emplace_back("total_out", ValueFromAmount(total_out));
+    o.emplace_back("total_size", (int64_t)total_size);
+    o.emplace_back("subsidy", ValueFromAmount(subsidy));
+    o.emplace_back("totalfee", ValueFromAmount(totalfee));
+    o.emplace_back("avgtxsize", (int64_t)(block.vtx.empty() ? 0 : total_size / (int64)block.vtx.size()));
+    o.emplace_back("mintxsize", (int64_t)(mintx < 0 ? 0 : mintx));
+    o.emplace_back("maxtxsize", (int64_t)maxtx);
+    return o;
+}
+
+Value getchaintxstats(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 2)
+        throw runtime_error(
+            "getchaintxstats [nblocks] [blockhash]\n"
+            "Transaction-count statistics over a window ending at the chain\n"
+            "tip (or at blockhash). nblocks is capped at 10080 (~a week).");
+
+    CBlockIndex* pindex = pindexBest;
+    if (params.size() > 1)
+    {
+        uint256 h(params[1].get_str());
+        auto it = mapBlockIndex.find(h);
+        if (it == mapBlockIndex.end())
+            throw JSONRPCError(-5, "Block not found");
+        pindex = it->second;
+    }
+    if (!pindex)
+        throw JSONRPCError(-8, "No blocks");
+
+    int window = (params.size() > 0) ? params[0].get_int() : std::min(pindex->nHeight, 1440);
+    if (window < 1) window = 1;
+    if (window > pindex->nHeight) window = pindex->nHeight;
+    if (window > 10080) window = 10080;
+
+    CBlockIndex* pstart = pindex;
+    for (int i = 0; i < window && pstart->pprev; i++)
+        pstart = pstart->pprev;
+
+    int64 windowTx = 0;
+    CBlockIndex* p = pindex;
+    for (int i = 0; i < window && p && p != pstart; i++)
+    {
+        CBlock b;
+        if (b.ReadFromDisk(p, true))
+            windowTx += (int64)b.vtx.size();
+        p = p->pprev;
+    }
+    int64 interval = pindex->GetBlockTime() - pstart->GetBlockTime();
+
+    Object o;
+    o.emplace_back("time", (int64_t)pindex->GetBlockTime());
+    o.emplace_back("window_final_block_height", pindex->nHeight);
+    o.emplace_back("window_block_count", window);
+    o.emplace_back("window_tx_count", (int64_t)windowTx);
+    o.emplace_back("window_interval", (int64_t)interval);
+    o.emplace_back("txrate", interval > 0 ? (double)windowTx / (double)interval : 0.0);
+    return o;
+}
+
 
 
 
@@ -2814,6 +2934,8 @@ static const CRPCCommand vRPCCommands[] =
     { "getnetworkinfo",         &getnetworkinfo,         true },
     { "getwalletinfo",          &getwalletinfo,          false },
     { "getchaintips",           &getchaintips,           true },
+    { "getblockstats",          &getblockstats,          true },
+    { "getchaintxstats",        &getchaintxstats,        true },
     { "uptime",                 &uptime,                 true },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
@@ -3705,6 +3827,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
     if (strMethod == "getblockheader"         && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "getchaintxstats"        && n > 0) ConvertTo<int>(params[0]);
     if (strMethod == "listsinceblock"         && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "sendmany"               && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "sendmany"               && n > 2) ConvertTo<int64_t>(params[2]);
