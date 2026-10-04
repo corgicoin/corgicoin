@@ -71,6 +71,8 @@ private slots:
 
     /** Copy label of currently selected address entry to clipboard */
     void onCopyLabelAction();
+    /** Copy the bech32 (corg1...) form of the selected address to clipboard */
+    void onCopyBech32Action();
     /** Edit currently selected address entry */
     void onEditAction();
 

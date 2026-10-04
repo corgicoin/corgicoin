@@ -7,6 +7,9 @@
 #include "editaddressdialog.h"
 #include "csvmodelwriter.h"
 #include "guiutil.h"
+#include "base58.h"
+
+#include <QApplication>
 
 #include <QSortFilterProxyModel>
 #include <QClipboard>
@@ -64,6 +67,7 @@ AddressBookPage::AddressBookPage(Mode mode, Tabs tab, QWidget *parent) :
     // Context menu actions
     QAction *copyLabelAction = new QAction(tr("Copy &Label"), this);
     QAction *copyAddressAction = new QAction(ui->copyToClipboard->text(), this);
+    QAction *copyBech32Action = new QAction(tr("Copy &bech32 address"), this);
     QAction *editAction = new QAction(tr("&Edit"), this);
     QAction *showQRCodeAction = new QAction(ui->showQRCode->text(), this);
     QAction *signMessageAction = new QAction(ui->signMessage->text(), this);
@@ -73,6 +77,7 @@ AddressBookPage::AddressBookPage(Mode mode, Tabs tab, QWidget *parent) :
     // Build context menu
     contextMenu = new QMenu();
     contextMenu->addAction(copyAddressAction);
+    contextMenu->addAction(copyBech32Action);
     contextMenu->addAction(copyLabelAction);
     contextMenu->addAction(editAction);
     if(tab == SendingTab)
@@ -87,6 +92,7 @@ AddressBookPage::AddressBookPage(Mode mode, Tabs tab, QWidget *parent) :
     // Connect signals for context menu actions
     connect(copyAddressAction, &QAction::triggered, this, &AddressBookPage::on_copyToClipboard_clicked);
     connect(copyLabelAction, &QAction::triggered, this, &AddressBookPage::onCopyLabelAction);
+    connect(copyBech32Action, &QAction::triggered, this, &AddressBookPage::onCopyBech32Action);
     connect(editAction, &QAction::triggered, this, &AddressBookPage::onEditAction);
     connect(deleteAction, &QAction::triggered, this, &AddressBookPage::on_deleteButton_clicked);
     connect(showQRCodeAction, &QAction::triggered, this, &AddressBookPage::on_showQRCode_clicked);
@@ -160,6 +166,22 @@ void AddressBookPage::on_copyToClipboard_clicked()
 void AddressBookPage::onCopyLabelAction()
 {
     GUIUtil::copyEntryData(ui->tableView, AddressTableModel::Label);
+}
+
+void AddressBookPage::onCopyBech32Action()
+{
+    if(!ui->tableView->selectionModel())
+        return;
+    QModelIndexList indexes = ui->tableView->selectionModel()->selectedRows(AddressTableModel::Address);
+    if(indexes.isEmpty())
+        return;
+    QString addr = indexes.at(0).data(Qt::EditRole).toString();
+    CBitcoinAddress base58(addr.toStdString());
+    if(!base58.IsValid())
+        return;
+    std::string bech = base58.ToBech32();
+    if(!bech.empty())
+        QApplication::clipboard()->setText(QString::fromStdString(bech));
 }
 
 void AddressBookPage::onEditAction()
