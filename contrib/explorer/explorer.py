@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 import requests
-from flask import Flask, abort, redirect, render_template_string, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template_string, request, url_for
 
 log = logging.getLogger("explorer")
 
@@ -532,6 +532,77 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         except Exception:
             pass
         abort(404)
+
+    # ---- JSON API (machine-readable; amounts in satoshis) -------------------
+
+    def rows_to_dicts(rows):
+        return [dict(r) for r in rows]
+
+    @app.route("/api/chaininfo")
+    def api_chaininfo():
+        d = db()
+        tip = d.execute("SELECT MAX(height) h FROM blocks").fetchone()["h"]
+        row = d.execute("SELECT difficulty FROM blocks WHERE height=?", (tip,)).fetchone() if tip is not None else None
+        out = {
+            "height": tip,
+            "difficulty": row["difficulty"] if row else None,
+            "tx_count_indexed": d.execute("SELECT COUNT(*) c FROM txs").fetchone()["c"],
+            "total_burned": d.execute("SELECT COALESCE(SUM(value),0) s FROM burns").fetchone()["s"],
+        }
+        try:
+            out["softforks"] = (rpc.call("getblockchaininfo") or {}).get("softforks")
+        except Exception:
+            out["softforks"] = None
+        return jsonify(out)
+
+    @app.route("/api/block/<ref>")
+    def api_block(ref):
+        d = db()
+        if ref.isdigit():
+            b = d.execute("SELECT * FROM blocks WHERE height=?", (int(ref),)).fetchone()
+        else:
+            b = d.execute("SELECT * FROM blocks WHERE hash=?", (ref,)).fetchone()
+        if b is None:
+            return jsonify({"error": "block not found"}), 404
+        txs = d.execute("SELECT txid, idx, is_coinbase FROM txs WHERE height=? ORDER BY idx", (b["height"],)).fetchall()
+        res = dict(b)
+        res["tx"] = rows_to_dicts(txs)
+        return jsonify(res)
+
+    @app.route("/api/tx/<txid>")
+    def api_tx(txid):
+        d = db()
+        t = d.execute("SELECT * FROM txs WHERE txid=?", (txid,)).fetchone()
+        if t is None:
+            return jsonify({"error": "tx not found"}), 404
+        res = dict(t)
+        res["outputs"] = rows_to_dicts(d.execute("SELECT * FROM outputs WHERE txid=? ORDER BY n", (txid,)).fetchall())
+        res["burns"] = rows_to_dicts(d.execute("SELECT * FROM burns WHERE txid=?", (txid,)).fetchall())
+        return jsonify(res)
+
+    @app.route("/api/address/<addr>")
+    def api_address(addr):
+        d = db()
+        outs = d.execute(
+            "SELECT o.*, t.height FROM outputs o JOIN txs t ON t.txid=o.txid "
+            "WHERE o.address=? ORDER BY t.height DESC", (addr,)).fetchall()
+        if not outs:
+            return jsonify({"error": "address not found"}), 404
+        received = sum(o["value"] for o in outs)
+        balance = sum(o["value"] for o in outs if not o["spent_txid"])
+        return jsonify({
+            "address": addr,
+            "balance": balance,
+            "received": received,
+            "outputs": rows_to_dicts(outs),
+        })
+
+    @app.route("/api/burns")
+    def api_burns():
+        d = db()
+        rows = d.execute("SELECT * FROM burns ORDER BY height DESC LIMIT 1000").fetchall()
+        total = d.execute("SELECT COALESCE(SUM(value),0) s FROM burns").fetchone()["s"]
+        return jsonify({"total_burned": total, "count": len(rows), "burns": rows_to_dicts(rows)})
 
     return app
 

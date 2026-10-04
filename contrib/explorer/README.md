@@ -25,6 +25,19 @@ Initial index of the current chain (~31k blocks) takes a few minutes; the
 indexer then follows the tip, polling every 10 s, and unwinds reorgs by
 re-checking the stored tip hash against the chain.
 
+## JSON API
+
+Machine-readable endpoints for tools and bots (amounts in satoshis):
+
+- `GET /api/chaininfo` — tip height, difficulty, indexed tx count, total
+  burned, and live fork status (from the node's `getblockchaininfo`)
+- `GET /api/block/<height|hash>` — block record plus its transaction list
+- `GET /api/tx/<txid>` — transaction with its outputs and any decoded burns
+- `GET /api/address/<address>` — balance, total received, and outputs
+- `GET /api/burns` — recent burns (partner + Solana destination) and the total
+
+Each returns JSON; unknown ids return `{"error": …}` with HTTP 404.
+
 ## Notes
 
 - Balances are computed from the output index (sum of unspent outputs per
