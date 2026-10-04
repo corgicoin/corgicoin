@@ -5,9 +5,12 @@
 #include "guiconstants.h"
 #include "guiutil.h"
 #include "optionsmodel.h"
+#include "base58.h"
 
 #include <QPixmap>
 #include <QUrl>
+#include <QCheckBox>
+#include <QBoxLayout>
 
 #include <qrencode.h>
 
@@ -28,6 +31,18 @@ QRCodeDialog::QRCodeDialog(const QString &addr, const QString &label, bool enabl
     ui->lnLabel->setText(label);
 
     ui->btnSaveAs->setEnabled(false);
+
+    // Offer the modern bech32 (corg1...) encoding of the address in the QR,
+    // placed just above the "Request payment" checkbox. Only shown when the
+    // address actually converts (i.e. a normal P2PKH/P2SH address).
+    chkBech32 = new QCheckBox(tr("Use bech32 (corg1...) address"), this);
+    {
+        CBitcoinAddress a(address.toStdString());
+        chkBech32->setVisible(a.IsValid() && !a.ToBech32().empty());
+    }
+    if (QBoxLayout *lay = qobject_cast<QBoxLayout*>(ui->chkReqPayment->parentWidget()->layout()))
+        lay->insertWidget(lay->indexOf(ui->chkReqPayment), chkBech32);
+    connect(chkBech32, &QCheckBox::toggled, this, &QRCodeDialog::genCode);
 
     genCode();
 }
@@ -83,7 +98,18 @@ void QRCodeDialog::genCode()
 
 QString QRCodeDialog::getURI()
 {
-    QString ret = QString("corgicoin:%1").arg(address);
+    QString addrForUri = address;
+    if (chkBech32 && chkBech32->isChecked())
+    {
+        CBitcoinAddress a(address.toStdString());
+        if (a.IsValid())
+        {
+            std::string b = a.ToBech32();
+            if (!b.empty())
+                addrForUri = QString::fromStdString(b);
+        }
+    }
+    QString ret = QString("corgicoin:%1").arg(addrForUri);
     int paramCount = 0;
 
     ui->outUri->clear();

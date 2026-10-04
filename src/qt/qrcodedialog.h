@@ -33,6 +33,7 @@ private:
     OptionsModel *model;
     QString address;
     QImage myImage;
+    class QCheckBox *chkBech32;
 
     void genCode();
     QString getURI();
