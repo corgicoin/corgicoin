@@ -296,8 +296,12 @@ std::string HelpMessage()
 /** Initialize corgicoin.
  *  @pre Parameters should be parsed and config file should be read.
  */
+// Node start time (unix seconds), for the uptime RPC (defined in corgicoinrpc.cpp).
+extern int64 nNodeStartTime;
+
 bool AppInit2()
 {
+    nNodeStartTime = GetTime();
     // ********************************************************* Step 1: setup
 #ifdef _MSC_VER
     // Turn off microsoft heap dump noise
