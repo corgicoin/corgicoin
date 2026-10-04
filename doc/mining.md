@@ -76,6 +76,14 @@ Watch your progress:
 ./corgicoind getbalance       # rewards appear here after 30 confirmations
 ```
 
+By default each mined block's reward goes to a new wallet keypool address.
+To send **all** rewards to one address instead (e.g. a treasury or pool
+payout address), start the daemon with `-mineraddress`:
+
+```bash
+./corgicoind -mineraddress=CYourAddressHere -gen -genproclimit=2
+```
+
 Stop mining:
 
 ```bash
