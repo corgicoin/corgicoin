@@ -25,6 +25,9 @@ Initial index of the current chain (~31k blocks) takes a few minutes; the
 indexer then follows the tip, polling every 10 s, and unwinds reorgs by
 re-checking the stored tip hash against the chain.
 
+- **Rich List** (`/richlist`): top addresses by unspent balance.
+- **Network** (`/network`): live node info, peers, and mempool via RPC.
+
 ## JSON API
 
 Machine-readable endpoints for tools and bots (amounts in satoshis):

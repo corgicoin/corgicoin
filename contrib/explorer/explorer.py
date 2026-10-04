@@ -282,7 +282,7 @@ BASE = """
 </style>
 <header>
   <h1><a href="{{ url_for('home') }}"><img class="logo" src="/corgi.png" alt="CorgiCoin">CorgiCoin Explorer</a></h1>
-  <nav><a href="{{ url_for('home') }}">Blocks</a><a href="{{ url_for('charts') }}">Charts</a><a href="{{ url_for('burns') }}">Burns</a></nav>
+  <nav><a href="{{ url_for('home') }}">Blocks</a><a href="{{ url_for('charts') }}">Charts</a><a href="{{ url_for('richlist') }}">Rich List</a><a href="{{ url_for('burns') }}">Burns</a><a href="{{ url_for('network') }}">Network</a></nav>
   <form class="search" action="{{ url_for('search') }}">
     <input type="text" name="q" placeholder="height / block hash / txid / address">
     <input type="submit" value="Search">
@@ -395,6 +395,59 @@ PAGE_CHARTS = """{% extends "base" %}{% block body %}
 {{ time_svg|safe }}
 {% endblock %}"""
 
+PAGE_RICHLIST = """{% extends "base" %}{% block body %}
+<h2>Rich List</h2>
+<div class="cards">
+  <div class="card"><div class="muted">Addresses</div><div class="v">{{ naddr }}</div></div>
+  <div class="card"><div class="muted">Indexed supply</div><div class="v">{{ fmt(supply) }}</div></div>
+</div>
+<p class="muted">Top {{ rows|length }} addresses by unspent balance.</p>
+<table>
+<tr><th class="num">#</th><th>Address</th><th class="num">Balance</th><th class="num">% supply</th></tr>
+{% for r in rows %}
+<tr><td class="num">{{ loop.index }}</td>
+<td class="mono"><a href="{{ url_for('address', addr=r['address']) }}">{{ r['address'] }}</a></td>
+<td class="num">{{ fmt(r['balance']) }}</td>
+<td class="num">{{ "%.2f"|format(100 * r['balance'] / supply if supply else 0) }}%</td></tr>
+{% endfor %}
+</table>
+{% endblock %}"""
+
+PAGE_NETWORK = """{% extends "base" %}{% block body %}
+<h2>Network</h2>
+{% if netinfo %}
+<div class="cards">
+  <div class="card"><div class="muted">Version</div><div class="v">{{ netinfo.get('subversion','?') }}</div></div>
+  <div class="card"><div class="muted">Protocol</div><div class="v">{{ netinfo.get('protocolversion','?') }}</div></div>
+  <div class="card"><div class="muted">Connections</div><div class="v">{{ netinfo.get('connections','?') }}</div></div>
+  <div class="card"><div class="muted">Mempool txs</div><div class="v">{{ mempool|length }}</div></div>
+</div>
+{% else %}
+<p class="muted">Node not reachable for live network info.</p>
+{% endif %}
+{% if peers %}
+<h3>Peers ({{ peers|length }})</h3>
+<table>
+<tr><th>Address</th><th>Version</th><th class="num">Height</th><th class="num">Ping</th></tr>
+{% for p in peers %}
+<tr><td class="mono">{{ p.get('addr','?') }}</td>
+<td>{{ p.get('subver','') }}</td>
+<td class="num">{{ p.get('startingheight','') }}</td>
+<td class="num">{{ "%.0f"|format(p.get('pingtime',0)*1000) if p.get('pingtime') else '' }}{{ 'ms' if p.get('pingtime') else '' }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+{% if mempool %}
+<h3>Mempool</h3>
+<table>
+<tr><th>Txid</th></tr>
+{% for txid in mempool[:100] %}
+<tr><td class="mono"><a href="{{ url_for('tx', txid=txid) }}">{{ txid }}</a></td></tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}"""
+
 PAGE_BURNS = """{% extends "base" %}{% block body %}
 <h2>Burns</h2>
 <div class="cards">
@@ -456,7 +509,7 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
     app.jinja_loader = DictLoader({
         "base": BASE, "home": PAGE_HOME, "block": PAGE_BLOCK,
         "tx": PAGE_TX, "address": PAGE_ADDRESS, "burns": PAGE_BURNS,
-        "charts": PAGE_CHARTS,
+        "charts": PAGE_CHARTS, "richlist": PAGE_RICHLIST, "network": PAGE_NETWORK,
     })
 
     def db():
@@ -546,6 +599,40 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         return render_template_string(
             PAGE_ADDRESS, addr=addr, outs=outs, received=received,
             balance=balance, bech32=bech, **helpers())
+
+    @app.route("/richlist")
+    def richlist():
+        d = db()
+        rows = d.execute(
+            "SELECT address, SUM(value) balance FROM outputs "
+            "WHERE spent_txid IS NULL AND address IS NOT NULL "
+            "GROUP BY address ORDER BY balance DESC LIMIT 100").fetchall()
+        supply = d.execute(
+            "SELECT COALESCE(SUM(value),0) s FROM outputs WHERE spent_txid IS NULL").fetchone()["s"]
+        naddr = d.execute(
+            "SELECT COUNT(DISTINCT address) c FROM outputs "
+            "WHERE spent_txid IS NULL AND address IS NOT NULL").fetchone()["c"]
+        return render_template_string(
+            PAGE_RICHLIST, rows=rows, supply=supply, naddr=naddr, **helpers())
+
+    @app.route("/network")
+    def network():
+        netinfo = peers = None
+        mempool = []
+        try:
+            netinfo = rpc.call("getnetworkinfo")
+        except Exception:
+            pass
+        try:
+            peers = rpc.call("getpeerinfo")
+        except Exception:
+            pass
+        try:
+            mempool = rpc.call("getrawmempool") or []
+        except Exception:
+            pass
+        return render_template_string(
+            PAGE_NETWORK, netinfo=netinfo, peers=peers, mempool=mempool, **helpers())
 
     @app.route("/burns")
     def burns():
