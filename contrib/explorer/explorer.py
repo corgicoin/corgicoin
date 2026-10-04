@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 import requests
-from flask import Flask, abort, redirect, render_template_string, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template_string, request, url_for
 
 log = logging.getLogger("explorer")
 
@@ -282,7 +282,7 @@ BASE = """
 </style>
 <header>
   <h1><a href="{{ url_for('home') }}"><img class="logo" src="/corgi.png" alt="CorgiCoin">CorgiCoin Explorer</a></h1>
-  <nav><a href="{{ url_for('home') }}">Blocks</a><a href="{{ url_for('burns') }}">Burns</a></nav>
+  <nav><a href="{{ url_for('home') }}">Blocks</a><a href="{{ url_for('charts') }}">Charts</a><a href="{{ url_for('burns') }}">Burns</a></nav>
   <form class="search" action="{{ url_for('search') }}">
     <input type="text" name="q" placeholder="height / block hash / txid / address">
     <input type="submit" value="Search">
@@ -386,6 +386,15 @@ PAGE_ADDRESS = """{% extends "base" %}{% block body %}
 </table>
 {% endblock %}"""
 
+PAGE_CHARTS = """{% extends "base" %}{% block body %}
+<h2>Network Charts</h2>
+<p class="muted">Last {{ n }} blocks (heights {{ first_h }}&ndash;{{ last_h }}).</p>
+<h3>Difficulty</h3>
+{{ diff_svg|safe }}
+<h3>Block time (seconds between blocks)</h3>
+{{ time_svg|safe }}
+{% endblock %}"""
+
 PAGE_BURNS = """{% extends "base" %}{% block body %}
 <h2>Burns</h2>
 <div class="cards">
@@ -405,6 +414,39 @@ PAGE_BURNS = """{% extends "base" %}{% block body %}
 {% endblock %}"""
 
 
+def svg_line_chart(values, color="#4caf50", w=920, h=220, pad=34, fmt="{:.4g}"):
+    """Themed inline-SVG line chart with min/max labels. No dependencies."""
+    import html as _html
+    if not values:
+        return '<p class="muted">no data</p>'
+    ymin, ymax = min(values), max(values)
+    if ymax == ymin:
+        ymax = ymin + 1
+    n = len(values)
+    def X(i):
+        return pad + (w - 2 * pad) * (i / (n - 1) if n > 1 else 0)
+    def Y(v):
+        return h - pad - (h - 2 * pad) * ((v - ymin) / (ymax - ymin))
+    line = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(values))
+    area = f"{pad:.1f},{h - pad:.1f} " + line + f" {X(n - 1):.1f},{h - pad:.1f}"
+    gid = f"g{abs(hash((n, ymin, ymax, color))) % 100000}"
+    return (
+        f'<svg viewBox="0 0 {w} {h}" width="100%" style="max-width:{w}px" '
+        f'xmlns="http://www.w3.org/2000/svg" role="img">'
+        f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{color}" stop-opacity="0.35"/>'
+        f'<stop offset="1" stop-color="{color}" stop-opacity="0"/></linearGradient></defs>'
+        f'<rect x="0" y="0" width="{w}" height="{h}" fill="#183618" rx="10"/>'
+        f'<line x1="{pad}" y1="{h-pad}" x2="{w-pad}" y2="{h-pad}" stroke="#2f5e2f"/>'
+        f'<line x1="{pad}" y1="{pad}" x2="{pad}" y2="{h-pad}" stroke="#2f5e2f"/>'
+        f'<polygon points="{area}" fill="url(#{gid})"/>'
+        f'<polyline points="{line}" fill="none" stroke="{color}" stroke-width="2"/>'
+        f'<text x="{pad+4}" y="{pad}" fill="#a9c7ab" font-size="11">{_html.escape(fmt.format(ymax))}</text>'
+        f'<text x="{pad+4}" y="{h-pad-4}" fill="#a9c7ab" font-size="11">{_html.escape(fmt.format(ymin))}</text>'
+        f'</svg>'
+    )
+
+
 def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
     app = Flask(__name__)
     app.jinja_loader = None  # templates are inline
@@ -414,6 +456,7 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
     app.jinja_loader = DictLoader({
         "base": BASE, "home": PAGE_HOME, "block": PAGE_BLOCK,
         "tx": PAGE_TX, "address": PAGE_ADDRESS, "burns": PAGE_BURNS,
+        "charts": PAGE_CHARTS,
     })
 
     def db():
@@ -511,6 +554,26 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         total = d.execute("SELECT COALESCE(SUM(value),0) s FROM burns").fetchone()["s"]
         return render_template_string(PAGE_BURNS, rows=rows, total=total, **helpers())
 
+    @app.route("/charts")
+    def charts():
+        d = db()
+        rows = d.execute(
+            "SELECT height, time, difficulty FROM blocks ORDER BY height DESC LIMIT 500"
+        ).fetchall()
+        rows = list(reversed(rows))  # oldest -> newest
+        if not rows:
+            return render_template_string(
+                PAGE_CHARTS, diff_svg="", time_svg="", n=0, first_h=0, last_h=0, **helpers())
+        diffs = [r["difficulty"] for r in rows]
+        # block times = gaps between consecutive block timestamps (clamped >= 0)
+        times = [max(0, rows[i]["time"] - rows[i - 1]["time"]) for i in range(1, len(rows))]
+        return render_template_string(
+            PAGE_CHARTS,
+            diff_svg=svg_line_chart(diffs, color="#8bc34a", fmt="{:.6f}"),
+            time_svg=svg_line_chart(times, color="#e6c34a", fmt="{:.0f}s"),
+            n=len(rows), first_h=rows[0]["height"], last_h=rows[-1]["height"],
+            **helpers())
+
     @app.route("/search")
     def search():
         q = (request.args.get("q") or "").strip()
@@ -532,6 +595,77 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         except Exception:
             pass
         abort(404)
+
+    # ---- JSON API (machine-readable; amounts in satoshis) -------------------
+
+    def rows_to_dicts(rows):
+        return [dict(r) for r in rows]
+
+    @app.route("/api/chaininfo")
+    def api_chaininfo():
+        d = db()
+        tip = d.execute("SELECT MAX(height) h FROM blocks").fetchone()["h"]
+        row = d.execute("SELECT difficulty FROM blocks WHERE height=?", (tip,)).fetchone() if tip is not None else None
+        out = {
+            "height": tip,
+            "difficulty": row["difficulty"] if row else None,
+            "tx_count_indexed": d.execute("SELECT COUNT(*) c FROM txs").fetchone()["c"],
+            "total_burned": d.execute("SELECT COALESCE(SUM(value),0) s FROM burns").fetchone()["s"],
+        }
+        try:
+            out["softforks"] = (rpc.call("getblockchaininfo") or {}).get("softforks")
+        except Exception:
+            out["softforks"] = None
+        return jsonify(out)
+
+    @app.route("/api/block/<ref>")
+    def api_block(ref):
+        d = db()
+        if ref.isdigit():
+            b = d.execute("SELECT * FROM blocks WHERE height=?", (int(ref),)).fetchone()
+        else:
+            b = d.execute("SELECT * FROM blocks WHERE hash=?", (ref,)).fetchone()
+        if b is None:
+            return jsonify({"error": "block not found"}), 404
+        txs = d.execute("SELECT txid, idx, is_coinbase FROM txs WHERE height=? ORDER BY idx", (b["height"],)).fetchall()
+        res = dict(b)
+        res["tx"] = rows_to_dicts(txs)
+        return jsonify(res)
+
+    @app.route("/api/tx/<txid>")
+    def api_tx(txid):
+        d = db()
+        t = d.execute("SELECT * FROM txs WHERE txid=?", (txid,)).fetchone()
+        if t is None:
+            return jsonify({"error": "tx not found"}), 404
+        res = dict(t)
+        res["outputs"] = rows_to_dicts(d.execute("SELECT * FROM outputs WHERE txid=? ORDER BY n", (txid,)).fetchall())
+        res["burns"] = rows_to_dicts(d.execute("SELECT * FROM burns WHERE txid=?", (txid,)).fetchall())
+        return jsonify(res)
+
+    @app.route("/api/address/<addr>")
+    def api_address(addr):
+        d = db()
+        outs = d.execute(
+            "SELECT o.*, t.height FROM outputs o JOIN txs t ON t.txid=o.txid "
+            "WHERE o.address=? ORDER BY t.height DESC", (addr,)).fetchall()
+        if not outs:
+            return jsonify({"error": "address not found"}), 404
+        received = sum(o["value"] for o in outs)
+        balance = sum(o["value"] for o in outs if not o["spent_txid"])
+        return jsonify({
+            "address": addr,
+            "balance": balance,
+            "received": received,
+            "outputs": rows_to_dicts(outs),
+        })
+
+    @app.route("/api/burns")
+    def api_burns():
+        d = db()
+        rows = d.execute("SELECT * FROM burns ORDER BY height DESC LIMIT 1000").fetchall()
+        total = d.execute("SELECT COALESCE(SUM(value),0) s FROM burns").fetchone()["s"]
+        return jsonify({"total_burned": total, "count": len(rows), "burns": rows_to_dicts(rows)})
 
     return app
 
