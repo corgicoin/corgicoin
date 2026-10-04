@@ -231,23 +231,51 @@ BASE = """
 <!doctype html>
 <title>CorgiCoin Explorer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
-  header { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; margin-bottom: 1.5rem; }
-  header h1 { margin: 0; font-size: 1.3rem; }
-  header h1 a { text-decoration: none; color: inherit; }
-  nav a { margin-right: .8rem; }
+  /* Themed to match corgicoin.co — forest green + Bungee/Inter */
+  :root {
+    --bg: #1a3d1a; --panel: #214a21; --panel-2: #183618;
+    --text: #e8f5e9; --muted: #a9c7ab; --border: #2f5e2f;
+    --accent: #4caf50; --lime: #8bc34a; --gold: #e6c34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Inter, system-ui, sans-serif; color: var(--text);
+    background: var(--bg); max-width: 1000px; margin: 0 auto; padding: 1.5rem 1rem 3rem;
+    background-image: radial-gradient(1200px 500px at 70% -10%, #27552733, transparent);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.5rem;
+           border-bottom: 2px solid var(--border); padding-bottom: 1rem; }
+  header h1 { margin: 0; font-size: 1.15rem; }
+  header h1 a { font-family: 'Bungee', system-ui, sans-serif; color: var(--text); letter-spacing: .5px; }
+  nav a { margin-right: .9rem; font-weight: 600; }
+  h2 { font-family: 'Bungee', system-ui, sans-serif; font-size: 1.1rem; letter-spacing: .5px;
+       color: #fff; margin: 1.4rem 0 .8rem; }
+  h3 { font-weight: 700; color: var(--lime); margin: 1.2rem 0 .5rem; font-size: 1rem; }
   table { border-collapse: collapse; width: 100%; overflow-x: auto; display: block; }
-  th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid #8884; font-size: .92rem; }
+  th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border); font-size: .92rem; }
+  th { font-family: 'Bungee', system-ui, sans-serif; font-size: .7rem; letter-spacing: 1px;
+       text-transform: uppercase; color: var(--muted); font-weight: 400; }
+  tr:hover td { background: #ffffff08; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  code, .mono { font-family: ui-monospace, monospace; font-size: .85rem; word-break: break-all; }
-  form.search { flex: 1; min-width: 240px; }
-  form.search input[type=text] { width: 70%; padding: .35rem; }
+  code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: .85rem; word-break: break-all; }
+  form.search { flex: 1; min-width: 240px; display: flex; gap: .5rem; }
+  form.search input[type=text] { flex: 1; padding: .45rem .6rem; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--text); }
+  form.search input[type=text]::placeholder { color: var(--muted); }
+  form.search input[type=submit] { padding: .45rem 1rem; border: 0; border-radius: 6px;
+      background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  form.search input[type=submit]:hover { background: #5cbf60; }
   .cards { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
-  .card { border: 1px solid #8884; border-radius: 8px; padding: .6rem 1rem; }
-  .card .v { font-size: 1.15rem; font-weight: 600; }
-  .muted { opacity: .65; }
+  .card { border: 1px solid var(--border); border-radius: 10px; padding: .7rem 1.1rem;
+          background: var(--panel); min-width: 140px; }
+  .card .v { font-size: 1.2rem; font-weight: 700; color: #fff; margin-top: .15rem; }
+  .muted { color: var(--muted); font-size: .85rem; }
 </style>
 <header>
   <h1><a href="{{ url_for('home') }}">&#128021; CorgiCoin Explorer</a></h1>

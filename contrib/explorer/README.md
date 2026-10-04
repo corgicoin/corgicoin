@@ -33,3 +33,8 @@ re-checking the stored tip hash against the chain.
   `corg1…`; bech32 lookups resolve through the node's `validateaddress`).
 - This is operator tooling, not a hardened public service. If you expose
   it publicly, put it behind a reverse proxy and rate-limit.
+- Themed to match corgicoin.co (forest green, Bungee/Inter from Google
+  Fonts). The fonts load over the network; offline, the page falls back to
+  system fonts and stays fully usable.
+- The home page shows LWMA/AuxPoW fork activation status via the node's
+  `getblockchaininfo` (v4.4+); against older nodes those cards are omitted.
