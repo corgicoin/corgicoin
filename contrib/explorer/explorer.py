@@ -231,6 +231,7 @@ BASE = """
 <!doctype html>
 <title>CorgiCoin Explorer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/corgi.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -252,7 +253,9 @@ BASE = """
   header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.5rem;
            border-bottom: 2px solid var(--border); padding-bottom: 1rem; }
   header h1 { margin: 0; font-size: 1.15rem; }
-  header h1 a { font-family: 'Bungee', system-ui, sans-serif; color: var(--text); letter-spacing: .5px; }
+  header h1 a { font-family: 'Bungee', system-ui, sans-serif; color: var(--text); letter-spacing: .5px;
+                display: inline-flex; align-items: center; gap: .5rem; }
+  header h1 a img.logo { height: 1.8em; width: auto; }
   nav a { margin-right: .9rem; font-weight: 600; }
   h2 { font-family: 'Bungee', system-ui, sans-serif; font-size: 1.1rem; letter-spacing: .5px;
        color: #fff; margin: 1.4rem 0 .8rem; }
@@ -278,7 +281,7 @@ BASE = """
   .muted { color: var(--muted); font-size: .85rem; }
 </style>
 <header>
-  <h1><a href="{{ url_for('home') }}">&#128021; CorgiCoin Explorer</a></h1>
+  <h1><a href="{{ url_for('home') }}"><img class="logo" src="/corgi.png" alt="CorgiCoin">CorgiCoin Explorer</a></h1>
   <nav><a href="{{ url_for('home') }}">Blocks</a><a href="{{ url_for('burns') }}">Burns</a></nav>
   <form class="search" action="{{ url_for('search') }}">
     <input type="text" name="q" placeholder="height / block hash / txid / address">
@@ -423,6 +426,14 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
             "fmt": lambda v: f"{v / COIN:,.8f}".rstrip("0").rstrip("."),
             "ts": lambda t: time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(t)),
         }
+
+    @app.route("/corgi.png")
+    def logo():
+        from flask import send_file
+        resp = send_file(Path(__file__).resolve().parent / "corgicoin.png",
+                         mimetype="image/png")
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        return resp
 
     @app.route("/")
     def home():
