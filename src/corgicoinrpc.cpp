@@ -2573,6 +2573,178 @@ Value getblock(const Array& params, bool fHelp)
     return blockToJSON(block, pblockindex);
 }
 
+// Node start time (unix seconds); set by init's AppInit2. Defined here so it
+// links into both the daemon and the test binary (which excludes init.cpp).
+int64 nNodeStartTime = 0;
+
+Value getblockheader(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "getblockheader <hash> [verbose=true]\n"
+            "If verbose is true, returns an object with the block header;\n"
+            "if false, returns the serialized header as a hex string.");
+
+    uint256 hash(params[0].get_str());
+    if (mapBlockIndex.count(hash) == 0)
+        throw JSONRPCError(-5, "Block not found");
+    CBlockIndex* pblockindex = mapBlockIndex[hash];
+
+    bool fVerbose = true;
+    if (params.size() > 1)
+        fVerbose = params[1].get_bool();
+
+    if (!fVerbose)
+    {
+        // The bare 80-byte header (CPureBlockHeader serializes exactly it)
+        CPureBlockHeader header;
+        header.nVersion = pblockindex->nVersion;
+        header.hashPrevBlock = pblockindex->pprev ? pblockindex->pprev->GetBlockHash() : uint256(0);
+        header.hashMerkleRoot = pblockindex->hashMerkleRoot;
+        header.nTime = pblockindex->nTime;
+        header.nBits = pblockindex->nBits;
+        header.nNonce = pblockindex->nNonce;
+        CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
+        ss << header;
+        return HexStr(ss.begin(), ss.end());
+    }
+
+    Object result;
+    result.emplace_back("hash", pblockindex->GetBlockHash().GetHex());
+    int confirmations = -1;
+    if (pblockindex->IsInMainChain())
+        confirmations = nBestHeight - pblockindex->nHeight + 1;
+    result.emplace_back("confirmations", confirmations);
+    result.emplace_back("height", pblockindex->nHeight);
+    result.emplace_back("version", pblockindex->nVersion);
+    result.emplace_back("merkleroot", pblockindex->hashMerkleRoot.GetHex());
+    result.emplace_back("time", (int64_t)pblockindex->nTime);
+    result.emplace_back("mediantime", (int64_t)pblockindex->GetMedianTimePast());
+    result.emplace_back("nonce", (uint64_t)pblockindex->nNonce);
+    result.emplace_back("bits", HexBits(pblockindex->nBits));
+    result.emplace_back("difficulty", GetDifficulty(pblockindex));
+    result.emplace_back("chainwork", pblockindex->bnChainWork.GetHex());
+    if (pblockindex->pprev)
+        result.emplace_back("previousblockhash", pblockindex->pprev->GetBlockHash().GetHex());
+    if (pblockindex->pnext)
+        result.emplace_back("nextblockhash", pblockindex->pnext->GetBlockHash().GetHex());
+    return result;
+}
+
+static Object SoftForkStatus(int nForkHeight)
+{
+    Object o;
+    o.emplace_back("type", string("buried"));
+    o.emplace_back("active", (nBestHeight + 1) >= nForkHeight);
+    o.emplace_back("height", nForkHeight);
+    return o;
+}
+
+Value getblockchaininfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getblockchaininfo\n"
+            "Returns an object with state info about blockchain processing.");
+
+    Object obj;
+    obj.emplace_back("chain", string(fTestNet ? "test" : "main"));
+    obj.emplace_back("blocks", (int)nBestHeight);
+    obj.emplace_back("headers", (int)nBestHeight);
+    obj.emplace_back("bestblockhash", hashBestChain.GetHex());
+    obj.emplace_back("difficulty", (double)GetDifficulty());
+    if (pindexBest)
+    {
+        obj.emplace_back("mediantime", (int64_t)pindexBest->GetMedianTimePast());
+        obj.emplace_back("chainwork", pindexBest->bnChainWork.GetHex());
+    }
+    obj.emplace_back("initialblockdownload", IsInitialBlockDownload());
+
+    Object softforks;
+    softforks.emplace_back("lwma", SoftForkStatus(GetLwmaForkHeight()));
+    softforks.emplace_back("auxpow", SoftForkStatus(GetAuxPowForkHeight()));
+    obj.emplace_back("softforks", softforks);
+    return obj;
+}
+
+Value getnetworkinfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getnetworkinfo\n"
+            "Returns an object with state info about P2P networking.");
+
+    Object obj;
+    obj.emplace_back("version", (int)CLIENT_VERSION);
+    obj.emplace_back("subversion",
+        FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, std::vector<string>()));
+    obj.emplace_back("protocolversion", (int)PROTOCOL_VERSION);
+    obj.emplace_back("connections", (int)vNodes.size());
+    CService addrProxy;
+    GetProxy(NET_IPV4, addrProxy);
+    obj.emplace_back("proxy", addrProxy.IsValid() ? addrProxy.ToStringIPPort() : string());
+    obj.emplace_back("relayfee", ValueFromAmount(nMinimumInputValue));
+    obj.emplace_back("testnet", fTestNet);
+    return obj;
+}
+
+Value getwalletinfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getwalletinfo\n"
+            "Returns an object with state info about the wallet.");
+
+    Object obj;
+    obj.emplace_back("walletversion", pwalletMain->GetVersion());
+    obj.emplace_back("balance", ValueFromAmount(pwalletMain->GetBalance()));
+    obj.emplace_back("txcount", (int)pwalletMain->mapWallet.size());
+    obj.emplace_back("keypoololdest", (int64_t)pwalletMain->GetOldestKeyPoolTime());
+    obj.emplace_back("keypoolsize", (int)pwalletMain->GetKeyPoolSize());
+    if (pwalletMain->IsCrypted())
+        obj.emplace_back("unlocked_until", (int64_t)nWalletUnlockTime / 1000);
+    obj.emplace_back("paytxfee", ValueFromAmount(nTransactionFee));
+    return obj;
+}
+
+Value getchaintips(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getchaintips\n"
+            "Return information about all known tips in the block tree,\n"
+            "including the main chain and any orphaned branches.");
+
+    // A tip is any block index that is not the predecessor of another.
+    std::set<const CBlockIndex*> setPrev;
+    for (const auto& item : mapBlockIndex)
+        if (item.second->pprev)
+            setPrev.insert(item.second->pprev);
+
+    Array res;
+    for (const auto& item : mapBlockIndex)
+    {
+        const CBlockIndex* idx = item.second;
+        if (setPrev.count(idx))
+            continue; // not a tip
+        Object o;
+        o.emplace_back("height", idx->nHeight);
+        o.emplace_back("hash", idx->GetBlockHash().GetHex());
+        o.emplace_back("status", string(idx == pindexBest ? "active" : "valid-headers"));
+        res.push_back(o);
+    }
+    return res;
+}
+
+Value uptime(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "uptime\n"
+            "Returns the total uptime of the server in seconds.");
+    return (int64_t)(GetTime() - nNodeStartTime);
+}
+
 
 
 
@@ -2637,6 +2809,12 @@ static const CRPCCommand vRPCCommands[] =
     { "settxfee",               &settxfee,               false },
     { "setmininput",            &setmininput,            false },
     { "getblocktemplate",       &getblocktemplate,       true },
+    { "getblockheader",         &getblockheader,         false },
+    { "getblockchaininfo",      &getblockchaininfo,      true },
+    { "getnetworkinfo",         &getnetworkinfo,         true },
+    { "getwalletinfo",          &getwalletinfo,          false },
+    { "getchaintips",           &getchaintips,           true },
+    { "uptime",                 &uptime,                 true },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "listsinceblock",         &listsinceblock,         false },
@@ -3526,6 +3704,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "listaccounts"           && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
+    if (strMethod == "getblockheader"         && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "listsinceblock"         && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "sendmany"               && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "sendmany"               && n > 2) ConvertTo<int64_t>(params[2]);

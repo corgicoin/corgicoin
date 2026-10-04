@@ -55,6 +55,10 @@ blocks. See **[doc/mining.md](doc/mining.md)** for a five-minute setup
 guide, and [contrib/corgicoin.conf.example](contrib/corgicoin.conf.example)
 for an annotated config.
 
+Modernizing another 2014-era Scrypt coin? CorgiCoin's whole 2026 overhaul is
+written up as a reusable playbook:
+**[doc/modernizing-scrypt-coins.md](doc/modernizing-scrypt-coins.md)**.
+
 ## Building
 
 ### Requirements
@@ -188,9 +192,10 @@ rpcport=62555
 - [x] LWMA per-block difficulty retarget (v4.3 hard fork)
 - [x] Bech32m address encoding (`corg1…` / `tcorg1…`, accepted everywhere addresses are parsed)
 - [x] Block explorer with burn auditing (`contrib/explorer/` — indexes the chain over RPC, decodes bridge burns)
+- [x] AuxPoW merged mining (v4.4 hard fork at block 50,000 — see `doc/auxpow-spec.md`)
+- [x] Boost reduced to essentials (`std::variant`, `std::chrono`, std string helpers; only asio/interprocess/program_options/signals2 remain)
 
 ### In Progress
-- [ ] AuxPoW merged mining (consensus core + mining RPCs landed; hard fork at block 50,000 — see `doc/auxpow-spec.md`)
 - [ ] Pump.fun partner token integration
 
 ### Planned
