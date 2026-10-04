@@ -27,3 +27,7 @@ rpcpassword=CHANGE_THIS_PASSWORD
 # CPU mining: generate blocks with N threads (or use `setgenerate true N` via RPC)
 #gen=1
 #genproclimit=2
+
+# Pay every mined block's reward to this one address (e.g. a treasury/pool),
+# instead of a fresh wallet keypool address per block. Omit to use the keypool.
+#mineraddress=CYourCorgiCoinAddressHere

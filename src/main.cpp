@@ -12,6 +12,7 @@
 #include "init.h"
 #include "ui_interface.h"
 #include "logging.h"
+#include "base58.h"
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
 #include <random>
@@ -3608,7 +3609,25 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
     txNew.vin.resize(1);
     txNew.vin[0].prevout.SetNull();
     txNew.vout.resize(1);
-    txNew.vout[0].scriptPubKey << reservekey.GetReservedKey() << OP_CHECKSIG;
+    // Pay the coinbase to -mineraddress if set and valid (all rewards go to
+    // one address, e.g. a treasury/pool); otherwise to a fresh keypool key.
+    std::string strMinerAddr = GetArg("-mineraddress", "");
+    CBitcoinAddress minerAddr(strMinerAddr);
+    if (!strMinerAddr.empty() && minerAddr.IsValid())
+    {
+        txNew.vout[0].scriptPubKey.SetDestination(minerAddr.Get());
+    }
+    else
+    {
+        static bool fWarnedBadMinerAddr = false;
+        if (!strMinerAddr.empty() && !fWarnedBadMinerAddr)
+        {
+            LogPrintf("CreateNewBlock: WARNING invalid -mineraddress '%s'; paying coinbase to wallet keypool\n",
+                      strMinerAddr.c_str());
+            fWarnedBadMinerAddr = true;
+        }
+        txNew.vout[0].scriptPubKey << reservekey.GetReservedKey() << OP_CHECKSIG;
+    }
 
     // Add our coinbase tx as first transaction
     pblock->vtx.push_back(std::move(txNew));
