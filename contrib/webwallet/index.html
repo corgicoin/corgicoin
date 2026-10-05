@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CorgiCoin Web Wallet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/corgi.png">
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#1a3d1a; --panel:#214a21; --panel2:#183618; --text:#e8f5e9; --muted:#a9c7ab;
+          --border:#2f5e2f; --accent:#4caf50; --lime:#8bc34a; --gold:#e6c34a; --bad:#e35d5d; }
+  * { box-sizing:border-box; }
+  body { font-family:Inter,system-ui,sans-serif; color:var(--text); background:var(--bg);
+         max-width:860px; margin:0 auto; padding:1.5rem 1rem 3rem; }
+  a { color:var(--accent); }
+  header { display:flex; align-items:center; gap:.6rem; border-bottom:2px solid var(--border); padding-bottom:1rem; }
+  header img { height:2.2em; }
+  header h1 { font-family:'Bungee',sans-serif; font-size:1.3rem; margin:0; }
+  h2 { font-family:'Bungee',sans-serif; font-size:1rem; letter-spacing:.5px; color:#fff; margin:1.4rem 0 .6rem; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:1rem 1.1rem; margin:1rem 0; }
+  textarea, input, select { width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--border);
+         border-radius:6px; padding:.55rem .7rem; font-family:inherit; font-size:.95rem; }
+  textarea { font-family:ui-monospace,monospace; resize:vertical; }
+  .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:.55rem 1.1rem;
+           font-weight:600; cursor:pointer; font-size:.95rem; }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  button:hover { filter:brightness(1.08); }
+  .muted { color:var(--muted); font-size:.85rem; }
+  .mono { font-family:ui-monospace,monospace; word-break:break-all; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid var(--border); font-size:.9rem; }
+  td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .big { font-size:1.6rem; font-weight:700; color:#fff; }
+  .pill { font-size:.72rem; padding:.1rem .5rem; border-radius:999px; }
+  .ok { background:#2e5e2e; color:var(--lime); }
+  .err { background:#5e2e2e; color:var(--bad); }
+  .warn { background:#5e4a1e; color:var(--gold); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header><img src="/corgi.png" alt=""><h1>CorgiCoin Web Wallet</h1></header>
+
+<p class="muted" style="margin-top:.8rem">
+  Non-custodial — your recovery phrase and keys stay in this browser and are never sent anywhere.
+  This loads your wallet from a BIP39 phrase (the same one the desktop wallet uses).
+  <span id="selftest" class="pill warn">checking crypto…</span>
+</p>
+
+<!-- Open / create -->
+<div class="card" id="openCard">
+  <h2>Open Wallet</h2>
+  <p class="muted">Paste a 12/24-word recovery phrase, or generate a new one.</p>
+  <textarea id="mnemonic" rows="3" placeholder="word1 word2 word3 …" autocomplete="off" spellcheck="false"></textarea>
+  <div class="row" style="margin-top:.7rem">
+    <button id="openBtn">Open Wallet</button>
+    <button id="genBtn" class="ghost">Generate New Phrase</button>
+    <select id="network" style="width:auto">
+      <option value="main">Mainnet</option>
+      <option value="test">Testnet</option>
+    </select>
+    <span class="muted">Addresses scanned: </span>
+    <input id="count" type="number" value="20" min="1" max="100" style="width:5rem">
+  </div>
+  <p id="openMsg" class="muted" style="margin-top:.6rem"></p>
+</div>
+
+<!-- Wallet view -->
+<div id="walletView" class="hidden">
+  <div class="card">
+    <div class="muted">Total balance</div>
+    <div class="big"><span id="totalBal">—</span> CORG</div>
+    <div class="muted" id="balNote"></div>
+    <div class="row" style="margin-top:.6rem">
+      <button id="refreshBtn" class="ghost">Refresh</button>
+      <button id="receiveBtn" class="ghost">Receive</button>
+      <button id="sendBtn" class="ghost" disabled title="Signing lands in the next update">Send (soon)</button>
+      <button id="lockBtn" class="ghost">Lock / Close</button>
+    </div>
+  </div>
+
+  <div id="receiveCard" class="card hidden">
+    <h2>Receive</h2>
+    <p class="muted">Share this address to receive CORG (or mine to it with
+      <span class="mono">-mineraddress</span>):</p>
+    <p class="mono big" id="recvAddr" style="font-size:1rem"></p>
+  </div>
+
+  <h2>Addresses</h2>
+  <table>
+    <thead><tr><th>#</th><th>Address</th><th class="num">Balance</th><th class="num">Received</th></tr></thead>
+    <tbody id="addrBody"></tbody>
+  </table>
+</div>
+
+<script type="module">
+import { openWallet, generateMnemonic, validateMnemonicWords, selfTest } from "./wallet.js";
+
+const $ = (id) => document.getElementById(id);
+const COIN = 100000000;
+const fmt = (sat) => (sat / COIN).toLocaleString(undefined, { maximumFractionDigits: 8 });
+
+let wallet = null;
+
+// Crypto self-test — proves the derivation matches the daemon before use.
+selfTest().then((r) => {
+  const el = $("selftest");
+  if (r.okSeed && r.okRipemd && r.okAddr) { el.className = "pill ok"; el.textContent = "crypto verified ✓"; }
+  else { el.className = "pill err"; el.textContent = "crypto self-test FAILED — do not use"; }
+}).catch(() => { $("selftest").className = "pill err"; $("selftest").textContent = "crypto error"; });
+
+$("genBtn").onclick = async () => {
+  $("mnemonic").value = await generateMnemonic(128);
+  $("openMsg").textContent = "New phrase generated. WRITE IT DOWN — it is the only backup. Then click Open Wallet.";
+};
+
+$("openBtn").onclick = async () => {
+  const mn = $("mnemonic").value.trim().replace(/\s+/g, " ");
+  if (!validateMnemonicWords(mn)) { $("openMsg").textContent = "That doesn't look like a valid recovery phrase."; return; }
+  $("openMsg").textContent = "Deriving addresses…";
+  const net = $("network").value;
+  const count = Math.max(1, Math.min(100, parseInt($("count").value) || 20));
+  wallet = await openWallet(mn, net, count);
+  $("mnemonic").value = ""; // don't leave the phrase on screen
+  $("openCard").classList.add("hidden");
+  $("walletView").classList.remove("hidden");
+  await refresh();
+};
+
+async function fetchAddr(addr) {
+  try {
+    const r = await fetch("/api/address/" + addr);
+    if (!r.ok) return { balance: 0, received: 0 };
+    return await r.json();
+  } catch { return { balance: 0, received: 0 }; }
+}
+
+async function refresh() {
+  if (!wallet) return;
+  $("totalBal").textContent = "…";
+  const body = $("addrBody");
+  body.innerHTML = "";
+  let total = 0, firstUnused = null;
+  for (const a of wallet.accounts) {
+    const info = await fetchAddr(a.address);
+    const bal = info.balance || 0, recv = info.received || 0;
+    total += bal;
+    if (firstUnused === null && recv === 0) firstUnused = a.address;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${a.index}</td><td class="mono">${a.address}</td>` +
+      `<td class="num">${fmt(bal)}</td><td class="num">${fmt(recv)}</td>`;
+    body.appendChild(tr);
+  }
+  $("totalBal").textContent = fmt(total);
+  $("balNote").textContent = `across ${wallet.accounts.length} scanned ${wallet.net} addresses`;
+  $("recvAddr").textContent = firstUnused || wallet.accounts[0].address;
+}
+
+$("refreshBtn").onclick = refresh;
+$("receiveBtn").onclick = () => $("receiveCard").classList.toggle("hidden");
+$("lockBtn").onclick = () => { wallet = null; location.reload(); };
+</script>
+</body>
+</html>

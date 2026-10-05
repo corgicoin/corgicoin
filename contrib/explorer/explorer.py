@@ -804,6 +804,29 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 400
 
+    # ---- Non-custodial web wallet (static files from ../webwallet) -----------
+
+    WEBWALLET_DIR = Path(__file__).resolve().parent.parent / "webwallet"
+
+    def serve_webwallet(fn):
+        from flask import send_from_directory
+        resp = send_from_directory(WEBWALLET_DIR, fn)
+        if fn.endswith(".js") or fn.endswith(".mjs"):
+            resp.headers["Content-Type"] = "text/javascript"
+        return resp
+
+    @app.route("/wallet")
+    def wallet_redirect():
+        return redirect("/wallet/")
+
+    @app.route("/wallet/")
+    def wallet_index():
+        return serve_webwallet("index.html")
+
+    @app.route("/wallet/<path:fn>")
+    def wallet_file(fn):
+        return serve_webwallet(fn)
+
     return app
 
 
