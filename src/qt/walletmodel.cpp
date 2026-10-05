@@ -8,6 +8,7 @@
 #include "wallet.h"
 #include "walletdb.h" // for BackupWallet
 #include "base58.h"
+#include "bip39.h"
 
 #include <QSet>
 #include <QTimer>
@@ -295,6 +296,34 @@ bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureStri
 bool WalletModel::backupWallet(const QString &filename)
 {
     return BackupWallet(*wallet, filename.toLocal8Bit().data());
+}
+
+bool WalletModel::isHDEnabled() const
+{
+    return wallet->IsHDEnabled();
+}
+
+QString WalletModel::getHDMnemonic() const
+{
+    return QString::fromStdString(wallet->GetHDMnemonic());
+}
+
+bool WalletModel::setHDSeed(QString &mnemonic, QString &errorOut)
+{
+    std::string mn = mnemonic.trimmed().toStdString();
+    if (mn.empty())
+    {
+        mn = bip39::GenerateMnemonic(128);
+        mnemonic = QString::fromStdString(mn); // return the generated phrase
+    }
+    std::string err;
+    if (!wallet->SetHDSeedFromMnemonic(mn, err))
+    {
+        errorOut = QString::fromStdString(err);
+        return false;
+    }
+    wallet->NewKeyPool(); // new addresses come from the HD seed
+    return true;
 }
 
 // Handlers for core signals
