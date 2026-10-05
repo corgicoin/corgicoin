@@ -94,6 +94,8 @@ private:
     QAction *encryptWalletAction;
     QAction *backupWalletAction;
     QAction *changePassphraseAction;
+    QAction *showMnemonicAction;
+    QAction *setupHDAction;
     QAction *aboutQtAction;
     QAction *openRPCConsoleAction;
 
@@ -175,6 +177,10 @@ private slots:
     void encryptWallet(bool status);
     /** Backup the wallet */
     void backupWallet();
+    /** Show the wallet's HD recovery phrase (unlocking if needed) */
+    void showMnemonic();
+    /** Set up or restore the wallet's HD seed from a recovery phrase */
+    void setupHD();
     /** Change encrypted wallet passphrase */
     void changePassphrase();
     /** Ask for pass phrase to unlock wallet temporarily */

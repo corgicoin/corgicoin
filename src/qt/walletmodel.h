@@ -88,6 +88,13 @@ public:
     // Wallet backup
     bool backupWallet(const QString &filename);
 
+    // HD wallet (BIP32/39)
+    bool isHDEnabled() const;
+    QString getHDMnemonic() const;
+    // Set the HD seed from a mnemonic; if empty, a new one is generated and
+    // returned in-out via mnemonic. Requires an unlocked wallet.
+    bool setHDSeed(QString &mnemonic, QString &errorOut);
+
     // RAI object for unlocking wallet, returned by requestUnlock()
     class UnlockContext
     {

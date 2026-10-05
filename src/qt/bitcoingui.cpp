@@ -49,6 +49,8 @@
 #include <QLocale>
 #include <QFont>
 #include <QMessageBox>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QProgressBar>
 #include <QStackedWidget>
 #include <QDateTime>
@@ -315,6 +317,10 @@ void BitcoinGUI::createActions()
     changePassphraseAction->setToolTip(tr("Change the passphrase used for wallet encryption"));
     openRPCConsoleAction = new QAction(QIcon(":/icons/debugwindow"), tr("&Debug window"), this);
     openRPCConsoleAction->setToolTip(tr("Open debugging and diagnostic console"));
+    showMnemonicAction = new QAction(QIcon(":/icons/key"), tr("Show &Recovery Phrase..."), this);
+    showMnemonicAction->setToolTip(tr("Show the wallet's HD recovery phrase"));
+    setupHDAction = new QAction(QIcon(":/icons/key"), tr("Set up / Restore &HD Seed..."), this);
+    setupHDAction->setToolTip(tr("Create or restore the wallet's HD recovery phrase"));
 
     connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
     connect(optionsAction, &QAction::triggered, this, &BitcoinGUI::optionsClicked);
@@ -324,6 +330,8 @@ void BitcoinGUI::createActions()
     connect(encryptWalletAction, &QAction::triggered, this, &BitcoinGUI::encryptWallet);
     connect(backupWalletAction, &QAction::triggered, this, &BitcoinGUI::backupWallet);
     connect(changePassphraseAction, &QAction::triggered, this, &BitcoinGUI::changePassphrase);
+    connect(showMnemonicAction, &QAction::triggered, this, &BitcoinGUI::showMnemonic);
+    connect(setupHDAction, &QAction::triggered, this, &BitcoinGUI::setupHD);
 }
 
 void BitcoinGUI::createMenuBar()
@@ -350,6 +358,9 @@ void BitcoinGUI::createMenuBar()
     QMenu *settings = appMenuBar->addMenu(tr("&Settings"));
     settings->addAction(encryptWalletAction);
     settings->addAction(changePassphraseAction);
+    settings->addSeparator();
+    settings->addAction(setupHDAction);
+    settings->addAction(showMnemonicAction);
     settings->addSeparator();
     settings->addAction(optionsAction);
 
@@ -952,6 +963,81 @@ void BitcoinGUI::changePassphrase()
     AskPassphraseDialog dlg(AskPassphraseDialog::ChangePass, this);
     dlg.setModel(walletModel);
     dlg.exec();
+}
+
+static void ShowMnemonicBox(QWidget* parent, const QString& title, const QString& intro, const QString& mnemonic)
+{
+    QMessageBox box(parent);
+    box.setWindowTitle(title);
+    box.setIcon(QMessageBox::Warning);
+    box.setText(intro);
+    box.setInformativeText("<p style='font-family:monospace; font-size:13px;'>" + mnemonic.toHtmlEscaped() + "</p>");
+    box.setStandardButtons(QMessageBox::Ok);
+    box.setTextInteractionFlags(Qt::TextSelectableByMouse);
+    box.exec();
+}
+
+void BitcoinGUI::showMnemonic()
+{
+    if (!walletModel)
+        return;
+    if (!walletModel->isHDEnabled())
+    {
+        QMessageBox::information(this, tr("Recovery Phrase"),
+            tr("This wallet does not use an HD recovery phrase yet.\n"
+               "Use Settings → \"Set up / Restore HD Seed\" to create one."));
+        return;
+    }
+    WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+    if (!ctx.isValid())
+        return; // unlock cancelled
+    QString m = walletModel->getHDMnemonic();
+    if (m.isEmpty())
+    {
+        QMessageBox::warning(this, tr("Recovery Phrase"),
+            tr("The recovery phrase is not available (locked or not set)."));
+        return;
+    }
+    ShowMnemonicBox(this, tr("Recovery Phrase"),
+        tr("Write down these words in order and keep them somewhere safe and private.\n"
+           "Anyone who has them can spend your coins."), m);
+}
+
+void BitcoinGUI::setupHD()
+{
+    if (!walletModel)
+        return;
+    if (walletModel->isHDEnabled())
+    {
+        if (QMessageBox::question(this, tr("Set up HD Seed"),
+                tr("This wallet already has an HD seed. Replacing it means new addresses "
+                   "come from the new phrase; coins on existing addresses remain spendable.\n\nContinue?"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+            return;
+    }
+
+    bool ok = false;
+    QString input = QInputDialog::getText(this, tr("Set up / Restore HD Seed"),
+        tr("Enter a 12 or 24-word recovery phrase to restore a wallet,\n"
+           "or leave this blank to generate a brand-new phrase:"),
+        QLineEdit::Normal, "", &ok);
+    if (!ok)
+        return;
+
+    WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+    if (!ctx.isValid())
+        return;
+
+    QString mnemonic = input;
+    QString err;
+    if (!walletModel->setHDSeed(mnemonic, err))
+    {
+        QMessageBox::critical(this, tr("Set up HD Seed"), tr("Could not set the HD seed:\n%1").arg(err));
+        return;
+    }
+    ShowMnemonicBox(this, tr("HD Seed Set"),
+        tr("Your wallet now derives addresses from this recovery phrase.\n"
+           "WRITE IT DOWN NOW — it is the only backup of these keys."), mnemonic);
 }
 
 void BitcoinGUI::unlockWallet()
