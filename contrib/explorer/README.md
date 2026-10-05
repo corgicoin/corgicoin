@@ -41,6 +41,20 @@ Machine-readable endpoints for tools and bots (amounts in satoshis):
 
 Each returns JSON; unknown ids return `{"error": …}` with HTTP 404.
 
+### Wallet backend
+
+Endpoints for a non-custodial browser wallet (keys stay client-side):
+
+- `GET /api/address/<addr>/utxos` — unspent outputs with `scriptPubKey`,
+  `value` (satoshis), and `confirmations` — everything needed to build and
+  sign a spend. Capped at 500 UTXOs per request.
+- `POST /api/broadcast` — relay a signed raw transaction. Body
+  `{"hex": "<rawtx>"}` (or the raw hex as the request body); returns
+  `{"txid": …}` or `{"error": …}` with HTTP 400.
+
+If you expose these publicly, rate-limit `/api/broadcast` (it reaches the
+node's mempool).
+
 ## Notes
 
 - Balances are computed from the output index (sum of unspent outputs per

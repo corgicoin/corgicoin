@@ -754,6 +754,56 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         total = d.execute("SELECT COALESCE(SUM(value),0) s FROM burns").fetchone()["s"]
         return jsonify({"total_burned": total, "count": len(rows), "burns": rows_to_dicts(rows)})
 
+    # ---- Wallet backend (for a non-custodial browser wallet) ----------------
+
+    @app.route("/api/address/<addr>/utxos")
+    def api_utxos(addr):
+        """Unspent outputs for an address, with scriptPubKey and confirmations
+        — everything a client needs to build and sign a transaction. Amounts
+        in satoshis. Capped to keep per-request RPC bounded."""
+        d = db()
+        rows = d.execute(
+            "SELECT o.txid, o.n, o.value, t.height FROM outputs o JOIN txs t ON t.txid=o.txid "
+            "WHERE o.address=? AND o.spent_txid IS NULL ORDER BY t.height ASC LIMIT 500",
+            (addr,)).fetchall()
+        try:
+            tip = rpc.call("getblockcount")
+        except Exception:
+            tip = None
+        utxos = []
+        for r in rows:
+            script_hex = None
+            try:
+                tx = rpc.call("getrawtransaction", r["txid"], 1)
+                script_hex = tx["vout"][r["n"]]["scriptPubKey"]["hex"]
+            except Exception:
+                pass  # output still spendable; client can derive the P2PKH script from the address
+            utxos.append({
+                "txid": r["txid"], "vout": r["n"], "value": r["value"],
+                "height": r["height"],
+                "confirmations": (tip - r["height"] + 1) if (tip is not None and r["height"] is not None) else None,
+                "scriptPubKey": script_hex,
+            })
+        return jsonify({"address": addr, "count": len(utxos), "utxos": utxos})
+
+    @app.route("/api/broadcast", methods=["POST"])
+    def api_broadcast():
+        """Relay a signed raw transaction to the network via the node.
+        Body: {"hex": "<raw tx hex>"} (or raw hex as the body)."""
+        hexstr = ""
+        body = request.get_json(silent=True)
+        if isinstance(body, dict):
+            hexstr = (body.get("hex") or "").strip()
+        elif body is None:  # no JSON body -> treat the raw body as the hex
+            hexstr = (request.get_data(as_text=True) or "").strip()
+        if not hexstr:
+            return jsonify({"error": "no transaction hex provided"}), 400
+        try:
+            txid = rpc.call("sendrawtransaction", hexstr)
+            return jsonify({"txid": txid})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
     return app
 
 
