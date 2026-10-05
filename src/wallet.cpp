@@ -12,6 +12,7 @@
 #include "ui_interface.h"
 #include "base58.h"
 #include "logging.h"
+#include "bip39.h"
 #include <random>
 
 using namespace std;
@@ -31,12 +32,79 @@ struct CompareValueOnly
     }
 };
 
+// Derive the external-chain child at m/44'/HD_COIN_TYPE'/0'/0/nIndex.
+static bool DeriveHDChild(const CExtKey& master, uint32_t nIndex, CKey& keyOut)
+{
+    CExtKey a, b, c, external, child;
+    if (!master.Derive(a, 44 | BIP32_HARDENED)) return false;
+    if (!a.Derive(b, HD_COIN_TYPE | BIP32_HARDENED)) return false;
+    if (!b.Derive(c, 0 | BIP32_HARDENED)) return false;   // account 0'
+    if (!c.Derive(external, 0)) return false;              // external chain
+    if (!external.Derive(child, nIndex)) return false;
+    keyOut = child.key;
+    return true;
+}
+
+bool CWallet::LoadHDMnemonic(const std::string& mnemonic)
+{
+    std::vector<unsigned char> seed = bip39::MnemonicToSeed(mnemonic);
+    hdMasterKey.SetSeed(&seed[0], (unsigned int)seed.size());
+    strHDMnemonic = mnemonic;
+    hdSeedId = hdMasterKey.key.GetPubKey().GetID();
+    fHDEnabled = true;
+    return true;
+}
+
+bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError)
+{
+    if (IsCrypted())
+    {
+        strError = "sethdseed is not supported on encrypted wallets yet";
+        return false;
+    }
+    if (!bip39::CheckMnemonic(mnemonic))
+    {
+        strError = "Invalid BIP39 mnemonic (bad word or checksum)";
+        return false;
+    }
+    LoadHDMnemonic(mnemonic);
+    nHDExternalIndex = 0;
+    SetMinVersion(WalletFeature::FEATURE_HD);
+    if (fFileBacked)
+    {
+        CWalletDB walletdb(strWalletFile);
+        if (!walletdb.WriteHDMnemonic(mnemonic) || !walletdb.WriteHDChain(nHDExternalIndex))
+        {
+            strError = "Failed to write HD seed to wallet";
+            return false;
+        }
+    }
+    return true;
+}
+
 CPubKey CWallet::GenerateNewKey()
 {
     bool fCompressed = CanSupportFeature(WalletFeature::FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
 
-    RandAddSeedPerfmon();
     CKey key;
+
+    // HD path: derive the next external-chain child from the seed. Only for
+    // unencrypted wallets in this stage (doc/hd-wallet-spec.md).
+    if (fHDEnabled && !IsCrypted())
+    {
+        if (!DeriveHDChild(hdMasterKey, nHDExternalIndex, key))
+            throw std::runtime_error("CWallet::GenerateNewKey() : HD derivation failed");
+        if (!AddKey(key))
+            throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
+        nHDExternalIndex++;
+        if (fFileBacked)
+            CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
+        if (fCompressed)
+            SetMinVersion(WalletFeature::FEATURE_COMPRPUBKEY);
+        return key.GetPubKey();
+    }
+
+    RandAddSeedPerfmon();
     key.MakeNewKey(fCompressed);
 
     // Compressed public keys were introduced in version 0.6.0

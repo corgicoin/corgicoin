@@ -12,6 +12,7 @@
 #include "walletdb.h"
 #include "net.h"
 #include "init.h"
+#include "bip39.h"
 #include "ui_interface.h"
 #include "base58.h"
 #include "burnpayload.h"
@@ -2704,7 +2705,38 @@ Value getwalletinfo(const Array& params, bool fHelp)
     if (pwalletMain->IsCrypted())
         obj.emplace_back("unlocked_until", (int64_t)nWalletUnlockTime / 1000);
     obj.emplace_back("paytxfee", ValueFromAmount(nTransactionFee));
+    obj.emplace_back("hdenabled", pwalletMain->IsHDEnabled());
+    if (pwalletMain->IsHDEnabled())
+        obj.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
     return obj;
+}
+
+Value sethdseed(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+            "sethdseed [mnemonic]\n"
+            "Set the wallet's HD (BIP39) seed from a recovery phrase, or\n"
+            "generate a fresh 12-word phrase if none is given. Future\n"
+            "addresses are derived from this seed; WRITE THE PHRASE DOWN.\n"
+            "Not supported on encrypted wallets yet.");
+
+    std::string mnemonic = (params.size() == 1)
+        ? params[0].get_str()
+        : bip39::GenerateMnemonic(128);
+
+    std::string strError;
+    if (!pwalletMain->SetHDSeedFromMnemonic(mnemonic, strError))
+        throw JSONRPCError(-4, strError);
+
+    // Rebuild the keypool so new addresses come from the HD seed.
+    pwalletMain->NewKeyPool();
+
+    Object r;
+    r.emplace_back("mnemonic", mnemonic);
+    r.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
+    r.emplace_back("warning", "Write this recovery phrase down and keep it safe — it backs up all HD keys.");
+    return r;
 }
 
 Value getchaintips(const Array& params, bool fHelp)
@@ -2933,6 +2965,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockchaininfo",      &getblockchaininfo,      true },
     { "getnetworkinfo",         &getnetworkinfo,         true },
     { "getwalletinfo",          &getwalletinfo,          false },
+    { "sethdseed",              &sethdseed,              false },
     { "getchaintips",           &getchaintips,           true },
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },

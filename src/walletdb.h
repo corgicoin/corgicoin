@@ -142,6 +142,18 @@ public:
         return Write(std::make_pair(std::string("pool"), nPool), keypool);
     }
 
+    bool WriteHDMnemonic(const std::string& mnemonic)
+    {
+        nWalletDBUpdated++;
+        return Write(std::string("hdmnemonic"), mnemonic, true);
+    }
+
+    bool WriteHDChain(uint32_t nExternalIndex)
+    {
+        nWalletDBUpdated++;
+        return Write(std::string("hdchain"), nExternalIndex, true);
+    }
+
     bool ErasePool(int64 nPool)
     {
         nWalletDBUpdated++;

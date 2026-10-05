@@ -17,6 +17,7 @@
 #include "script.h"
 #include "ui_interface.h"
 #include "logging.h"
+#include "bip32.h"
 
 class CWalletTx;
 class CReserveKey;
@@ -31,9 +32,15 @@ enum class WalletFeature
 
     FEATURE_WALLETCRYPT = 40000, // wallet encryption
     FEATURE_COMPRPUBKEY = 60000, // compressed public keys
+    FEATURE_HD = 130000,         // BIP32/39 hierarchical deterministic keys
 
-    FEATURE_LATEST = 60000
+    FEATURE_LATEST = 130000
 };
+
+// BIP44 coin type for CorgiCoin HD derivation: m/44'/HD_COIN_TYPE'/0'/0/index.
+// Wallet-local only (not consensus); fixed so a seed always maps to the same
+// addresses. See doc/hd-wallet-spec.md.
+static constexpr uint32_t HD_COIN_TYPE = 99;
 
 
 /** A key pool entry */
@@ -105,6 +112,25 @@ public:
     std::map<CTxDestination, std::string> mapAddressBook;
 
     CPubKey vchDefaultKey;
+
+    // --- HD (BIP32/39) wallet state (doc/hd-wallet-spec.md) ---------------
+    // In-memory master key derived from the seed; fHDEnabled gates HD keygen.
+    CExtKey hdMasterKey;
+    bool fHDEnabled = false;
+    uint32_t nHDExternalIndex = 0;   // next external chain child index
+    std::string strHDMnemonic;       // the recovery phrase (plaintext wallets only)
+    CKeyID hdSeedId;                 // fingerprint of the HD master pubkey
+
+    bool IsHDEnabled() const { return fHDEnabled; }
+    std::string GetHDMnemonic() const { return strHDMnemonic; }
+    CKeyID GetHDSeedId() const { return hdSeedId; }
+    // Set the HD seed from a BIP39 mnemonic, persist it, and reset the keypool
+    // to HD-derived keys. Returns false (with strError) on a bad mnemonic or an
+    // encrypted wallet (encrypted-seed support is a later stage).
+    bool SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError);
+    // Load-time setup (no persistence, no counter reset) — used by CWalletDB.
+    bool LoadHDMnemonic(const std::string& mnemonic);
+    void LoadHDChain(uint32_t nExternalIndex) { nHDExternalIndex = nExternalIndex; }
 
     // check whether we are allowed to upgrade (or already support) to the named feature
     bool CanSupportFeature(WalletFeature wf) { return nWalletMaxVersion >= static_cast<int>(wf); }

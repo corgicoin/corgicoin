@@ -286,6 +286,18 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 ssKey >> nIndex;
                 pwallet->setKeyPool.insert(nIndex);
             }
+            else if (strType == "hdmnemonic")
+            {
+                std::string mnemonic;
+                ssValue >> mnemonic;
+                pwallet->LoadHDMnemonic(mnemonic);
+            }
+            else if (strType == "hdchain")
+            {
+                uint32_t nExternalIndex;
+                ssValue >> nExternalIndex;
+                pwallet->LoadHDChain(nExternalIndex);
+            }
             else if (strType == "version")
             {
                 ssValue >> nFileVersion;
