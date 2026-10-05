@@ -110,13 +110,15 @@ class CCryptoKeyStore : public CBasicKeyStore
 private:
     CryptedKeyMap mapCryptedKeys;
 
-    CKeyingMaterial vMasterKey;
-
     // if fUseCrypto is true, mapKeys must be empty
     // if fUseCrypto is false, vMasterKey must be empty
     bool fUseCrypto;
 
 protected:
+    // In-memory master key while unlocked. Protected so CWallet can use it to
+    // encrypt/decrypt the HD seed (doc/hd-wallet-spec.md).
+    CKeyingMaterial vMasterKey;
+
     bool SetCrypted();
 
     // will encrypt previously unencrypted keys

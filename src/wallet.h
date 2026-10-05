@@ -118,19 +118,23 @@ public:
     CExtKey hdMasterKey;
     bool fHDEnabled = false;
     uint32_t nHDExternalIndex = 0;   // next external chain child index
-    std::string strHDMnemonic;       // the recovery phrase (plaintext wallets only)
-    CKeyID hdSeedId;                 // fingerprint of the HD master pubkey
+    std::string strHDMnemonic;       // recovery phrase (in memory; empty while locked)
+    CKeyID hdSeedId;                 // fingerprint of the HD master pubkey (non-secret)
+    std::vector<unsigned char> vchCryptedHDMnemonic; // encrypted phrase (crypted wallets)
 
     bool IsHDEnabled() const { return fHDEnabled; }
     std::string GetHDMnemonic() const { return strHDMnemonic; }
     CKeyID GetHDSeedId() const { return hdSeedId; }
-    // Set the HD seed from a BIP39 mnemonic, persist it, and reset the keypool
-    // to HD-derived keys. Returns false (with strError) on a bad mnemonic or an
-    // encrypted wallet (encrypted-seed support is a later stage).
+    // Set the HD seed from a BIP39 mnemonic, persist it (encrypted if the
+    // wallet is encrypted and unlocked), and reset the keypool to HD keys.
     bool SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError);
+    // Decrypt the stored HD mnemonic using the master key (called from Unlock).
+    bool DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn);
     // Load-time setup (no persistence, no counter reset) — used by CWalletDB.
     bool LoadHDMnemonic(const std::string& mnemonic);
     void LoadHDChain(uint32_t nExternalIndex) { nHDExternalIndex = nExternalIndex; }
+    void LoadHDSeedId(const CKeyID& id) { hdSeedId = id; fHDEnabled = true; }
+    void LoadCryptedHDMnemonic(const std::vector<unsigned char>& vch) { vchCryptedHDMnemonic = vch; fHDEnabled = true; }
 
     // check whether we are allowed to upgrade (or already support) to the named feature
     bool CanSupportFeature(WalletFeature wf) { return nWalletMaxVersion >= static_cast<int>(wf); }
