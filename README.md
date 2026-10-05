@@ -6,7 +6,7 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.4.0.0** — fully modernized, network live, with multipartner cross-chain burn bridge, modern per-block difficulty retargeting, and AuxPoW merged mining:
+**Version 4.5.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining, and an HD (seed-phrase) wallet:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
@@ -14,6 +14,7 @@ CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in
 - LWMA per-block difficulty retarget (hard fork at block 34,000 — see `doc/lwma-retarget-spec.md`)
 - AuxPoW merged mining (hard fork at block 50,000 — see `doc/auxpow-spec.md`)
 - Bech32m addresses (`corg1…` / `tcorg1…`) alongside legacy base58
+- HD (BIP32/39) wallet with a seed-phrase backup (see `doc/hd-wallet-spec.md`)
 - Genesis block mined, mainnet running with seed nodes
 - Protocol version 70001
 
@@ -113,6 +114,15 @@ rpcport=62555
 ```
 
 ## Version History
+
+### v4.5.0.0 — HD Wallet + Modern RPCs
+- **HD (hierarchical deterministic) wallet** (BIP32/39/44): all keys derive from a single seed, with a 12/24-word recovery phrase that backs up the whole wallet. Works on encrypted wallets (seed encrypted with the wallet passphrase); legacy wallets keep working unchanged. `sethdseed` RPC + a Settings → "Set up / Restore HD Seed" / "Show Recovery Phrase" GUI flow. Spec: `doc/hd-wallet-spec.md`
+- **Modern info RPCs**: `getblockchaininfo` (with LWMA/AuxPoW fork status), `getblockheader`, `getnetworkinfo`, `getwalletinfo`, `getchaintips`, `uptime`
+- **Analytics RPCs**: `getblockstats`, `getchaintxstats`
+- **`-mineraddress`**: pay all mined block rewards to one address instead of a fresh keypool key per block
+- **Qt wallet**: visible "Up to date" sync-status label; bech32 (`corg1…`) in the GUI (copy action + Receive QR option)
+- **Block explorer** (`contrib/explorer/`): JSON API, difficulty/block-time charts, rich list, network/peers page, fork-status cards, themed to match corgicoin.co
+- **`boost::date_time` → `std::chrono`**; CI moved to the `macos-15` runner
 
 ### v4.4.0.0 — AuxPoW Merged Mining Hard Fork
 - AuxPoW (merged mining) consensus: a high-hashrate Scrypt pool (Litecoin/Dogecoin) can secure CorgiCoin at near-zero marginal cost, closing the 51%-attack exposure of a low-hashrate chain — hard fork at block **50,000 mainnet / 200 testnet**, chain ID `0x00C6` (spec: `doc/auxpow-spec.md`)
