@@ -196,6 +196,7 @@ set(DAEMON_SOURCES
     src/rpcnet.cpp
     src/rpcrawtransaction.cpp
     src/bech32.cpp
+    src/bip32.cpp
     src/bip39.cpp
     src/script.cpp
     src/scrypt.c
@@ -523,6 +524,7 @@ if(BUILD_TESTS)
         src/test/address_tests.cpp
         src/test/auxpow_tests.cpp
         src/test/bech32_tests.cpp
+        src/test/bip32_tests.cpp
         src/test/bip39_tests.cpp
         src/test/blockreward_tests.cpp
         src/test/serialize_tests.cpp
