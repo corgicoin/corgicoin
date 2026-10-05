@@ -142,6 +142,36 @@ public:
         return Write(std::make_pair(std::string("pool"), nPool), keypool);
     }
 
+    bool WriteHDMnemonic(const std::string& mnemonic)
+    {
+        nWalletDBUpdated++;
+        return Write(std::string("hdmnemonic"), mnemonic, true);
+    }
+
+    bool EraseHDMnemonic()
+    {
+        nWalletDBUpdated++;
+        return Erase(std::string("hdmnemonic"));
+    }
+
+    bool WriteCryptedHDMnemonic(const std::vector<unsigned char>& vchCrypted)
+    {
+        nWalletDBUpdated++;
+        return Write(std::string("chdmnemonic"), vchCrypted, true);
+    }
+
+    bool WriteHDSeedId(const CKeyID& id)
+    {
+        nWalletDBUpdated++;
+        return Write(std::string("hdseedid"), id, true);
+    }
+
+    bool WriteHDChain(uint32_t nExternalIndex)
+    {
+        nWalletDBUpdated++;
+        return Write(std::string("hdchain"), nExternalIndex, true);
+    }
+
     bool ErasePool(int64 nPool)
     {
         nWalletDBUpdated++;

@@ -286,6 +286,30 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 ssKey >> nIndex;
                 pwallet->setKeyPool.insert(nIndex);
             }
+            else if (strType == "hdmnemonic")
+            {
+                std::string mnemonic;
+                ssValue >> mnemonic;
+                pwallet->LoadHDMnemonic(mnemonic);
+            }
+            else if (strType == "chdmnemonic")
+            {
+                std::vector<unsigned char> vchCrypted;
+                ssValue >> vchCrypted;
+                pwallet->LoadCryptedHDMnemonic(vchCrypted);
+            }
+            else if (strType == "hdseedid")
+            {
+                CKeyID id;
+                ssValue >> id;
+                pwallet->LoadHDSeedId(id);
+            }
+            else if (strType == "hdchain")
+            {
+                uint32_t nExternalIndex;
+                ssValue >> nExternalIndex;
+                pwallet->LoadHDChain(nExternalIndex);
+            }
             else if (strType == "version")
             {
                 ssValue >> nFileVersion;

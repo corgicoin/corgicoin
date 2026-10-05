@@ -12,6 +12,7 @@
 #include "ui_interface.h"
 #include "base58.h"
 #include "logging.h"
+#include "bip39.h"
 #include <random>
 
 using namespace std;
@@ -31,12 +32,126 @@ struct CompareValueOnly
     }
 };
 
+// Derive the external-chain child at m/44'/HD_COIN_TYPE'/0'/0/nIndex.
+static bool DeriveHDChild(const CExtKey& master, uint32_t nIndex, CKey& keyOut)
+{
+    CExtKey a, b, c, external, child;
+    if (!master.Derive(a, 44 | BIP32_HARDENED)) return false;
+    if (!a.Derive(b, HD_COIN_TYPE | BIP32_HARDENED)) return false;
+    if (!b.Derive(c, 0 | BIP32_HARDENED)) return false;   // account 0'
+    if (!c.Derive(external, 0)) return false;              // external chain
+    if (!external.Derive(child, nIndex)) return false;
+    keyOut = child.key;
+    return true;
+}
+
+// IV for encrypting the HD mnemonic: derived from the (non-secret) seed
+// fingerprint, mirroring how crypted keys use the pubkey hash as IV.
+static uint256 HDSeedIV(const CKeyID& id)
+{
+    uint256 iv;
+    memcpy(&iv, &id, sizeof(id)); // 20-byte CKeyID into the first bytes of a 32-byte IV
+    return iv;
+}
+
+bool CWallet::LoadHDMnemonic(const std::string& mnemonic)
+{
+    std::vector<unsigned char> seed = bip39::MnemonicToSeed(mnemonic);
+    hdMasterKey.SetSeed(&seed[0], (unsigned int)seed.size());
+    strHDMnemonic = mnemonic;
+    hdSeedId = hdMasterKey.key.GetPubKey().GetID();
+    fHDEnabled = true;
+    return true;
+}
+
+bool CWallet::DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn)
+{
+    if (vchCryptedHDMnemonic.empty())
+        return true; // not an HD-encrypted wallet, or already set
+    CSecret sec;
+    if (!DecryptSecret(vMasterKeyIn, vchCryptedHDMnemonic, HDSeedIV(hdSeedId), sec))
+        return false;
+    std::string mnemonic(sec.begin(), sec.end());
+    if (!bip39::CheckMnemonic(mnemonic))
+        return false;
+    LoadHDMnemonic(mnemonic); // sets hdMasterKey, strHDMnemonic, recomputes hdSeedId
+    return true;
+}
+
+bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError)
+{
+    if (!bip39::CheckMnemonic(mnemonic))
+    {
+        strError = "Invalid BIP39 mnemonic (bad word or checksum)";
+        return false;
+    }
+    if (IsCrypted() && IsLocked())
+    {
+        strError = "Wallet is locked; unlock it before setting an HD seed";
+        return false;
+    }
+
+    LoadHDMnemonic(mnemonic);
+    nHDExternalIndex = 0;
+    SetMinVersion(WalletFeature::FEATURE_HD);
+
+    if (fFileBacked)
+    {
+        CWalletDB walletdb(strWalletFile);
+        if (!walletdb.WriteHDSeedId(hdSeedId) || !walletdb.WriteHDChain(nHDExternalIndex))
+        {
+            strError = "Failed to write HD seed to wallet";
+            return false;
+        }
+        if (IsCrypted())
+        {
+            std::vector<unsigned char> ct;
+            CSecret sec(mnemonic.begin(), mnemonic.end());
+            if (!EncryptSecret(vMasterKey, sec, HDSeedIV(hdSeedId), ct))
+            {
+                strError = "Failed to encrypt HD seed";
+                return false;
+            }
+            vchCryptedHDMnemonic = ct;
+            if (!walletdb.WriteCryptedHDMnemonic(ct))
+            {
+                strError = "Failed to write encrypted HD seed";
+                return false;
+            }
+            walletdb.EraseHDMnemonic(); // no plaintext phrase on disk
+        }
+        else if (!walletdb.WriteHDMnemonic(mnemonic))
+        {
+            strError = "Failed to write HD seed to wallet";
+            return false;
+        }
+    }
+    return true;
+}
+
 CPubKey CWallet::GenerateNewKey()
 {
     bool fCompressed = CanSupportFeature(WalletFeature::FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
 
-    RandAddSeedPerfmon();
     CKey key;
+
+    // HD path: derive the next external-chain child from the seed. Works for
+    // unencrypted wallets and unlocked encrypted ones (doc/hd-wallet-spec.md).
+    if (fHDEnabled && !IsLocked())
+    {
+        if (!DeriveHDChild(hdMasterKey, nHDExternalIndex, key))
+            throw std::runtime_error("CWallet::GenerateNewKey() : HD derivation failed");
+        if (!AddKey(key))
+            throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
+        nHDExternalIndex++;
+        if (fFileBacked)
+            CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
+        if (fCompressed)
+            SetMinVersion(WalletFeature::FEATURE_COMPRPUBKEY);
+        return key.GetPubKey();
+    }
+
+    RandAddSeedPerfmon();
     key.MakeNewKey(fCompressed);
 
     // Compressed public keys were introduced in version 0.6.0
@@ -101,7 +216,11 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase)
             if (!crypter.Decrypt(pMasterKey.second.vchCryptedKey, vMasterKey))
                 return false;
             if (CCryptoKeyStore::Unlock(vMasterKey))
+            {
+                // Make the HD seed usable for this unlocked session.
+                DecryptHDSeed(vMasterKey);
                 return true;
+            }
         }
     }
     return false;
@@ -271,6 +390,25 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             if (fFileBacked)
                 pwalletdbEncryption->TxnAbort();
             exit(1); //We now probably have half of our keys encrypted in memory, and half not...die and let the user reload their unencrypted wallet.
+        }
+
+        // Encrypt an existing plaintext HD seed in the same transaction.
+        if (fHDEnabled && !strHDMnemonic.empty())
+        {
+            std::vector<unsigned char> ct;
+            CSecret sec(strHDMnemonic.begin(), strHDMnemonic.end());
+            if (!EncryptSecret(vMasterKey, sec, HDSeedIV(hdSeedId), ct))
+            {
+                if (fFileBacked)
+                    pwalletdbEncryption->TxnAbort();
+                exit(1);
+            }
+            vchCryptedHDMnemonic = ct;
+            if (fFileBacked)
+            {
+                pwalletdbEncryption->WriteCryptedHDMnemonic(ct);
+                pwalletdbEncryption->EraseHDMnemonic();
+            }
         }
 
         // Encryption was introduced in version 0.4.0
