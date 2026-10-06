@@ -63,6 +63,29 @@ async function base58check(version, payload) {
   const chk = (await sha256d(data)).slice(0, 4);
   return base58encode(concat(data, chk));
 }
+function base58decode(str) {
+  let x = 0n;
+  for (const c of str) {
+    const v = B58.indexOf(c);
+    if (v < 0) throw new Error("bad base58 character");
+    x = x * 58n + BigInt(v);
+  }
+  let hex = x.toString(16);
+  if (hex.length % 2) hex = "0" + hex;
+  let bytes = x === 0n ? new Uint8Array(0) : fromHex(hex);
+  let leading = 0;
+  for (const c of str) { if (c === "1") leading++; else break; }
+  return concat(new Uint8Array(leading), bytes);
+}
+// Decode a base58check address -> { version, hash } (throws on bad checksum).
+export async function base58checkDecode(str) {
+  const raw = base58decode(str);
+  if (raw.length < 5) throw new Error("address too short");
+  const data = raw.slice(0, -4), chk = raw.slice(-4);
+  const good = (await sha256d(data)).slice(0, 4);
+  if (toHex(chk) !== toHex(good)) throw new Error("bad address checksum");
+  return { version: data[0], hash: data.slice(1) };
+}
 
 // ---- BIP39 -----------------------------------------------------------------
 export function validateMnemonicWords(mnemonic) {
@@ -146,4 +169,4 @@ export async function selfTest() {
   return { okSeed, okRipemd, okAddr, addr0test: a0.address };
 }
 
-export { toHex, fromHex };
+export { toHex, fromHex, concat, sha256d, hash160 };

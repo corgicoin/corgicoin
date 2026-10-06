@@ -20,13 +20,22 @@ including `/api/address/<addr>/utxos` and `/api/broadcast`.
 ## Status
 
 - **Watch-only + receive** — open from a phrase, scan addresses, show
-  balances, display a receive address. *(this stage)*
-- **Send** — client-side transaction signing + broadcast. *(next stage)*
+  balances, display a receive address.
+- **Send** — legacy P2PKH transaction building + signing in the browser,
+  broadcast via `/api/broadcast`. Largest-first coin selection, change back to
+  an unused wallet address, daemon-matched fee (1 CORG/kB + 1 CORG per
+  sub-1-CORG output).
+
+Verified end-to-end on an isolated testnet: transactions built and signed by
+this exact code (both single- and multi-input) are accepted by the daemon's
+full consensus validation and mined into a block — confirming the derivation,
+serialization, SIGHASH_ALL preimage, and ECDSA signatures all match the node.
 
 ## Files
 
 - `index.html` — the UI (themed to match corgicoin.co / the explorer)
 - `wallet.js` — BIP39/BIP32/44 derivation, CorgiCoin address encoding, API client
+- `tx.js` — legacy P2PKH transaction building, SIGHASH_ALL signing, coin selection
 - `wordlist.js` — the official 2048-word BIP39 English list
 - `vendor/` — audited third-party crypto, vendored for a self-contained page:
   - `noble-secp256k1.js` — @noble/secp256k1 1.7.1 (MIT, Paul Miller); the one

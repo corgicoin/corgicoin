@@ -75,7 +75,7 @@
     <div class="row" style="margin-top:.6rem">
       <button id="refreshBtn" class="ghost">Refresh</button>
       <button id="receiveBtn" class="ghost">Receive</button>
-      <button id="sendBtn" class="ghost" disabled title="Signing lands in the next update">Send (soon)</button>
+      <button id="sendBtn">Send</button>
       <button id="lockBtn" class="ghost">Lock / Close</button>
     </div>
   </div>
@@ -87,6 +87,40 @@
     <p class="mono big" id="recvAddr" style="font-size:1rem"></p>
   </div>
 
+  <div id="sendCard" class="card hidden">
+    <h2>Send</h2>
+    <p class="muted">Signed in your browser, then broadcast through the explorer node.
+      Your keys never leave this page.</p>
+    <label class="muted">To address</label>
+    <input id="toAddr" placeholder="C… (recipient address)" autocomplete="off" spellcheck="false">
+    <div class="row" style="margin-top:.6rem">
+      <div style="flex:1">
+        <label class="muted">Amount (CORG)</label>
+        <input id="amount" type="text" inputmode="decimal" placeholder="0.00000000" autocomplete="off">
+      </div>
+      <button id="maxBtn" class="ghost" style="align-self:flex-end">Send max</button>
+    </div>
+    <div class="row" style="margin-top:.8rem">
+      <button id="reviewBtn">Review</button>
+      <span id="sendMsg" class="muted"></span>
+    </div>
+
+    <div id="reviewBox" class="card hidden" style="background:var(--panel2); margin-top:1rem">
+      <table>
+        <tr><td class="muted">Sending</td><td class="num mono" id="rvAmount"></td></tr>
+        <tr><td class="muted">To</td><td class="mono" id="rvTo" style="text-align:right"></td></tr>
+        <tr><td class="muted">Network fee</td><td class="num mono" id="rvFee"></td></tr>
+        <tr><td class="muted">Change back</td><td class="num mono" id="rvChange"></td></tr>
+        <tr><td class="muted">Inputs</td><td class="num mono" id="rvInputs"></td></tr>
+      </table>
+      <div class="row" style="margin-top:.8rem">
+        <button id="confirmBtn">Broadcast transaction</button>
+        <button id="cancelBtn" class="ghost">Cancel</button>
+      </div>
+      <p id="bcMsg" class="mono" style="margin-top:.6rem; word-break:break-all"></p>
+    </div>
+  </div>
+
   <h2>Addresses</h2>
   <table>
     <thead><tr><th>#</th><th>Address</th><th class="num">Balance</th><th class="num">Received</th></tr></thead>
@@ -96,12 +130,22 @@
 
 <script type="module">
 import { openWallet, generateMnemonic, validateMnemonicWords, selfTest } from "./wallet.js";
+import { buildAndSign, fmt as fmtSats, COIN as COIN_BIG } from "./tx.js";
 
 const $ = (id) => document.getElementById(id);
 const COIN = 100000000;
 const fmt = (sat) => (sat / COIN).toLocaleString(undefined, { maximumFractionDigits: 8 });
 
+// Parse a CORG decimal string into BigInt satoshis (exact, no float rounding).
+function parseCorg(str) {
+  const s = (str || "").trim();
+  if (!/^\d+(\.\d{1,8})?$/.test(s)) throw new Error("Enter an amount like 12.5 (up to 8 decimals).");
+  const [whole, frac = ""] = s.split(".");
+  return BigInt(whole) * COIN_BIG + BigInt(frac.padEnd(8, "0"));
+}
+
 let wallet = null;
+let pending = null;   // the built+signed tx awaiting broadcast
 
 // Crypto self-test — proves the derivation matches the daemon before use.
 selfTest().then((r) => {
@@ -145,6 +189,7 @@ async function refresh() {
   for (const a of wallet.accounts) {
     const info = await fetchAddr(a.address);
     const bal = info.balance || 0, recv = info.received || 0;
+    a._received = recv;
     total += bal;
     if (firstUnused === null && recv === 0) firstUnused = a.address;
     const tr = document.createElement("tr");
@@ -159,7 +204,88 @@ async function refresh() {
 
 $("refreshBtn").onclick = refresh;
 $("receiveBtn").onclick = () => $("receiveCard").classList.toggle("hidden");
+$("sendBtn").onclick = () => { $("sendCard").classList.toggle("hidden"); $("reviewBox").classList.add("hidden"); };
 $("lockBtn").onclick = () => { wallet = null; location.reload(); };
+
+// Fetch unspent outputs for every scanned address and tag them onto accounts.
+async function loadUtxos() {
+  let total = 0n;
+  for (const a of wallet.accounts) {
+    a.utxos = [];
+    try {
+      const r = await fetch("/api/address/" + a.address + "/utxos");
+      if (r.ok) { const j = await r.json(); a.utxos = j.utxos || []; }
+    } catch {}
+    for (const u of a.utxos) total += BigInt(u.value);
+  }
+  return total;
+}
+
+function changeAddress() {
+  // Reuse the first scanned address with no received history as change, else index 0.
+  const unused = wallet.accounts.find((a) => a._received === 0);
+  return (unused || wallet.accounts[0]).address;
+}
+
+$("maxBtn").onclick = async () => {
+  $("sendMsg").textContent = "Finding spendable coins…";
+  try {
+    const total = await loadUtxos();
+    // Leave the typical single-tier fee; buildAndSign re-checks and will error if short.
+    const max = total > COIN_BIG ? total - COIN_BIG : 0n;
+    $("amount").value = fmtSats(max);
+    $("sendMsg").textContent = "Max spendable (after ~1 CORG fee). Review to confirm the exact fee.";
+  } catch (e) { $("sendMsg").textContent = e.message; }
+};
+
+$("reviewBtn").onclick = async () => {
+  $("sendMsg").textContent = "";
+  $("reviewBox").classList.add("hidden");
+  $("bcMsg").textContent = "";
+  pending = null;
+  const toAddr = $("toAddr").value.trim();
+  let amountSats;
+  try { amountSats = parseCorg($("amount").value); } catch (e) { $("sendMsg").textContent = e.message; return; }
+  if (!toAddr) { $("sendMsg").textContent = "Enter a recipient address."; return; }
+  $("sendMsg").textContent = "Building & signing in your browser…";
+  try {
+    await loadUtxos();
+    pending = await buildAndSign({
+      accounts: wallet.accounts, toAddr, amountSats, net: wallet.net, changeAddr: changeAddress(),
+    });
+    $("rvAmount").textContent = fmtSats(pending.amount) + " CORG";
+    $("rvTo").textContent = toAddr;
+    $("rvFee").textContent = fmtSats(pending.fee) + " CORG";
+    $("rvChange").textContent = fmtSats(pending.change) + " CORG";
+    $("rvInputs").textContent = pending.inputs;
+    $("reviewBox").classList.remove("hidden");
+    $("sendMsg").textContent = "Signed locally. Review, then broadcast.";
+  } catch (e) { $("sendMsg").textContent = "⚠ " + e.message; }
+};
+
+$("cancelBtn").onclick = () => { pending = null; $("reviewBox").classList.add("hidden"); $("sendMsg").textContent = "Cancelled."; };
+
+$("confirmBtn").onclick = async () => {
+  if (!pending) return;
+  $("confirmBtn").disabled = true;
+  $("bcMsg").textContent = "Broadcasting…";
+  try {
+    const r = await fetch("/api/broadcast", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hex: pending.hex }),
+    });
+    const j = await r.json();
+    if (j.txid) {
+      $("bcMsg").innerHTML = "✓ Sent — txid <a href='/tx/" + j.txid + "'>" + j.txid + "</a>";
+      $("toAddr").value = ""; $("amount").value = ""; pending = null;
+      $("reviewBox").classList.add("hidden");
+      setTimeout(refresh, 800);
+    } else {
+      $("bcMsg").textContent = "✗ Rejected: " + (j.error || "unknown error");
+    }
+  } catch (e) { $("bcMsg").textContent = "✗ Network error: " + e.message; }
+  finally { $("confirmBtn").disabled = false; }
+};
 </script>
 </body>
 </html>
