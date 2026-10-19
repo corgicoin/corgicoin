@@ -40,7 +40,6 @@ void ThreadOpenAddedConnections2(void* parg);
 void ThreadMapPort2(void* parg);
 #endif
 void ThreadDNSAddressSeed2(void* parg);
-bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOutbound = nullptr, const char *strDest = nullptr, bool fOneShot = false);
 
 struct LocalServiceInfo {
     int nScore;
@@ -76,6 +75,17 @@ CCriticalSection cs_vOneShots;
 
 set<CNetAddr> setservAddNodeAddresses;
 CCriticalSection cs_setservAddNodeAddresses;
+
+vector<string> vAddedNodes;
+CCriticalSection cs_vAddedNodes;
+
+static std::atomic<uint64> nTotalBytesRecv{0};
+static std::atomic<uint64> nTotalBytesSent{0};
+
+uint64 GetTotalBytesRecv() { return nTotalBytesRecv.load(); }
+uint64 GetTotalBytesSent() { return nTotalBytesSent.load(); }
+void RecordBytesRecv(uint64 nBytes) { nTotalBytesRecv += nBytes; }
+void RecordBytesSent(uint64 nBytes) { nTotalBytesSent += nBytes; }
 
 static std::unique_ptr<CSemaphore> semOutbound;
 
@@ -570,7 +580,35 @@ CCriticalSection CNode::cs_setBanned;
 
 void CNode::ClearBanned()
 {
+    LOCK(cs_setBanned);
     setBanned.clear();
+}
+
+void CNode::Ban(const CNetAddr& ip, int64 nBanUntil, bool fOverwrite)
+{
+    LOCK(cs_setBanned);
+    int64& t = setBanned[ip];
+    if (fOverwrite || t < nBanUntil)
+        t = nBanUntil;
+}
+
+bool CNode::Unban(const CNetAddr& ip)
+{
+    LOCK(cs_setBanned);
+    return setBanned.erase(ip) > 0;
+}
+
+void CNode::GetBanned(std::map<CNetAddr, int64>& banMap)
+{
+    LOCK(cs_setBanned);
+    int64 nNow = GetTime();
+    for (auto it = setBanned.begin(); it != setBanned.end(); ) {
+        if (it->second <= nNow)
+            it = setBanned.erase(it);
+        else
+            ++it;
+    }
+    banMap = setBanned;
 }
 
 bool CNode::IsBanned(CNetAddr ip)
@@ -601,11 +639,7 @@ bool CNode::Misbehaving(int howmuch)
     if (nMisbehavior >= GetArg("-banscore", 100))
     {
         int64 banTime = GetTime()+GetArg("-bantime", 60*60*24);  // Default 24-hour ban
-        {
-            LOCK(cs_setBanned);
-            if (setBanned[addr] < banTime)
-                setBanned[addr] = banTime;
-        }
+        Ban(addr, banTime);
         CloseSocketDisconnect();
         LogPrintf("Disconnected %s for misbehavior (score=%d)\n", addrName.c_str(), nMisbehavior);
         return true;
@@ -628,6 +662,16 @@ void CNode::copyStats(CNodeStats &stats)
     X(nReleaseTime);
     X(nStartingHeight);
     X(nMisbehavior);
+    X(nSendBytes);
+    X(nRecvBytes);
+
+    // Ping times are written by the message-handler thread; a torn read here
+    // only affects a diagnostic RPC, matching upstream Bitcoin's tolerance.
+    stats.dPingTime = nPingUsecTime / 1e6;
+    stats.dMinPing = nMinPingUsecTime == std::numeric_limits<int64>::max() ? 0.0 : nMinPingUsecTime / 1e6;
+    int64 nStart = nPingUsecStart;
+    stats.dPingWait = (nPingNonceSent != 0 && nStart != 0) ? (GetTimeMicros() - nStart) / 1e6 : 0.0;
+    stats.addrLocal = addrLocal.IsValid() ? addrLocal.ToStringIPPort() : "";
 }
 #undef X
 
@@ -897,6 +941,8 @@ void ThreadSocketHandler2(void* parg)
                             vRecv.resize(nPos + nBytes);
                             memcpy(&vRecv[nPos], pchBuf, nBytes);
                             pnode->nLastRecv = GetTime();
+                            pnode->nRecvBytes += nBytes;
+                            RecordBytesRecv(nBytes);
                         }
                         else if (nBytes == 0)
                         {
@@ -938,6 +984,8 @@ void ThreadSocketHandler2(void* parg)
                         {
                             vSend.erase(vSend.begin(), vSend.begin() + nBytes);
                             pnode->nLastSend = GetTime();
+                            pnode->nSendBytes += nBytes;
+                            RecordBytesSent(nBytes);
                         }
                         else if (nBytes < 0)
                         {
@@ -1459,70 +1507,69 @@ void ThreadOpenAddedConnections2(void* parg)
 {
     LogPrintf("ThreadOpenAddedConnections started\n");
 
-    if (mapArgs.count("-addnode") == 0)
-        return;
-
-    if (GetNameProxy()) {
-        while(!fShutdown) {
-            for (string& strAddNode : mapMultiArgs["-addnode"]) {
-                CAddress addr;
-                CSemaphoreGrant grant(*semOutbound);
-                OpenNetworkConnection(addr, &grant, strAddNode.c_str());
-                Sleep(500);
-            }
-            vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]--;
-            Sleep(120000); // Retry every 2 minutes
-            vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]++;
-        }
-        return;
-    }
-
-    vector<vector<CService> > vservAddressesToAdd(0);
-    for (string& strAddNode : mapMultiArgs["-addnode"])
+    // The list is mutable at runtime via the `addnode` RPC, so it is re-read
+    // (and re-resolved) on every pass rather than captured once at startup.
+    for (unsigned int nPass = 0; !fShutdown; nPass++)
     {
-        vector<CService> vservNode(0);
-        if(Lookup(strAddNode.c_str(), vservNode, GetDefaultPort(), fNameLookup, 0))
+        vector<string> vNodesToAdd;
         {
-            vservAddressesToAdd.push_back(vservNode);
-            {
-                LOCK(cs_setservAddNodeAddresses);
-                for (CService& serv : vservNode)
-                    setservAddNodeAddresses.insert(serv);
-            }
+            LOCK(cs_vAddedNodes);
+            vNodesToAdd = vAddedNodes;
         }
-    }
-    while(true)
-    {
-        vector<vector<CService> > vservConnectAddresses = vservAddressesToAdd;
-        // Attempt to connect to each IP for each addnode entry until at least one is successful per addnode entry
-        // (keeping in mind that addnode entries can have many IPs if fNameLookup)
+
+        for (const string& strAddNode : vNodesToAdd)
         {
-            LOCK(cs_vNodes);
-            for (CNode* pnode : vNodes)
-                for (auto it = vservConnectAddresses.begin(); it != vservConnectAddresses.end(); it++)
-                    for (CService& addrNode : *(it))
-                        if (pnode->addr == addrNode)
-                        {
-                            it = vservConnectAddresses.erase(it);
-                            it--;
-                            break;
-                        }
-        }
-        for (vector<CService>& vserv : vservConnectAddresses)
-        {
-            CSemaphoreGrant grant(*semOutbound);
-            OpenNetworkConnection(CAddress(*(vserv.begin())), &grant);
-            Sleep(500);
             if (fShutdown)
                 return;
+
+            if (GetNameProxy()) {
+                // Can't resolve locally; let the proxy connect by name.
+                if (FindNode(strAddNode))
+                    continue;
+                CSemaphoreGrant grant(*semOutbound);
+                OpenNetworkConnection(CAddress(), &grant, strAddNode.c_str());
+                Sleep(500);
+                continue;
+            }
+
+            vector<CService> vserv;
+            if (!Lookup(strAddNode.c_str(), vserv, GetDefaultPort(), fNameLookup, 0) || vserv.empty())
+                continue;
+            {
+                LOCK(cs_setservAddNodeAddresses);
+                for (const CService& serv : vserv)
+                    setservAddNodeAddresses.insert(serv);
+            }
+
+            // An addnode entry may resolve to several IPs; one live
+            // connection to any of them satisfies it.
+            bool fConnected = false;
+            {
+                LOCK(cs_vNodes);
+                for (CNode* pnode : vNodes)
+                    for (const CService& serv : vserv)
+                        if (pnode->addr == serv)
+                            fConnected = true;
+            }
+            if (fConnected)
+                continue;
+
+            CSemaphoreGrant grant(*semOutbound);
+            OpenNetworkConnection(CAddress(vserv.front()), &grant);
+            Sleep(500);
         }
-        if (fShutdown)
-            return;
+
+        // Retry every 2 minutes, waking early (in 1s steps) for shutdown or
+        // for a newly-added node.
+        size_t nKnown = vNodesToAdd.size();
         vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]--;
-        Sleep(120000); // Retry every 2 minutes
+        for (int i = 0; i < 120 && !fShutdown; i++) {
+            Sleep(1000);
+            LOCK(cs_vAddedNodes);
+            if (vAddedNodes.size() > nKnown)
+                break;
+        }
         vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)]++;
-        if (fShutdown)
-            return;
     }
 }
 
@@ -1846,7 +1893,11 @@ void StartNode(void* parg)
     if (!CreateThread(ThreadSocketHandler, nullptr))
         LogPrintf("Error: CreateThread(ThreadSocketHandler) failed\n");
 
-    // Initiate outbound connections from -addnode
+    // Initiate outbound connections from -addnode (and later `addnode` RPC calls)
+    {
+        LOCK(cs_vAddedNodes);
+        vAddedNodes = mapMultiArgs["-addnode"];
+    }
     if (!CreateThread(ThreadOpenAddedConnections, nullptr))
         LogPrintf("Error: CreateThread(ThreadOpenAddedConnections) failed\n");
 

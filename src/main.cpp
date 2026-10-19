@@ -3170,6 +3170,32 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     }
 
 
+    else if (strCommand == "pong")
+    {
+        // BIP31: match the echoed nonce against our outstanding ping and
+        // record the round-trip time. Mismatches are ignored, not punished:
+        // a peer may legitimately answer a ping we've since superseded.
+        int64 nTimeReceived = GetTimeMicros();
+        uint64 nonce = 0;
+        if (vRecv.size() >= sizeof(nonce))
+        {
+            vRecv >> nonce;
+            if (pfrom->nPingNonceSent != 0 && nonce == pfrom->nPingNonceSent)
+            {
+                int64 nRtt = nTimeReceived - pfrom->nPingUsecStart;
+                if (nRtt >= 0)
+                {
+                    pfrom->nPingUsecTime = nRtt;
+                    pfrom->nMinPingUsecTime = std::min(pfrom->nMinPingUsecTime, nRtt);
+                }
+                pfrom->nPingNonceSent = 0;
+            }
+            else if (pfrom->nPingNonceSent != 0)
+                LogPrint(LOG_NET, "pong nonce mismatch from %s\n", pfrom->addr.ToString().c_str());
+        }
+    }
+
+
     else if (strCommand == "alert")
     {
         CAlert alert;
@@ -3331,14 +3357,29 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
         if (pto->nVersion == 0)
             return true;
 
-        // Keep-alive ping. We send a nonce of zero because we don't use it anywhere
-        // right now.
-        if (pto->nLastSend && GetTime() - pto->nLastSend > 30 * 60 && pto->vSend.empty()) {
-            uint64 nonce = 0;
-            if (pto->nVersion > BIP0031_VERSION)
+        // Ping: BIP31-capable peers get a nonce'd ping every
+        // PING_INTERVAL_SECONDS (or on demand via the `ping` RPC) so we can
+        // measure latency. Only one ping is outstanding at a time. Pre-BIP31
+        // peers keep the old idle keep-alive.
+        int64 nNowMicros = GetTimeMicros();
+        if (pto->nVersion > BIP0031_VERSION)
+        {
+            bool fPingDue = pto->fPingQueued ||
+                (pto->nPingNonceSent == 0 && pto->nPingUsecStart + PING_INTERVAL_SECONDS * 1000000 < nNowMicros);
+            if (fPingDue)
+            {
+                uint64 nonce = 0;
+                while (nonce == 0)
+                    RAND_bytes(reinterpret_cast<unsigned char*>(&nonce), sizeof(nonce));
+                pto->fPingQueued = false;
+                pto->nPingNonceSent = nonce;
+                pto->nPingUsecStart = nNowMicros;
                 pto->PushMessage("ping", nonce);
-            else
-                pto->PushMessage("ping");
+            }
+        }
+        else if (pto->nLastSend && GetTime() - pto->nLastSend > 30 * 60 && pto->vSend.empty())
+        {
+            pto->PushMessage("ping");
         }
 
         // Resend wallet transactions that haven't gotten in a block yet

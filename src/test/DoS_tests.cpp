@@ -80,6 +80,72 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
     BOOST_CHECK(!CNode::IsBanned(addr));
 }
 
+BOOST_AUTO_TEST_CASE(DoS_ban_management)
+{
+    // Backs the setban / listbanned / clearbanned RPCs.
+    CNode::ClearBanned();
+    int64 nStartTime = GetTime();
+    SetMockTime(nStartTime);
+
+    CNetAddr a1 = ip(0xa0b0c011), a2 = ip(0xa0b0c012);
+
+    CNode::Ban(a1, nStartTime + 100);
+    CNode::Ban(a2, nStartTime + 1000);
+    BOOST_CHECK(CNode::IsBanned(a1));
+    BOOST_CHECK(CNode::IsBanned(a2));
+
+    // Without overwrite the later expiry wins; with overwrite it's replaced.
+    CNode::Ban(a2, nStartTime + 50);
+    std::map<CNetAddr, int64> banMap;
+    CNode::GetBanned(banMap);
+    BOOST_CHECK_EQUAL(banMap.size(), 2U);
+    BOOST_CHECK_EQUAL(banMap[a2], nStartTime + 1000);
+    CNode::Ban(a2, nStartTime + 50, true);
+    CNode::GetBanned(banMap);
+    BOOST_CHECK_EQUAL(banMap[a2], nStartTime + 50);
+
+    // Expired bans are swept from the listing.
+    SetMockTime(nStartTime + 60);
+    CNode::GetBanned(banMap);
+    BOOST_CHECK_EQUAL(banMap.size(), 1U);
+    BOOST_CHECK(banMap.count(a1));
+    BOOST_CHECK(!CNode::IsBanned(a2));
+
+    // Unban reports whether anything was removed.
+    BOOST_CHECK(CNode::Unban(a1));
+    BOOST_CHECK(!CNode::Unban(a1));
+    BOOST_CHECK(!CNode::IsBanned(a1));
+
+    CNode::Ban(a1, nStartTime + 1000);
+    CNode::ClearBanned();
+    CNode::GetBanned(banMap);
+    BOOST_CHECK(banMap.empty());
+
+    SetMockTime(0);
+}
+
+BOOST_AUTO_TEST_CASE(DoS_peer_stats_defaults)
+{
+    // A fresh peer reports no ping measurement and no traffic, so
+    // getpeerinfo omits pingtime/minping/pingwait rather than showing junk.
+    CAddress addr(ip(0xa0b0c021));
+    CNode node(INVALID_SOCKET, addr, "", true);
+    CNodeStats stats;
+    node.copyStats(stats);
+    BOOST_CHECK_EQUAL(stats.nSendBytes, 0U);
+    BOOST_CHECK_EQUAL(stats.nRecvBytes, 0U);
+    BOOST_CHECK_EQUAL(stats.dPingTime, 0.0);
+    BOOST_CHECK_EQUAL(stats.dMinPing, 0.0);
+    BOOST_CHECK_EQUAL(stats.dPingWait, 0.0);
+
+    // After a measured round trip, minping tracks the best value.
+    node.nPingUsecTime = 250000;
+    node.nMinPingUsecTime = 120000;
+    node.copyStats(stats);
+    BOOST_CHECK_CLOSE(stats.dPingTime, 0.25, 1e-9);
+    BOOST_CHECK_CLOSE(stats.dMinPing, 0.12, 1e-9);
+}
+
 static bool CheckNBits(unsigned int nbits1, int64 time1, unsigned int nbits2, int64 time2)\
 {
     if (time1 > time2)

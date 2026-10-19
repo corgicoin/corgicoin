@@ -44,6 +44,14 @@ static CCriticalSection cs_nWalletUnlockTime;
 
 extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.cpp
 extern Value getpeerinfo(const Array& params, bool fHelp);
+extern Value ping(const Array& params, bool fHelp);
+extern Value getnettotals(const Array& params, bool fHelp);
+extern Value setban(const Array& params, bool fHelp);
+extern Value listbanned(const Array& params, bool fHelp);
+extern Value clearbanned(const Array& params, bool fHelp);
+extern Value addnode(const Array& params, bool fHelp);
+extern Value getaddednodeinfo(const Array& params, bool fHelp);
+extern Value disconnectnode(const Array& params, bool fHelp);
 extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
 extern Value getrawtransaction(const Array& params, bool fHelp); // in rcprawtransaction.cpp
@@ -2916,6 +2924,14 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockcount",          &getblockcount,          true },
     { "getconnectioncount",     &getconnectioncount,     true },
     { "getpeerinfo",            &getpeerinfo,            true },
+    { "ping",                   &ping,                   true },
+    { "getnettotals",           &getnettotals,           true },
+    { "setban",                 &setban,                 true },
+    { "listbanned",             &listbanned,             true },
+    { "clearbanned",            &clearbanned,            true },
+    { "addnode",                &addnode,                true },
+    { "getaddednodeinfo",       &getaddednodeinfo,       true },
+    { "disconnectnode",         &disconnectnode,         true },
     { "getdifficulty",          &getdifficulty,          true },
     { "getnetworkhashps",       &getnetworkhashps,       true },
     { "getgenerate",            &getgenerate,            true },
@@ -3836,6 +3852,8 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     // Special case non-string parameter types
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "setban"                 && n > 3) ConvertTo<bool>(params[3]);
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "sendtoaddress"          && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "burncoin"              && n > 0) ConvertTo<double>(params[0]);
