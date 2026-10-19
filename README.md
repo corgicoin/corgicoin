@@ -115,6 +115,13 @@ rpcport=62555
 
 ## Version History
 
+### Unreleased — P2P / Network Modernization
+- **Peer latency (BIP31)**: nonce'd pings every 2 minutes with pong matching; `getpeerinfo` now reports `pingtime`, `minping`, `pingwait`, plus per-peer `bytessent`/`bytesrecv` and `addrlocal`. New `ping` RPC forces an immediate round.
+- **`getnettotals`**: total bytes sent/received since startup
+- **Ban management**: `setban <ip> add|remove [bantime] [absolute]`, `listbanned`, `clearbanned` (manual bans disconnect matching peers immediately)
+- **Runtime peer management**: `addnode <node> add|remove|onetry`, `getaddednodeinfo [node]`, `disconnectnode <address>`. The `-addnode` thread now re-reads its list every pass, so RPC-added nodes are dialed and kept connected
+- No consensus or wire-format changes; RPC error codes match Bitcoin Core
+
 ### v4.5.0.0 — HD Wallet + Modern RPCs
 - **HD (hierarchical deterministic) wallet** (BIP32/39/44): all keys derive from a single seed, with a 12/24-word recovery phrase that backs up the whole wallet. Works on encrypted wallets (seed encrypted with the wallet passphrase); legacy wallets keep working unchanged. `sethdseed` RPC + a Settings → "Set up / Restore HD Seed" / "Show Recovery Phrase" GUI flow. Spec: `doc/hd-wallet-spec.md`
 - **Modern info RPCs**: `getblockchaininfo` (with LWMA/AuxPoW fork status), `getblockheader`, `getnetworkinfo`, `getwalletinfo`, `getchaintips`, `uptime`
@@ -203,6 +210,7 @@ rpcport=62555
 - [x] Bech32m address encoding (`corg1…` / `tcorg1…`, accepted everywhere addresses are parsed)
 - [x] Block explorer with burn auditing (`contrib/explorer/` — indexes the chain over RPC, decodes bridge burns)
 - [x] AuxPoW merged mining (v4.4 hard fork at block 50,000 — see `doc/auxpow-spec.md`)
+- [x] Modern P2P/network RPCs: BIP31 ping latency, traffic counters, `setban`/`listbanned`, runtime `addnode`/`disconnectnode`
 - [x] Boost reduced to essentials (`std::variant`, `std::chrono`, std string helpers; only asio/interprocess/program_options/signals2 remain)
 
 ### In Progress

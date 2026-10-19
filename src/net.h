@@ -11,6 +11,8 @@
 
 #include <deque>
 #include <array>
+#include <atomic>
+#include <limits>
 #include <openssl/rand.h>
 
 #ifndef WIN32
@@ -39,6 +41,8 @@ bool GetMyExternalIP(CNetAddr& ipRet);
 void AddressCurrentlyConnected(const CService& addr);
 CNode* FindNode(const CNetAddr& ip);
 CNode* FindNode(const CService& ip);
+CNode* FindNode(std::string addrName);
+bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOutbound = nullptr, const char *strDest = nullptr, bool fOneShot = false);
 CNode* ConnectNode(CAddress addrConnect, const char *strDest = nullptr, int64 nTimeout=0);
 void MapPort();
 unsigned short GetListenPort();
@@ -129,6 +133,19 @@ extern std::deque<std::pair<int64, CInv> > vRelayExpiration;
 extern CCriticalSection cs_mapRelay;
 extern std::map<CInv, int64> mapAlreadyAskedFor;
 
+// Manually-added peers (-addnode at startup, plus the `addnode` RPC).
+extern std::vector<std::string> vAddedNodes;
+extern CCriticalSection cs_vAddedNodes;
+
+// Network traffic totals (bytes), across all peers since startup.
+uint64 GetTotalBytesRecv();
+uint64 GetTotalBytesSent();
+void RecordBytesRecv(uint64 nBytes);
+void RecordBytesSent(uint64 nBytes);
+
+// How often to send a latency-measuring ping to each peer (BIP31).
+constexpr int64 PING_INTERVAL_SECONDS = 2 * 60;
+
 
 
 
@@ -146,6 +163,12 @@ public:
     int64 nReleaseTime;
     int nStartingHeight;
     int nMisbehavior;
+    uint64 nSendBytes;
+    uint64 nRecvBytes;
+    double dPingTime;   // seconds; 0 if never measured
+    double dPingWait;   // seconds an outstanding ping has been waiting; 0 if none
+    double dMinPing;    // seconds; 0 if never measured
+    std::string addrLocal;
 };
 
 
@@ -211,6 +234,17 @@ public:
     CCriticalSection cs_inventory;
     std::multimap<int64, CInv> mapAskFor;
 
+    // traffic accounting
+    uint64 nSendBytes;
+    uint64 nRecvBytes;
+
+    // BIP31 ping/pong latency measurement
+    uint64 nPingNonceSent;     // nonce of the outstanding ping, 0 if none
+    int64 nPingUsecStart;      // when the outstanding ping was sent (micros)
+    int64 nPingUsecTime;       // last measured round trip (micros)
+    int64 nMinPingUsecTime;    // best round trip seen (micros); INT64_MAX if none
+    bool fPingQueued;          // `ping` RPC asked for an immediate ping
+
     CNode(SOCKET hSocketIn, CAddress addrIn, std::string addrNameIn = "", bool fInboundIn=false) : vSend(SER_NETWORK, MIN_PROTO_VERSION), vRecv(SER_NETWORK, MIN_PROTO_VERSION)
     {
         nServices = 0;
@@ -239,6 +273,13 @@ public:
         nStartingHeight = -1;
         fGetAddr = false;
         nMisbehavior = 0;
+        nSendBytes = 0;
+        nRecvBytes = 0;
+        nPingNonceSent = 0;
+        nPingUsecStart = 0;
+        nPingUsecTime = 0;
+        nMinPingUsecTime = std::numeric_limits<int64>::max();
+        fPingQueued = false;
         setInventoryKnown.max_size(SendBufferSize() / 1000);
 
         // Be shy and don't send version until we hear
@@ -633,6 +674,12 @@ public:
     // new code.
     static void ClearBanned(); // needed for unit testing
     static bool IsBanned(CNetAddr ip);
+    // Ban an address until nBanUntil (unix time). Keeps the later of an
+    // existing and the new expiry unless fOverwrite.
+    static void Ban(const CNetAddr& ip, int64 nBanUntil, bool fOverwrite = false);
+    static bool Unban(const CNetAddr& ip);
+    // Snapshot of active (unexpired) bans; expired entries are swept.
+    static void GetBanned(std::map<CNetAddr, int64>& banMap);
     bool Misbehaving(int howmuch); // 1 == a little, 100 == a lot
     void copyStats(CNodeStats &stats);
 };

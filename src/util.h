@@ -303,6 +303,13 @@ inline int64 GetTimeMillis()
         .count();
 }
 
+inline int64 GetTimeMicros()
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 inline std::string DateTimeStrFormat(const char* pszFormat, int64 nTime)
 {
     time_t n = nTime;
