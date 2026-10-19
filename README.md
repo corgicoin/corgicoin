@@ -6,7 +6,7 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.5.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining, and an HD (seed-phrase) wallet:
+**Version 4.6.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining, an HD (seed-phrase) wallet, and a non-custodial web wallet:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
@@ -15,6 +15,8 @@ CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in
 - AuxPoW merged mining (hard fork at block 50,000 — see `doc/auxpow-spec.md`)
 - Bech32m addresses (`corg1…` / `tcorg1…`) alongside legacy base58
 - HD (BIP32/39) wallet with a seed-phrase backup (see `doc/hd-wallet-spec.md`)
+- Non-custodial web wallet (`contrib/webwallet/`): keys stay in the browser, same addresses as the desktop wallet
+- Modern P2P diagnostics and control: ping latency, traffic counters, `setban`, runtime `addnode`
 - Genesis block mined, mainnet running with seed nodes
 - Protocol version 70001
 
@@ -115,7 +117,9 @@ rpcport=62555
 
 ## Version History
 
-### Unreleased — P2P / Network Modernization
+### v4.6.0.0 — Web Wallet + P2P Modernization
+- **Non-custodial web wallet** (`contrib/webwallet/`, served by the explorer at `/wallet/`): recovery phrase and keys are derived and held in the browser and never sent to a server. Same BIP44 path as the desktop wallet (`m/44'/99'/0'/0/i`), so one phrase gives the same addresses in both. Receive, balances, and **send**: transactions are built and signed client-side (legacy P2PKH, SIGHASH_ALL) and broadcast through the explorer. Verified end-to-end on testnet against full daemon validation
+- **Explorer wallet API**: `GET /api/address/<addr>/utxos`, `POST /api/broadcast`
 - **Peer latency (BIP31)**: nonce'd pings every 2 minutes with pong matching; `getpeerinfo` now reports `pingtime`, `minping`, `pingwait`, plus per-peer `bytessent`/`bytesrecv` and `addrlocal`. New `ping` RPC forces an immediate round.
 - **`getnettotals`**: total bytes sent/received since startup
 - **Ban management**: `setban <ip> add|remove [bantime] [absolute]`, `listbanned`, `clearbanned` (manual bans disconnect matching peers immediately)
