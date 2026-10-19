@@ -98,3 +98,4 @@ blocks/
 chainstate/
 testnet3/
 regtest/
+__pycache__/

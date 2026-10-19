@@ -42,6 +42,13 @@ static std::string strRPCUserColonPass;
 static int64 nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
 
+// Default JSON-RPC port. Regtest gets its own so a regtest node can run next
+// to a mainnet/testnet one; testnet keeps the historical mainnet default.
+static int DefaultRPCPort()
+{
+    return GetBoolArg("-regtest", false) ? 64665 : 62555;
+}
+
 extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.cpp
 extern Value getpeerinfo(const Array& params, bool fHelp);
 extern Value ping(const Array& params, bool fHelp);
@@ -364,6 +371,69 @@ Value getgenerate(const Array& params, bool fHelp)
     return GetBoolArg("-gen");
 }
 
+
+// Mine blocks synchronously on a regtest chain. Each coinbase commits to its
+// height so blocks mined in the same second to the same address can never
+// produce duplicate coinbase txids.
+Value generate(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "generate <nblocks> [address]\n"
+            "Mine <nblocks> blocks immediately (regtest only) and return their hashes.\n"
+            "The coinbase pays [address] if given, else -mineraddress, else a wallet key.");
+
+    if (!fRegTest)
+        throw JSONRPCError(-32601, "generate is only available in regtest mode (-regtest)");
+
+    int nBlocks = params[0].get_int();
+    if (nBlocks < 0 || nBlocks > 10000)
+        throw JSONRPCError(-8, "nblocks must be between 0 and 10000");
+
+    CScript scriptPayTo;
+    if (params.size() > 1) {
+        CBitcoinAddress address(params[1].get_str());
+        if (!address.IsValid())
+            throw JSONRPCError(-5, "Invalid CorgiCoin address");
+        scriptPayTo.SetDestination(address.Get());
+    }
+
+    CReserveKey reservekey(pwalletMain.get());
+    Array blockHashes;
+    unsigned int nExtraNonce = 0;
+    while (nBlocks-- > 0)
+    {
+        if (fShutdown)
+            break;
+        int nHeight;
+        {
+            LOCK(cs_main);
+            nHeight = nBestHeight + 1;
+        }
+        std::unique_ptr<CBlock> pblock(CreateNewBlock(reservekey));
+        if (!pblock)
+            throw JSONRPCError(-1, "Couldn't create new block");
+        if (!scriptPayTo.empty())
+            pblock->vtx[0].vout[0].scriptPubKey = scriptPayTo;
+
+        uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+        for (;;) {
+            ++nExtraNonce;
+            pblock->vtx[0].vin[0].scriptSig = (CScript() << nHeight << CBigNum(nExtraNonce)) + COINBASE_FLAGS;
+            pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+            bool fFound = false;
+            for (pblock->nNonce = 0; pblock->nNonce < 0x10000; pblock->nNonce++)
+                if (pblock->GetPoWHash() <= hashTarget) { fFound = true; break; }
+            if (fFound)
+                break;
+        }
+
+        if (!CheckWork(pblock.get(), *pwalletMain, reservekey))
+            throw JSONRPCError(-1, "generate: block not accepted (see debug.log)");
+        blockHashes.push_back(pblock->GetHash().GetHex());
+    }
+    return blockHashes;
+}
 
 Value setgenerate(const Array& params, bool fHelp)
 {
@@ -2649,6 +2719,17 @@ static Object SoftForkStatus(int nForkHeight)
     return o;
 }
 
+Value getbestblockhash(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getbestblockhash\n"
+            "Returns the hash of the best (tip) block in the longest block chain.");
+
+    LOCK(cs_main);
+    return hashBestChain.GetHex();
+}
+
 Value getblockchaininfo(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 0)
@@ -2657,7 +2738,7 @@ Value getblockchaininfo(const Array& params, bool fHelp)
             "Returns an object with state info about blockchain processing.");
 
     Object obj;
-    obj.emplace_back("chain", string(fTestNet ? "test" : "main"));
+    obj.emplace_back("chain", string(fRegTest ? "regtest" : fTestNet ? "test" : "main"));
     obj.emplace_back("blocks", (int)nBestHeight);
     obj.emplace_back("headers", (int)nBestHeight);
     obj.emplace_back("bestblockhash", hashBestChain.GetHex());
@@ -2922,6 +3003,7 @@ static const CRPCCommand vRPCCommands[] =
     { "help",                   &help,                   true },
     { "stop",                   &stop,                   true },
     { "getblockcount",          &getblockcount,          true },
+    { "getbestblockhash",       &getbestblockhash,       true },
     { "getconnectioncount",     &getconnectioncount,     true },
     { "getpeerinfo",            &getpeerinfo,            true },
     { "ping",                   &ping,                   true },
@@ -2936,6 +3018,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getnetworkhashps",       &getnetworkhashps,       true },
     { "getgenerate",            &getgenerate,            true },
     { "setgenerate",            &setgenerate,            true },
+    { "generate",               &generate,               true },
     { "gethashespersec",        &gethashespersec,        true },
     { "getinfo",                &getinfo,                true },
     { "getmininginfo",          &getmininginfo,          true },
@@ -3505,7 +3588,7 @@ void ThreadRPCServer2(void* parg)
     // Try a dual IPv6/IPv4 socket, falling back to separate IPv4 and IPv6 sockets
     const bool loopback = !mapArgs.count("-rpcallowip");
     asio::ip::address bindAddress = loopback ? asio::ip::address_v6::loopback() : asio::ip::address_v6::any();
-    ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcport", 62555));
+    ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcport", DefaultRPCPort()));
 
     boost::signals2::signal<void ()> StopRequests;
 
@@ -3783,7 +3866,7 @@ Object CallRPC(const string& strMethod, const Array& params)
     asio::ssl::stream<asio::ip::tcp::socket> sslStream(io_service, context);
     SSLIOStreamDevice<asio::ip::tcp> d(sslStream, fUseSSL);
     iostreams::stream< SSLIOStreamDevice<asio::ip::tcp> > stream(d);
-    if (!d.connect(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcport", "62555")))
+    if (!d.connect(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcport", itostr(DefaultRPCPort()))))
         throw runtime_error("couldn't connect to server");
 
     // HTTP basic authentication
@@ -3852,6 +3935,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     // Special case non-string parameter types
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "setban"                 && n > 3) ConvertTo<bool>(params[3]);
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<int64_t>(params[1]);

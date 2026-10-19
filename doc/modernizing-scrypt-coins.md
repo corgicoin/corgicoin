@@ -84,6 +84,14 @@ or protocol change, and you cannot make those safely without a net.
   transitive includes and integer-type widths; a change that compiles on one
   can fail on the other. Treat Linux CI as authoritative for header/type
   changes even when developing on a Mac.
+- **Add a regtest mode and functional tests.** Unit tests can't see bugs that
+  only appear when real nodes talk to each other. Give the daemon a private
+  `-regtest` chain (its own genesis, magic, ports and datadir; minimum
+  difficulty with no retarget; a `generate` RPC that mines instantly), then a
+  small Python harness that starts several nodes, connects them, and asserts
+  over JSON-RPC. Mining the regtest genesis is a few lines of Python with
+  `hashlib.scrypt`. CorgiCoin added this late, and its first reorg test
+  immediately found a sync bug (see §9). Do it before the consensus work.
 
 ## 6. Structured logging, modern addresses, a release pipeline
 
@@ -157,6 +165,12 @@ them.
   latent pre-existing bug (testnet pow-limit was stricter than testnet genesis
   bits, deadlocking testnet mining) that had nothing to do with the fork — but
   would have blocked any real testnet use.
+- **Test the network, not just the functions.** The first multi-node reorg
+  test found that 2012-era sync only asks the *first* connected peer for
+  blocks. A node that rejoins a longer fork after a split never requests it,
+  and stays behind until somebody mines on top — hours, on a quiet chain. The
+  fix was one condition: also ask any peer that advertises a taller chain.
+  No unit test would have caught it.
 - **Spec consensus changes before coding them.** The design doc is where you
   catch "what activation height, what exact algorithm, what's the back-compat
   story" — cheaply, before it's in C++.
