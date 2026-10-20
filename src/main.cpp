@@ -1006,6 +1006,11 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     if (pindexLast == nullptr)
         return nProofOfWorkLimit;
 
+    // Regtest never retargets: every block is minimum difficulty, so tests
+    // can mine on demand. (LWMA is covered by difficulty_tests instead.)
+    if (fRegTest)
+        return nProofOfWorkLimit;
+
     // v4.3 hard fork: per-block LWMA retarget. Takes precedence over the
     // testnet min-difficulty escape — post-fork difficulty decays on its
     // own (doc/lwma-retarget-spec.md)
@@ -2263,6 +2268,17 @@ bool LoadBlockIndex(bool fAllowNew)
         bnProofOfWorkLimit = CBigNum(~uint256(0) >> 16);
         hashGenesisBlock = uint256("0xd2a9b071e7c7e37ad65898bb1abafa96934fd4df330d65857992201118c0ba8b");
     }
+    if (fRegTest)
+    {
+        // Distinct magic so a regtest node can never talk to testnet.
+        pchMessageStart[0] = 0xfa;
+        pchMessageStart[1] = 0xc0;
+        pchMessageStart[2] = 0xb6;
+        pchMessageStart[3] = 0xda;
+        // Target 0x207fffff: about one scrypt hash in two meets it.
+        bnProofOfWorkLimit = CBigNum(~uint256(0) >> 1);
+        hashGenesisBlock = uint256("0x0807d4f55142e96daa02bf6a1a7e438a4007409b7ae8df8c6e17f794501f819e");
+    }
 
     //
     // Load block index
@@ -2310,6 +2326,12 @@ bool LoadBlockIndex(bool fAllowNew)
             block.nTime    = 1774996801;  // Testnet: 1 second after mainnet
             block.nBits    = 0x1f00ffff;  // Testnet: easier difficulty
             block.nNonce   = 150043;
+        }
+        if (fRegTest)
+        {
+            block.nTime    = 1774996802;  // Regtest: 2 seconds after mainnet
+            block.nBits    = 0x207fffff;  // Regtest: minimum difficulty
+            block.nNonce   = 0;
         }
 
         assert(block.GetHash() == hashGenesisBlock);
@@ -2725,12 +2747,18 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             }
         }
 
-        // Ask the first connected node for block updates
+        // Ask the first connected node for block updates, and also any peer
+        // that advertises a taller chain than ours. Without the latter, a
+        // node that reconnects to a longer fork (e.g. after a network split)
+        // never requests it and stays on the shorter chain until someone
+        // mines a new block on top -- which on an idle chain can be hours.
+        // nStartingHeight is self-reported, but the worst a lying peer gets
+        // is one getblocks round trip; all blocks are still fully validated.
         static int nAskedForBlocks = 0;
         if (!pfrom->fClient && !pfrom->fOneShot &&
             (pfrom->nVersion < NOBLKS_VERSION_START ||
              pfrom->nVersion >= NOBLKS_VERSION_END) &&
-             (nAskedForBlocks < 1 || vNodes.size() <= 1))
+             (nAskedForBlocks < 1 || vNodes.size() <= 1 || pfrom->nStartingHeight > nBestHeight))
         {
             nAskedForBlocks++;
             pfrom->PushGetBlocks(pindexBest, uint256(0));
@@ -3954,7 +3982,7 @@ void static BitcoinMiner(CWallet *pwallet)
     {
         if (fShutdown)
             return;
-        while (vNodes.empty() || IsInitialBlockDownload())
+        while ((vNodes.empty() && !fRegTest) || IsInitialBlockDownload())
         {
             Sleep(1000);
             if (fShutdown)
@@ -4060,7 +4088,7 @@ void static BitcoinMiner(CWallet *pwallet)
                 return;
             if (fLimitProcessors && vnThreadsRunning[static_cast<int>(ThreadId::Miner)] > nLimitProcessors)
                 return;
-            if (vNodes.empty())
+            if (vNodes.empty() && !fRegTest)
                 break;
             if (pblock->nNonce >= 0xffff0000)
                 break;

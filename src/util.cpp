@@ -72,6 +72,7 @@ bool fServer = false;
 bool fCommandLine = false;
 string strMiscWarning;
 bool fTestNet = false;
+bool fRegTest = false;
 bool fNoListen = false;
 bool fLogTimestamps = false;
 CMedianFilter<int64> vTimeOffsets(200,0);
@@ -1096,7 +1097,9 @@ const std::filesystem::path &GetDataDir(bool fNetSpecific)
     } else {
         path = GetDefaultDataDir();
     }
-    if (fNetSpecific && GetBoolArg("-testnet", false))
+    if (fNetSpecific && GetBoolArg("-regtest", false))
+        path /= "regtest";
+    else if (fNetSpecific && GetBoolArg("-testnet", false))
         path /= "testnet3";
 
     fs::create_directory(path);

@@ -262,6 +262,7 @@ std::string HelpMessage()
         "  -daemon                " + _("Run in the background as a daemon and accept commands") + "\n" +
 #endif
         "  -testnet               " + _("Use the test network") + "\n" +
+        "  -regtest               " + _("Use a private regression-test chain: instant blocks via the generate RPC (P2P port 64666, RPC port 64665)") + "\n" +
         "  -debug                 " + _("Output extra debugging information. Implies all other -debug* options") + "\n" +
         "  -debugnet              " + _("Output extra network debugging information") + "\n" +
         "  -logtimestamps         " + _("Prepend debug output with timestamp") + "\n" +
@@ -334,7 +335,17 @@ bool AppInit2()
 
     // ********************************************************* Step 2: parameter interactions
 
-    fTestNet = GetBoolArg("-testnet");
+    // Regression-test mode: a private chain with its own genesis, magic,
+    // ports and datadir, minimum-difficulty blocks and the `generate` RPC.
+    // It reuses testnet address formats and relaxed standardness rules.
+    fRegTest = GetBoolArg("-regtest");
+    fTestNet = GetBoolArg("-testnet") || fRegTest;
+    if (fRegTest) {
+        // Never reach out to the public network from a regtest node.
+        SoftSetBoolArg("-dnsseed", false);
+        SoftSetBoolArg("-discover", false);
+        SoftSetBoolArg("-upnp", false);
+    }
 
     if (mapArgs.count("-bind")) {
         // when specifying an explicit binding address, you want to listen on it

@@ -34,6 +34,9 @@ jobs:
           cd build
           ./test_corgicoin
 
+      - name: Run functional tests (regtest)
+        run: python3 test/functional/test_runner.py --corgicoind build/corgicoind
+
       - name: Upload Linux daemon
         uses: actions/upload-artifact@v4
         with:
@@ -64,6 +67,9 @@ jobs:
         run: |
           cd build
           ./test_corgicoin
+
+      - name: Run functional tests (regtest)
+        run: python3 test/functional/test_runner.py --corgicoind build/corgicoind
 
       - name: Upload macOS daemon
         uses: actions/upload-artifact@v4
