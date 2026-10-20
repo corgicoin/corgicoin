@@ -63,7 +63,16 @@ class P2PNetworkRPCTest(CorgiTestFramework):
         n1.setban("10.1.2.3", "add", until, True)
         assert_equal(n1.listbanned(), [{"address": "10.1.2.3", "banned_until": until}])
         assert_raises_rpc_error(-8, None, n1.setban, "10.9.9.9", "add", 1000, True)
+        self.log("bans survive a restart (banlist.dat)")
+        n1.stop()
+        n1.start()
+        assert_equal(n1.listbanned(), [{"address": "10.1.2.3", "banned_until": until}])
+
+        self.log("clearbanned is persisted too")
         n1.clearbanned()
+        assert_equal(n1.listbanned(), [])
+        n1.stop()
+        n1.start()
         assert_equal(n1.listbanned(), [])
 
         self.log("peers can reconnect after unban")

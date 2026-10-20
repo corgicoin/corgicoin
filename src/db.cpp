@@ -720,6 +720,100 @@ bool CTxDB::LoadBlockIndexGuts()
 //
 
 
+// peers.dat and banlist.dat share one on-disk format: network magic, the
+// serialized payload, then a double-SHA256 of both. Written to a temp file and
+// renamed into place so a crash never leaves a half-written file.
+template <typename T>
+static bool WriteChecksummedFile(const std::filesystem::path& path, const char* name, const T& data)
+{
+    // Generate random temporary filename
+    unsigned short randv = 0;
+    RAND_bytes(reinterpret_cast<unsigned char*>(&randv), sizeof(randv));
+    std::string tmpfn = strprintf("%s.%04x", name, randv);
+
+    // serialize data, checksum data up to that point, then append csum
+    CDataStream ss(SER_DISK, CLIENT_VERSION);
+    ss << FLATDATA(pchMessageStart);
+    ss << data;
+    uint256 hash = Hash(ss.begin(), ss.end());
+    ss << hash;
+
+    // open temp output file, and associate with CAutoFile
+    std::filesystem::path pathTmp = GetDataDir() / tmpfn;
+    FILE *file = fopen(pathTmp.string().c_str(), "wb");
+    CAutoFile fileout = CAutoFile(file, SER_DISK, CLIENT_VERSION);
+    if (!fileout)
+        return LogError("Write %s : open failed", name);
+
+    // Write and commit header, data
+    try {
+        fileout << ss;
+    }
+    catch (std::exception &e) {
+        return LogError("Write %s : I/O error", name);
+    }
+    FileCommit(fileout);
+    fileout.fclose();
+
+    // replace existing file, if any, with the new temp file
+    if (!RenameOver(pathTmp, path))
+        return LogError("Write %s : rename-into-place failed", name);
+
+    return true;
+}
+
+template <typename T>
+static bool ReadChecksummedFile(const std::filesystem::path& path, const char* name, T& data)
+{
+    // open input file, and associate with CAutoFile
+    FILE *file = fopen(path.string().c_str(), "rb");
+    CAutoFile filein = CAutoFile(file, SER_DISK, CLIENT_VERSION);
+    if (!filein)
+        return LogError("Read %s : open failed", name);
+
+    // use file size to size memory buffer
+    int fileSize = GetFilesize(filein);
+    int dataSize = fileSize - sizeof(uint256);
+    if (dataSize < 0)
+        return LogError("Read %s : file too short", name);
+    vector<unsigned char> vchData;
+    vchData.resize(dataSize);
+    uint256 hashIn;
+
+    // read data and checksum from file
+    try {
+        filein.read(reinterpret_cast<char*>(vchData.data()), dataSize);
+        filein >> hashIn;
+    }
+    catch (std::exception &e) {
+        return LogError("Read %s : I/O error or stream data corrupted", name);
+    }
+    filein.fclose();
+
+    CDataStream ss(vchData, SER_DISK, CLIENT_VERSION);
+
+    // verify stored checksum matches input data
+    uint256 hashTmp = Hash(ss.begin(), ss.end());
+    if (hashIn != hashTmp)
+        return LogError("Read %s : checksum mismatch; data corrupted", name);
+
+    // de-serialize data
+    unsigned char pchMsgTmp[4];
+    try {
+        ss >> FLATDATA(pchMsgTmp);
+        ss >> data;
+    }
+    catch (std::exception &e) {
+        return LogError("Read %s : I/O error or stream data corrupted", name);
+    }
+
+    // finally, verify the network matches ours
+    if (memcmp(pchMsgTmp, pchMessageStart, sizeof(pchMsgTmp)))
+        return LogError("Read %s : invalid network magic number", name);
+
+    return true;
+}
+
 CAddrDB::CAddrDB()
 {
     pathAddr = GetDataDir() / "peers.dat";
@@ -727,88 +821,30 @@ CAddrDB::CAddrDB()
 
 bool CAddrDB::Write(const CAddrMan& addr)
 {
-    // Generate random temporary filename
-    unsigned short randv = 0;
-    RAND_bytes(reinterpret_cast<unsigned char*>(&randv), sizeof(randv));
-    std::string tmpfn = strprintf("peers.dat.%04x", randv);
-
-    // serialize addresses, checksum data up to that point, then append csum
-    CDataStream ssPeers(SER_DISK, CLIENT_VERSION);
-    ssPeers << FLATDATA(pchMessageStart);
-    ssPeers << addr;
-    uint256 hash = Hash(ssPeers.begin(), ssPeers.end());
-    ssPeers << hash;
-
-    // open temp output file, and associate with CAutoFile
-    std::filesystem::path pathTmp = GetDataDir() / tmpfn;
-    FILE *file = fopen(pathTmp.string().c_str(), "wb");
-    CAutoFile fileout = CAutoFile(file, SER_DISK, CLIENT_VERSION);
-    if (!fileout)
-        return LogError("CAddrman::Write() : open failed");
-
-    // Write and commit header, data
-    try {
-        fileout << ssPeers;
-    }
-    catch (std::exception &e) {
-        return LogError("CAddrman::Write() : I/O error");
-    }
-    FileCommit(fileout);
-    fileout.fclose();
-
-    // replace existing peers.dat, if any, with new peers.dat.XXXX
-    if (!RenameOver(pathTmp, pathAddr))
-        return LogError("CAddrman::Write() : Rename-into-place failed");
-
-    return true;
+    return WriteChecksummedFile(pathAddr, "peers.dat", addr);
 }
 
 bool CAddrDB::Read(CAddrMan& addr)
 {
-    // open input file, and associate with CAutoFile
-    FILE *file = fopen(pathAddr.string().c_str(), "rb");
-    CAutoFile filein = CAutoFile(file, SER_DISK, CLIENT_VERSION);
-    if (!filein)
-        return LogError("CAddrman::Read() : open failed");
+    return ReadChecksummedFile(pathAddr, "peers.dat", addr);
+}
 
-    // use file size to size memory buffer
-    int fileSize = GetFilesize(filein);
-    int dataSize = fileSize - sizeof(uint256);
-    vector<unsigned char> vchData;
-    vchData.resize(dataSize);
-    uint256 hashIn;
+//
+// CBanDB
+//
 
-    // read data and checksum from file
-    try {
-        filein.read(reinterpret_cast<char*>(&vchData[0]), dataSize);
-        filein >> hashIn;
-    }
-    catch (std::exception &e) {
-        return LogError("CAddrman::Read() 2 : I/O error or stream data corrupted");
-    }
-    filein.fclose();
+CBanDB::CBanDB()
+{
+    pathBanlist = GetDataDir() / "banlist.dat";
+}
 
-    CDataStream ssPeers(vchData, SER_DISK, CLIENT_VERSION);
+bool CBanDB::Write(const std::map<CNetAddr, int64>& banMap)
+{
+    return WriteChecksummedFile(pathBanlist, "banlist.dat", banMap);
+}
 
-    // verify stored checksum matches input data
-    uint256 hashTmp = Hash(ssPeers.begin(), ssPeers.end());
-    if (hashIn != hashTmp)
-        return LogError("CAddrman::Read() : checksum mismatch; data corrupted");
-
-    // de-serialize address data
-    unsigned char pchMsgTmp[4];
-    try {
-        ssPeers >> FLATDATA(pchMsgTmp);
-        ssPeers >> addr;
-    }
-    catch (std::exception &e) {
-        return LogError("CAddrman::Read() : I/O error or stream data corrupted");
-    }
-
-    // finally, verify the network matches ours
-    if (memcmp(pchMsgTmp, pchMessageStart, sizeof(pchMsgTmp)))
-        return LogError("CAddrman::Read() : invalid network magic number");
-
-    return true;
+bool CBanDB::Read(std::map<CNetAddr, int64>& banMap)
+{
+    return ReadChecksummedFile(pathBanlist, "banlist.dat", banMap);
 }
 

@@ -341,4 +341,15 @@ public:
     bool Read(CAddrMan& addr);
 };
 
+/** Access to the persisted ban list (banlist.dat) */
+class CBanDB
+{
+private:
+    std::filesystem::path pathBanlist;
+public:
+    CBanDB();
+    bool Write(const std::map<CNetAddr, int64>& banMap);
+    bool Read(std::map<CNetAddr, int64>& banMap);
+};
+
 #endif // BITCOIN_DB_H
