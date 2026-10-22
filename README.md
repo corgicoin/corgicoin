@@ -117,9 +117,12 @@ rpcport=62555
 
 ## Version History
 
-### Unreleased — Ban Persistence + Ping Timeout
+### Unreleased
 - **Persistent bans** (`banlist.dat`): manual `setban` bans and misbehavior bans now survive a restart. Same checksummed, network-tagged, write-then-rename format as `peers.dat`; expired bans are dropped on load
 - **Ping timeout**: a peer that leaves a ping unanswered for 20 minutes is disconnected, freeing its slot (`-pingtimeout=<seconds>`). Pre-BIP31 peers are unaffected
+- **Coin control**: `lockunspent <unlock> [outputs]` / `listlockunspent` set outputs aside so coin selection won't spend them (memory-only, cleared on restart, as in Bitcoin Core)
+- **Wallet export/import**: `dumpwallet <file>` writes every key with its label or role (change / unused keypool) in Bitcoin Core's text format, refusing to overwrite an existing file; `importwallet <file>` restores the keys and labels and rescans
+- **`getrawchangeaddress`**: a fresh change address for raw-transaction workflows
 - **Functional tests**: a minimal Python P2P peer (`test/functional/mininode.py`) for protocol-level tests; new ping-timeout test and a ban-persistence-across-restart check
 
 ### v4.6.0.0 — Web Wallet + P2P Modernization + Regtest
@@ -226,6 +229,7 @@ rpcport=62555
 - [x] Modern P2P/network RPCs: BIP31 ping latency, traffic counters, `setban`/`listbanned`, runtime `addnode`/`disconnectnode`
 - [x] Regtest mode + Python functional test suite (multi-node, runs in CI)
 - [x] Persistent ban list (`banlist.dat`) + ping-timeout disconnects
+- [x] Wallet coin control + dump/import RPCs (`lockunspent`, `dumpwallet`/`importwallet`, `getrawchangeaddress`)
 - [x] Boost reduced to essentials (`std::variant`, `std::chrono`, std string helpers; only asio/interprocess/program_options/signals2 remain)
 
 ### In Progress

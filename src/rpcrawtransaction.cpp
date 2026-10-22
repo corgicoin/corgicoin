@@ -183,6 +183,91 @@ Value listunspent(const Array& params, bool fHelp)
     return results;
 }
 
+Value lockunspent(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "lockunspent <unlock> [[{\"txid\":txid,\"vout\":n},...]]\n"
+            "Lock (unlock=false) or unlock (unlock=true) wallet outputs so coin\n"
+            "selection won't spend them. With unlock=true and no list, unlocks\n"
+            "everything. Locks are kept in memory only and cleared on restart.\n"
+            "Locked outputs are left out of listunspent; see listlockunspent.");
+
+    bool fUnlock = params[0].get_bool();
+
+    if (params.size() == 1) {
+        if (fUnlock)
+            pwalletMain->UnlockAllCoins();
+        return true;
+    }
+
+    const Array& outputs = params[1].get_array();
+    vector<COutPoint> vOutpts;
+    for (const Value& output : outputs) {
+        if (output.type() != obj_type)
+            throw JSONRPCError(-8, "Invalid parameter, expected object");
+        const Object& o = output.get_obj();
+
+        RPCTypeCheck(o, {{"txid", str_type}, {"vout", int_type}});
+
+        string txid = find_value(o, "txid").get_str();
+        if (!IsHex(txid) || txid.size() != 64)
+            throw JSONRPCError(-8, "Invalid parameter, expected hex txid");
+        int nOutput = find_value(o, "vout").get_int();
+        if (nOutput < 0)
+            throw JSONRPCError(-8, "Invalid parameter, vout must be positive");
+
+        uint256 hash(txid);
+        {
+            LOCK(pwalletMain->cs_wallet);
+            auto it = pwalletMain->mapWallet.find(hash);
+            if (it == pwalletMain->mapWallet.end())
+                throw JSONRPCError(-8, "Invalid parameter, unknown transaction");
+            if ((unsigned int)nOutput >= it->second.vout.size())
+                throw JSONRPCError(-8, "Invalid parameter, vout index out of bounds");
+            if (it->second.IsSpent(nOutput))
+                throw JSONRPCError(-8, "Invalid parameter, expected unspent output");
+        }
+        COutPoint outpt(hash, nOutput);
+        bool fLocked = pwalletMain->IsLockedCoin(hash, nOutput);
+        if (fUnlock && !fLocked)
+            throw JSONRPCError(-8, "Invalid parameter, expected locked output");
+        if (!fUnlock && fLocked)
+            throw JSONRPCError(-8, "Invalid parameter, output already locked");
+        vOutpts.push_back(outpt);
+    }
+
+    // Validate everything first so a bad entry leaves no partial change.
+    for (const COutPoint& outpt : vOutpts) {
+        if (fUnlock)
+            pwalletMain->UnlockCoin(outpt);
+        else
+            pwalletMain->LockCoin(outpt);
+    }
+    return true;
+}
+
+Value listlockunspent(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 0)
+        throw runtime_error(
+            "listlockunspent\n"
+            "Returns the wallet outputs locked with lockunspent, as\n"
+            "[{\"txid\":txid,\"vout\":n},...]");
+
+    vector<COutPoint> vOutpts;
+    pwalletMain->ListLockedCoins(vOutpts);
+
+    Array ret;
+    for (const COutPoint& outpt : vOutpts) {
+        Object o;
+        o.emplace_back("txid", outpt.hash.GetHex());
+        o.emplace_back("vout", (int)outpt.n);
+        ret.push_back(o);
+    }
+    return ret;
+}
+
 Value createrawtransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 2)

@@ -139,6 +139,16 @@ public:
     // check whether we are allowed to upgrade (or already support) to the named feature
     bool CanSupportFeature(WalletFeature wf) { return nWalletMaxVersion >= static_cast<int>(wf); }
 
+    // Outputs the user has set aside with `lockunspent`. Locked coins are
+    // skipped by coin selection and listunspent. Memory-only, like Bitcoin
+    // Core: every lock is released on restart.
+    std::set<COutPoint> setLockedCoins;
+    void LockCoin(const COutPoint& output);
+    void UnlockCoin(const COutPoint& output);
+    void UnlockAllCoins();
+    bool IsLockedCoin(const uint256& hash, unsigned int n) const;
+    void ListLockedCoins(std::vector<COutPoint>& vOutpts) const;
+
     void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true) const;
     bool SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
 
