@@ -18,6 +18,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TESTS = [
     "feature_regtest_basics.py",
     "wallet_send.py",
+    "wallet_lockunspent.py",
+    "wallet_dump.py",
     "feature_block_sync.py",
     "p2p_network_rpcs.py",
     "p2p_ping_timeout.py",

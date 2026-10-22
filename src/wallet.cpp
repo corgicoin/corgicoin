@@ -1066,10 +1066,41 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
             // If output is less than minimum value, then don't include transaction.
             // This is to help deal with dust spam clogging up create transactions.
             for (unsigned int i = 0; i < pcoin->vout.size(); i++)
-                if (!(pcoin->IsSpent(i)) && IsMine(pcoin->vout[i]) && pcoin->vout[i].nValue >= nMinimumInputValue)
+                if (!(pcoin->IsSpent(i)) && IsMine(pcoin->vout[i]) && pcoin->vout[i].nValue >= nMinimumInputValue &&
+                    !IsLockedCoin(item.first, i))
                     vCoins.emplace_back(pcoin, i, pcoin->GetDepthInMainChain());
         }
     }
+}
+
+void CWallet::LockCoin(const COutPoint& output)
+{
+    LOCK(cs_wallet);
+    setLockedCoins.insert(output);
+}
+
+void CWallet::UnlockCoin(const COutPoint& output)
+{
+    LOCK(cs_wallet);
+    setLockedCoins.erase(output);
+}
+
+void CWallet::UnlockAllCoins()
+{
+    LOCK(cs_wallet);
+    setLockedCoins.clear();
+}
+
+bool CWallet::IsLockedCoin(const uint256& hash, unsigned int n) const
+{
+    LOCK(cs_wallet);
+    return setLockedCoins.count(COutPoint(hash, n)) > 0;
+}
+
+void CWallet::ListLockedCoins(std::vector<COutPoint>& vOutpts) const
+{
+    LOCK(cs_wallet);
+    vOutpts.assign(setLockedCoins.begin(), setLockedCoins.end());
 }
 
 static void ApproximateBestSubset(vector<pair<int64, pair<const CWalletTx*,unsigned int> > >vValue, int64 nTotalLower, int64 nTargetValue,

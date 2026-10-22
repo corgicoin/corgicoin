@@ -63,6 +63,10 @@ extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
 extern Value getrawtransaction(const Array& params, bool fHelp); // in rcprawtransaction.cpp
 extern Value listunspent(const Array& params, bool fHelp);
+extern Value lockunspent(const Array& params, bool fHelp);
+extern Value listlockunspent(const Array& params, bool fHelp);
+extern Value dumpwallet(const Array& params, bool fHelp);
+extern Value importwallet(const Array& params, bool fHelp);
 extern Value createrawtransaction(const Array& params, bool fHelp);
 extern Value decoderawtransaction(const Array& params, bool fHelp);
 extern Value signrawtransaction(const Array& params, bool fHelp);
@@ -557,6 +561,27 @@ Value getnewaddress(const Array& params, bool fHelp)
     return CBitcoinAddress(keyID).ToString();
 }
 
+
+Value getrawchangeaddress(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 0)
+        throw runtime_error(
+            "getrawchangeaddress\n"
+            "Returns a new CorgiCoin address for receiving change, for use with\n"
+            "raw transactions. It is not added to the address book, so the\n"
+            "wallet treats payments to it as change.");
+
+    if (!pwalletMain->IsLocked())
+        pwalletMain->TopUpKeyPool();
+
+    CReserveKey reservekey(pwalletMain.get());
+    CPubKey vchPubKey = reservekey.GetReservedKey();
+    if (!vchPubKey.IsValid())
+        throw JSONRPCError(-12, "Error: Keypool ran out, please call keypoolrefill first");
+    reservekey.KeepKey();
+
+    return CBitcoinAddress(vchPubKey.GetID()).ToString();
+}
 
 CBitcoinAddress GetAccountAddress(string strAccount, bool bForceNew=false)
 {
@@ -3075,6 +3100,11 @@ static const CRPCCommand vRPCCommands[] =
     { "dumpprivkey",            &dumpprivkey,            false },
     { "importprivkey",          &importprivkey,          false },
     { "listunspent",            &listunspent,            false },
+    { "lockunspent",            &lockunspent,            false },
+    { "listlockunspent",        &listlockunspent,        false },
+    { "dumpwallet",             &dumpwallet,             true },
+    { "importwallet",           &importwallet,           false },
+    { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
     { "createrawtransaction",   &createrawtransaction,   false },
     { "decoderawtransaction",   &decoderawtransaction,   false },
@@ -3970,6 +4000,8 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "addmultisigaddress"     && n > 1) ConvertTo<Array>(params[1]);
     if (strMethod == "listunspent"            && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "listunspent"            && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "lockunspent"            && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "lockunspent"            && n > 1) ConvertTo<Array>(params[1]);
     if (strMethod == "getrawtransaction"      && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "createrawtransaction"   && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "createrawtransaction"   && n > 1) ConvertTo<Object>(params[1]);

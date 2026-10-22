@@ -1580,7 +1580,7 @@ void ThreadOpenAddedConnections2(void* parg)
 
     // The list is mutable at runtime via the `addnode` RPC, so it is re-read
     // (and re-resolved) on every pass rather than captured once at startup.
-    for (unsigned int nPass = 0; !fShutdown; nPass++)
+    while (!fShutdown)
     {
         vector<string> vNodesToAdd;
         {
