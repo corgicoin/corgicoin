@@ -68,6 +68,11 @@ each node's `debug.log` is printed.
 | `wait_until(fn)` | poll a predicate with a timeout |
 | `assert_raises_rpc_error(code, msg, fn, *args)` | expect a specific RPC error |
 
+For protocol-level tests, `mininode.P2PConnection(node.p2p_port)` opens a raw
+P2P connection from Python: it completes the version handshake and answers
+pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
+`_on_message` as tests need more of the protocol.
+
 ## Tests
 
 | Test | Covers |
@@ -75,4 +80,5 @@ each node's `debug.log` is printed.
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
-| `p2p_network_rpcs.py` | ping latency, traffic counters, bans, `addnode`, `disconnectnode` |
+| `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `disconnectnode` |
+| `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |

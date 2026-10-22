@@ -48,6 +48,9 @@ void MapPort();
 unsigned short GetListenPort();
 bool BindListenPort(const CService &bindAddr, std::string& strError=REF(std::string()));
 void StartNode(void* parg);
+// banlist.dat persistence: load at startup; dump writes only if bans changed
+void LoadBanlist();
+void DumpBanlist();
 bool StopNode();
 
 enum class Local
@@ -145,6 +148,8 @@ void RecordBytesSent(uint64 nBytes);
 
 // How often to send a latency-measuring ping to each peer (BIP31).
 constexpr int64 PING_INTERVAL_SECONDS = 2 * 60;
+// Disconnect a BIP31 peer whose ping goes unanswered this long (-pingtimeout).
+constexpr int64 DEFAULT_PING_TIMEOUT_SECONDS = 20 * 60;
 
 
 
@@ -211,6 +216,7 @@ protected:
     // Key is ip address, value is banned-until-time
     static std::map<CNetAddr, int64> setBanned;
     static CCriticalSection cs_setBanned;
+    static bool fBanlistDirty;  // setBanned changed since the last banlist.dat write
     int nMisbehavior;
 
 public:
@@ -680,6 +686,10 @@ public:
     static bool Unban(const CNetAddr& ip);
     // Snapshot of active (unexpired) bans; expired entries are swept.
     static void GetBanned(std::map<CNetAddr, int64>& banMap);
+    // Replace the whole ban list (used when loading banlist.dat)
+    static void SetBanned(const std::map<CNetAddr, int64>& banMap);
+    static bool BanlistDirty();
+    static void SetBanlistDirty(bool fDirty);
     bool Misbehaving(int howmuch); // 1 == a little, 100 == a lot
     void copyStats(CNodeStats &stats);
 };

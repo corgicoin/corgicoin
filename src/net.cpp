@@ -577,11 +577,13 @@ void CNode::PushVersion()
 
 std::map<CNetAddr, int64> CNode::setBanned;
 CCriticalSection CNode::cs_setBanned;
+bool CNode::fBanlistDirty = false;
 
 void CNode::ClearBanned()
 {
     LOCK(cs_setBanned);
     setBanned.clear();
+    fBanlistDirty = true;
 }
 
 void CNode::Ban(const CNetAddr& ip, int64 nBanUntil, bool fOverwrite)
@@ -590,12 +592,16 @@ void CNode::Ban(const CNetAddr& ip, int64 nBanUntil, bool fOverwrite)
     int64& t = setBanned[ip];
     if (fOverwrite || t < nBanUntil)
         t = nBanUntil;
+    fBanlistDirty = true;
 }
 
 bool CNode::Unban(const CNetAddr& ip)
 {
     LOCK(cs_setBanned);
-    return setBanned.erase(ip) > 0;
+    if (setBanned.erase(ip) == 0)
+        return false;
+    fBanlistDirty = true;
+    return true;
 }
 
 void CNode::GetBanned(std::map<CNetAddr, int64>& banMap)
@@ -603,12 +609,32 @@ void CNode::GetBanned(std::map<CNetAddr, int64>& banMap)
     LOCK(cs_setBanned);
     int64 nNow = GetTime();
     for (auto it = setBanned.begin(); it != setBanned.end(); ) {
-        if (it->second <= nNow)
+        if (it->second <= nNow) {
             it = setBanned.erase(it);
-        else
+            fBanlistDirty = true;
+        } else
             ++it;
     }
     banMap = setBanned;
+}
+
+void CNode::SetBanned(const std::map<CNetAddr, int64>& banMap)
+{
+    LOCK(cs_setBanned);
+    setBanned = banMap;
+    fBanlistDirty = false;
+}
+
+bool CNode::BanlistDirty()
+{
+    LOCK(cs_setBanned);
+    return fBanlistDirty;
+}
+
+void CNode::SetBanlistDirty(bool fDirty)
+{
+    LOCK(cs_setBanned);
+    fBanlistDirty = fDirty;
 }
 
 bool CNode::IsBanned(CNetAddr ip)
@@ -712,6 +738,7 @@ void ThreadSocketHandler2(void* parg)
     LogPrintf("ThreadSocketHandler started\n");
     list<CNode*> vNodesDisconnected;
     unsigned int nPrevNodeCount = 0;
+    const int64 nPingTimeout = std::max<int64>(1, GetArg("-pingtimeout", DEFAULT_PING_TIMEOUT_SECONDS));
 
     while(true)
     {
@@ -1024,6 +1051,16 @@ void ThreadSocketHandler2(void* parg)
                     pnode->fDisconnect = true;
                 }
             }
+            // A peer that keeps the socket alive but never answers our pings
+            // is wedged or hostile; free its connection slot. (A ping is only
+            // outstanding after the version handshake, so no startup grace.)
+            if (!pnode->fDisconnect && pnode->nPingNonceSent != 0 &&
+                pnode->nPingUsecStart + nPingTimeout * 1000000 < GetTimeMicros())
+            {
+                LogPrintf("ping timeout: %.0fs, disconnecting %s\n",
+                          (GetTimeMicros() - pnode->nPingUsecStart) / 1e6, pnode->addrName.c_str());
+                pnode->fDisconnect = true;
+            }
         }
         {
             LOCK(cs_vNodes);
@@ -1291,6 +1328,40 @@ void DumpAddresses()
 
     LogPrintf("Flushed %d addresses to peers.dat  %" PRI64d "ms\n",
            addrman.size(), GetTimeMillis() - nStart);
+
+    DumpBanlist();
+}
+
+void DumpBanlist()
+{
+    if (!CNode::BanlistDirty())
+        return;
+
+    std::map<CNetAddr, int64> banMap;
+    CNode::GetBanned(banMap); // also drops expired entries
+    CNode::SetBanlistDirty(false);
+
+    CBanDB bandb;
+    if (!bandb.Write(banMap)) {
+        CNode::SetBanlistDirty(true); // retry on the next dump
+        return;
+    }
+    LogPrintf("Flushed %d banned addresses to banlist.dat\n", (int)banMap.size());
+}
+
+void LoadBanlist()
+{
+    std::map<CNetAddr, int64> banMap;
+    CBanDB bandb;
+    if (!bandb.Read(banMap)) {
+        LogPrintf("Invalid or missing banlist.dat; starting with no bans\n");
+        return;
+    }
+    CNode::SetBanned(banMap);
+    // GetBanned sweeps entries that expired while we were down; that marks the
+    // list dirty so the next dump rewrites the file without them.
+    CNode::GetBanned(banMap);
+    LogPrintf("Loaded %d banned addresses from banlist.dat\n", (int)banMap.size());
 }
 
 void ThreadDumpAddress2(void* parg)

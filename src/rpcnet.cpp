@@ -147,6 +147,7 @@ Value setban(const Array& params, bool fHelp)
     if (strCommand == "remove") {
         if (!CNode::Unban(ip))
             throw JSONRPCError(RPC_MISC_ERROR, "Error: IP was not banned");
+        DumpBanlist();
         return Value::null;
     }
 
@@ -165,6 +166,7 @@ Value setban(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Error: absolute bantime is in the past");
 
     CNode::Ban(ip, nBanUntil, true);
+    DumpBanlist(); // persist manual bans right away, not on the next periodic dump
 
     {
         LOCK(cs_vNodes);
@@ -203,6 +205,7 @@ Value clearbanned(const Array& params, bool fHelp)
             "Clear all banned IPs.");
 
     CNode::ClearBanned();
+    DumpBanlist();
     return Value::null;
 }
 

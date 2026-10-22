@@ -117,19 +117,22 @@ rpcport=62555
 
 ## Version History
 
-### Unreleased — Regtest + Functional Tests
-- **Regtest mode** (`-regtest`): a private chain with its own genesis, network magic, ports (64666/64665) and datadir, minimum-difficulty blocks, and a `generate <n> [address]` RPC that mines instantly
-- **Functional test suite** (`test/functional/`): Python harness that runs real multi-node regtest networks over RPC and P2P; covers mining, wallet sends, burns, block sync, reorgs and the network RPCs. Runs in CI on Linux and macOS
-- **Sync fix**: a node now requests blocks from any newly connected peer advertising a taller chain. Previously only the first peer was asked, so a node that rejoined a longer fork after a split stayed behind until the next block was mined (found by the new reorg test)
-- **`getbestblockhash`** RPC
+### Unreleased — Ban Persistence + Ping Timeout
+- **Persistent bans** (`banlist.dat`): manual `setban` bans and misbehavior bans now survive a restart. Same checksummed, network-tagged, write-then-rename format as `peers.dat`; expired bans are dropped on load
+- **Ping timeout**: a peer that leaves a ping unanswered for 20 minutes is disconnected, freeing its slot (`-pingtimeout=<seconds>`). Pre-BIP31 peers are unaffected
+- **Functional tests**: a minimal Python P2P peer (`test/functional/mininode.py`) for protocol-level tests; new ping-timeout test and a ban-persistence-across-restart check
 
-### v4.6.0.0 — Web Wallet + P2P Modernization
+### v4.6.0.0 — Web Wallet + P2P Modernization + Regtest
 - **Non-custodial web wallet** (`contrib/webwallet/`, served by the explorer at `/wallet/`): recovery phrase and keys are derived and held in the browser and never sent to a server. Same BIP44 path as the desktop wallet (`m/44'/99'/0'/0/i`), so one phrase gives the same addresses in both. Receive, balances, and **send**: transactions are built and signed client-side (legacy P2PKH, SIGHASH_ALL) and broadcast through the explorer. Verified end-to-end on testnet against full daemon validation
 - **Explorer wallet API**: `GET /api/address/<addr>/utxos`, `POST /api/broadcast`
 - **Peer latency (BIP31)**: nonce'd pings every 2 minutes with pong matching; `getpeerinfo` now reports `pingtime`, `minping`, `pingwait`, plus per-peer `bytessent`/`bytesrecv` and `addrlocal`. New `ping` RPC forces an immediate round.
 - **`getnettotals`**: total bytes sent/received since startup
 - **Ban management**: `setban <ip> add|remove [bantime] [absolute]`, `listbanned`, `clearbanned` (manual bans disconnect matching peers immediately)
 - **Runtime peer management**: `addnode <node> add|remove|onetry`, `getaddednodeinfo [node]`, `disconnectnode <address>`. The `-addnode` thread now re-reads its list every pass, so RPC-added nodes are dialed and kept connected
+- **Regtest mode** (`-regtest`): a private chain with its own genesis, network magic, ports (64666/64665) and datadir, minimum-difficulty blocks, and a `generate <n> [address]` RPC that mines instantly
+- **Functional test suite** (`test/functional/`): Python harness that runs real multi-node regtest networks over RPC and P2P; covers mining, wallet sends, burns, block sync, reorgs and the network RPCs. Runs in CI on Linux and macOS
+- **Sync fix**: a node now requests blocks from any newly connected peer advertising a taller chain. Previously only the first peer was asked, so a node that rejoined a longer fork after a split stayed behind until the next block was mined (found by the new reorg test)
+- **`getbestblockhash`** RPC
 - No consensus or wire-format changes; RPC error codes match Bitcoin Core
 
 ### v4.5.0.0 — HD Wallet + Modern RPCs
@@ -221,6 +224,8 @@ rpcport=62555
 - [x] Block explorer with burn auditing (`contrib/explorer/` — indexes the chain over RPC, decodes bridge burns)
 - [x] AuxPoW merged mining (v4.4 hard fork at block 50,000 — see `doc/auxpow-spec.md`)
 - [x] Modern P2P/network RPCs: BIP31 ping latency, traffic counters, `setban`/`listbanned`, runtime `addnode`/`disconnectnode`
+- [x] Regtest mode + Python functional test suite (multi-node, runs in CI)
+- [x] Persistent ban list (`banlist.dat`) + ping-timeout disconnects
 - [x] Boost reduced to essentials (`std::variant`, `std::chrono`, std string helpers; only asio/interprocess/program_options/signals2 remain)
 
 ### In Progress
