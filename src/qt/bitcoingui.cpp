@@ -63,6 +63,10 @@
 #include <QUrl>
 #include <QActionGroup>
 #include <QMimeData>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
+#include <QFormLayout>
 
 #include <iostream>
 
@@ -313,6 +317,12 @@ void BitcoinGUI::createActions()
     encryptWalletAction->setCheckable(true);
     backupWalletAction = new QAction(QIcon(":/icons/filesave"), tr("&Backup Wallet..."), this);
     backupWalletAction->setToolTip(tr("Backup wallet to another location"));
+    importPrivKeyAction = new QAction(QIcon(":/icons/key"), tr("Import Private &Key..."), this);
+    importPrivKeyAction->setToolTip(tr("Add a single private key to the wallet"));
+    exportKeysAction = new QAction(QIcon(":/icons/export"), tr("Export &All Keys..."), this);
+    exportKeysAction->setToolTip(tr("Write every private key in the wallet to a text file"));
+    importKeysAction = new QAction(QIcon(":/icons/key"), tr("Import Keys from &File..."), this);
+    importKeysAction->setToolTip(tr("Import the keys from an exported key file"));
     changePassphraseAction = new QAction(QIcon(":/icons/key"), tr("&Change Passphrase..."), this);
     changePassphraseAction->setToolTip(tr("Change the passphrase used for wallet encryption"));
     openRPCConsoleAction = new QAction(QIcon(":/icons/debugwindow"), tr("&Debug window"), this);
@@ -329,6 +339,9 @@ void BitcoinGUI::createActions()
     connect(toggleHideAction, &QAction::triggered, this, &BitcoinGUI::toggleHidden);
     connect(encryptWalletAction, &QAction::triggered, this, &BitcoinGUI::encryptWallet);
     connect(backupWalletAction, &QAction::triggered, this, &BitcoinGUI::backupWallet);
+    connect(importPrivKeyAction, &QAction::triggered, this, &BitcoinGUI::importPrivKey);
+    connect(exportKeysAction, &QAction::triggered, this, &BitcoinGUI::exportKeys);
+    connect(importKeysAction, &QAction::triggered, this, &BitcoinGUI::importKeys);
     connect(changePassphraseAction, &QAction::triggered, this, &BitcoinGUI::changePassphrase);
     connect(showMnemonicAction, &QAction::triggered, this, &BitcoinGUI::showMnemonic);
     connect(setupHDAction, &QAction::triggered, this, &BitcoinGUI::setupHD);
@@ -348,6 +361,11 @@ void BitcoinGUI::createMenuBar()
     QMenu *file = appMenuBar->addMenu(tr("&File"));
     file->addAction(backupWalletAction);
     file->addAction(exportAction);
+    file->addSeparator();
+    file->addAction(importPrivKeyAction);
+    file->addAction(importKeysAction);
+    file->addAction(exportKeysAction);
+    file->addSeparator();
 #ifndef FIRST_CLASS_MESSAGING
     file->addAction(signMessageAction);
     file->addAction(verifyMessageAction);
@@ -956,6 +974,107 @@ void BitcoinGUI::backupWallet()
             QMessageBox::warning(this, tr("Backup Failed"), tr("There was an error trying to save the wallet data to the new location."));
         }
     }
+}
+
+void BitcoinGUI::importPrivKey()
+{
+    if (!walletModel)
+        return;
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Import Private Key"));
+    QFormLayout *form = new QFormLayout(&dlg);
+    QLabel *intro = new QLabel(tr("Paste a private key (as shown by dumpprivkey). "
+                                  "The wallet rescans the block chain for its coins afterwards, which can take a while."), &dlg);
+    intro->setWordWrap(true);
+    form->addRow(intro);
+    QLineEdit *keyEdit = new QLineEdit(&dlg);
+    keyEdit->setEchoMode(QLineEdit::Password);
+    form->addRow(tr("Private key:"), keyEdit);
+    QLineEdit *labelEdit = new QLineEdit(&dlg);
+    form->addRow(tr("Label:"), labelEdit);
+    QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+    if (dlg.exec() != QDialog::Accepted || keyEdit->text().trimmed().isEmpty())
+        return;
+
+    WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+    if (!ctx.isValid())
+        return;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    bool alreadyHad = false;
+    QString error;
+    bool ok = walletModel->importPrivateKey(keyEdit->text(), labelEdit->text(), alreadyHad, error);
+    keyEdit->clear();
+    QApplication::restoreOverrideCursor();
+
+    if (!ok)
+        QMessageBox::warning(this, tr("Import Failed"), error);
+    else if (alreadyHad)
+        QMessageBox::information(this, tr("Import Private Key"), tr("This key is already in the wallet. Its label has been updated."));
+    else
+        QMessageBox::information(this, tr("Import Private Key"), tr("The key was imported and the block chain rescanned."));
+}
+
+void BitcoinGUI::exportKeys()
+{
+    if (!walletModel)
+        return;
+
+    QMessageBox::StandardButton answer = QMessageBox::warning(this, tr("Export All Keys"),
+        tr("This writes every private key in the wallet to an unencrypted text file.\n\n"
+           "Anyone who reads that file can spend your coins. Keep it offline and delete it when you no longer need it.\n\n"
+           "Continue?"),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    QString saveDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    QString filename = QFileDialog::getSaveFileName(this, tr("Export All Keys"), saveDir, tr("Key Export (*.txt)"));
+    if (filename.isEmpty())
+        return;
+
+    WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+    if (!ctx.isValid())
+        return;
+
+    QString error;
+    if (!walletModel->exportKeys(filename, error))
+        QMessageBox::warning(this, tr("Export Failed"), error);
+    else
+        QMessageBox::information(this, tr("Export All Keys"), tr("Keys written to %1").arg(QDir::toNativeSeparators(filename)));
+}
+
+void BitcoinGUI::importKeys()
+{
+    if (!walletModel)
+        return;
+
+    QString openDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    QString filename = QFileDialog::getOpenFileName(this, tr("Import Keys from File"), openDir, tr("Key Export (*.txt);;All Files (*)"));
+    if (filename.isEmpty())
+        return;
+
+    WalletModel::UnlockContext ctx(walletModel->requestUnlock());
+    if (!ctx.isValid())
+        return;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    int imported = 0;
+    QString error;
+    bool ok = walletModel->importKeys(filename, imported, error);
+    QApplication::restoreOverrideCursor();
+
+    if (!ok)
+        QMessageBox::warning(this, tr("Import Failed"),
+            tr("%1\n\n%n other key(s) were imported.", "", imported).arg(error));
+    else if (imported == 0)
+        QMessageBox::information(this, tr("Import Keys from File"), tr("No new keys found: every key in the file is already in this wallet."));
+    else
+        QMessageBox::information(this, tr("Import Keys from File"), tr("Imported %n key(s) and rescanned the block chain.", "", imported));
 }
 
 void BitcoinGUI::changePassphrase()

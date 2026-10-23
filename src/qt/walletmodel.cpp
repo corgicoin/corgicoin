@@ -10,6 +10,7 @@
 #include "base58.h"
 #include "bip39.h"
 #include "coincontrol.h"
+#include "walletdump.h"
 
 #include <QSet>
 #include <QTimer>
@@ -300,6 +301,46 @@ bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureStri
 bool WalletModel::backupWallet(const QString &filename)
 {
     return BackupWallet(*wallet, filename.toLocal8Bit().data());
+}
+
+static std::filesystem::path QStringToPath(const QString &str)
+{
+#ifdef WIN32
+    return std::filesystem::path(str.toStdWString());
+#else
+    return std::filesystem::path(str.toStdString());
+#endif
+}
+
+bool WalletModel::exportKeys(const QString &filename, QString &errorOut)
+{
+    // The save dialog has already asked before replacing an existing file
+    std::string strError;
+    if (!DumpWalletToFile(wallet, QStringToPath(filename), true, strError)) {
+        errorOut = QString::fromStdString(strError);
+        return false;
+    }
+    return true;
+}
+
+bool WalletModel::importKeys(const QString &filename, int &importedOut, QString &errorOut)
+{
+    std::string strError;
+    if (!ImportWalletFromFile(wallet, QStringToPath(filename), importedOut, strError)) {
+        errorOut = QString::fromStdString(strError);
+        return false;
+    }
+    return true;
+}
+
+bool WalletModel::importPrivateKey(const QString &wif, const QString &label, bool &alreadyHadOut, QString &errorOut)
+{
+    std::string strError;
+    if (!ImportPrivateKey(wallet, wif.trimmed().toStdString(), label.toStdString(), alreadyHadOut, strError)) {
+        errorOut = QString::fromStdString(strError);
+        return false;
+    }
+    return true;
 }
 
 bool WalletModel::isHDEnabled() const

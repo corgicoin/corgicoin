@@ -93,6 +93,9 @@ private:
     QAction *exportAction;
     QAction *encryptWalletAction;
     QAction *backupWalletAction;
+    QAction *importPrivKeyAction;
+    QAction *exportKeysAction;
+    QAction *importKeysAction;
     QAction *changePassphraseAction;
     QAction *showMnemonicAction;
     QAction *setupHDAction;
@@ -177,6 +180,12 @@ private slots:
     void encryptWallet(bool status);
     /** Backup the wallet */
     void backupWallet();
+    /** Import a single private key (WIF) with a label */
+    void importPrivKey();
+    /** Write every private key to a dumpwallet-format text file */
+    void exportKeys();
+    /** Import keys from a dumpwallet-format text file */
+    void importKeys();
     /** Show the wallet's HD recovery phrase (unlocking if needed) */
     void showMnemonic();
     /** Set up or restore the wallet's HD seed from a recovery phrase */

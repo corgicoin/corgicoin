@@ -124,6 +124,7 @@ rpcport=62555
 - **Wallet export/import**: `dumpwallet <file>` writes every key with its label or role (change / unused keypool) in Bitcoin Core's text format, refusing to overwrite an existing file; `importwallet <file>` restores the keys and labels and rescans
 - **`getrawchangeaddress`**: a fresh change address for raw-transaction workflows
 - **Qt wallet Coin Control**: a "Coin Control" box on the Send tab. "Inputs..." opens a list of your coins (amount, label, address, date, confirmations) to tick exactly which ones a payment spends; right-click to lock/unlock coins or copy details. Optional custom change address (warns if it isn't in this wallet). With nothing ticked, coins are chosen automatically as before
+- **Qt wallet key import/export**: File → "Import Private Key...", "Import Keys from File..." and "Export All Keys..." (the GUI versions of `importprivkey`, `importwallet` and `dumpwallet`, sharing one implementation). Export warns that the file is unencrypted; imports unlock the wallet if needed and rescan. `importprivkey` of a key the wallet already has now just updates its label instead of rescanning
 - **Functional tests**: a minimal Python P2P peer (`test/functional/mininode.py`) for protocol-level tests; new ping-timeout test and a ban-persistence-across-restart check
 
 ### v4.6.0.0 — Web Wallet + P2P Modernization + Regtest
@@ -237,7 +238,7 @@ rpcport=62555
 - [ ] Pump.fun partner token integration
 
 ### Planned
-- [ ] Wallet UX improvements (Coin Control done; next: key import/export in the GUI)
+- [x] Wallet UX improvements (Coin Control, key import/export in the GUI)
 - [ ] Encrypted P2P transport (BIP324; BIP151 was withdrawn and superseded)
 - [ ] Headers-first block sync
 
