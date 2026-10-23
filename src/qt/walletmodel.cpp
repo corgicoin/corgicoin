@@ -9,6 +9,7 @@
 #include "walletdb.h" // for BackupWallet
 #include "base58.h"
 #include "bip39.h"
+#include "coincontrol.h"
 
 #include <QSet>
 #include <QTimer>
@@ -123,7 +124,7 @@ bool WalletModel::validateAddress(const QString &address)
     return addressParsed.IsValid();
 }
 
-WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipient> &recipients)
+WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipient> &recipients, const CCoinControl *coinControl)
 {
     qint64 total = 0;
     QSet<QString> setAddress;
@@ -155,12 +156,15 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
         return StatusCode::DuplicateAddress;
     }
 
-    if(total > getBalance())
+    // With coin control inputs chosen, only they can fund the payment.
+    qint64 nBalance = (coinControl && coinControl->HasSelected()) ? getSelectedBalance(*coinControl) : getBalance();
+
+    if(total > nBalance)
     {
         return StatusCode::AmountExceedsBalance;
     }
 
-    if((total + nTransactionFee) > getBalance())
+    if((total + nTransactionFee) > nBalance)
     {
         return SendCoinsReturn(StatusCode::AmountWithFeeExceedsBalance, nTransactionFee);
     }
@@ -180,11 +184,11 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
         CWalletTx wtx;
         CReserveKey keyChange(wallet);
         int64 nFeeRequired = 0;
-        bool fCreated = wallet->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired);
+        bool fCreated = wallet->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired, coinControl);
 
         if(!fCreated)
         {
-            if((total + nFeeRequired) > wallet->GetBalance())
+            if((total + nFeeRequired) > nBalance)
             {
                 return SendCoinsReturn(StatusCode::AmountWithFeeExceedsBalance, nFeeRequired);
             }
@@ -409,4 +413,55 @@ void WalletModel::UnlockContext::CopyFrom(const UnlockContext& rhs)
     // Transfer context; old object no longer relocks wallet
     *this = rhs;
     rhs.relock = false;
+}
+
+void WalletModel::listCoins(std::vector<COutput> &vCoins) const
+{
+    wallet->AvailableCoins(vCoins, true);
+}
+
+void WalletModel::listLockedCoins(std::vector<COutput> &vCoins) const
+{
+    vCoins.clear();
+    std::vector<COutPoint> vOutpoints;
+    wallet->ListLockedCoins(vOutpoints);
+    LOCK2(cs_main, wallet->cs_wallet);
+    for (const COutPoint &outpoint : vOutpoints)
+    {
+        auto it = wallet->mapWallet.find(outpoint.hash);
+        if (it == wallet->mapWallet.end() || outpoint.n >= it->second.vout.size() || it->second.IsSpent(outpoint.n))
+            continue;
+        vCoins.emplace_back(&it->second, outpoint.n, it->second.GetDepthInMainChain());
+    }
+}
+
+bool WalletModel::isLockedCoin(const uint256 &hash, unsigned int n) const
+{
+    return wallet->IsLockedCoin(hash, n);
+}
+
+void WalletModel::lockCoin(const COutPoint &output)
+{
+    wallet->LockCoin(output);
+}
+
+void WalletModel::unlockCoin(const COutPoint &output)
+{
+    wallet->UnlockCoin(output);
+}
+
+qint64 WalletModel::getSelectedBalance(const CCoinControl &coinControl) const
+{
+    std::vector<COutput> vCoins;
+    wallet->AvailableCoins(vCoins, true, &coinControl);
+    qint64 nTotal = 0;
+    for (const COutput &out : vCoins)
+        nTotal += out.tx->vout[out.i].nValue;
+    return nTotal;
+}
+
+bool WalletModel::isMine(const QString &address) const
+{
+    CBitcoinAddress addr(address.toStdString());
+    return addr.IsValid() && IsMine(*wallet, addr.Get());
 }

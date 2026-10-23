@@ -11,6 +11,10 @@ class OptionsModel;
 class AddressTableModel;
 class TransactionTableModel;
 class CWallet;
+class CCoinControl;
+class COutPoint;
+class COutput;
+class uint256;
 
 QT_BEGIN_NAMESPACE
 class QTimer;
@@ -78,7 +82,20 @@ public:
     };
 
     // Send coins to a list of recipients
-    SendCoinsReturn sendCoins(const QList<SendCoinsRecipient> &recipients);
+    // Send coins to a list of recipients. With coinControl, spend exactly its
+    // selected inputs (if any) and send change to its address (if set).
+    SendCoinsReturn sendCoins(const QList<SendCoinsRecipient> &recipients, const CCoinControl *coinControl = nullptr);
+
+    // Coin control
+    // Spendable outputs (excludes locked ones), and the locked ones on their own.
+    void listCoins(std::vector<COutput> &vCoins) const;
+    void listLockedCoins(std::vector<COutput> &vCoins) const;
+    bool isLockedCoin(const uint256 &hash, unsigned int n) const;
+    void lockCoin(const COutPoint &output);
+    void unlockCoin(const COutPoint &output);
+    // Total value of the coin-control selection that is still spendable.
+    qint64 getSelectedBalance(const CCoinControl &coinControl) const;
+    bool isMine(const QString &address) const;
 
     // Wallet encryption
     bool setWalletEncrypted(bool encrypted, const SecureString &passphrase);
