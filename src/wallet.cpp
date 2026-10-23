@@ -7,6 +7,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "wallet.h"
+#include "coincontrol.h"
 #include "walletdb.h"
 #include "crypter.h"
 #include "ui_interface.h"
@@ -1044,7 +1045,7 @@ int64 CWallet::GetImmatureBalance() const
 }
 
 // populate vCoins with vector of spendable COutputs
-void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
+void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl* coinControl) const
 {
     vCoins.clear();
 
@@ -1067,7 +1068,8 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
             // This is to help deal with dust spam clogging up create transactions.
             for (unsigned int i = 0; i < pcoin->vout.size(); i++)
                 if (!(pcoin->IsSpent(i)) && IsMine(pcoin->vout[i]) && pcoin->vout[i].nValue >= nMinimumInputValue &&
-                    !IsLockedCoin(item.first, i))
+                    !IsLockedCoin(item.first, i) &&
+                    (!coinControl || !coinControl->HasSelected() || coinControl->IsSelected(item.first, i)))
                     vCoins.emplace_back(pcoin, i, pcoin->GetDepthInMainChain());
         }
     }
@@ -1241,10 +1243,26 @@ bool CWallet::SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfThe
     return true;
 }
 
-bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const
+bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet,
+                          const CCoinControl* coinControl) const
 {
     vector<COutput> vCoins;
-    AvailableCoins(vCoins);
+    AvailableCoins(vCoins, true, coinControl);
+
+    // Coin control: spend exactly the user's selection, or fail if it isn't
+    // enough. Stale picks (since spent, or now locked) were already dropped
+    // by AvailableCoins.
+    if (coinControl && coinControl->HasSelected())
+    {
+        setCoinsRet.clear();
+        nValueRet = 0;
+        for (const COutput& out : vCoins)
+        {
+            nValueRet += out.tx->vout[out.i].nValue;
+            setCoinsRet.insert(make_pair(out.tx, out.i));
+        }
+        return !setCoinsRet.empty() && nValueRet >= nTargetValue;
+    }
 
     return (SelectCoinsMinConf(nTargetValue, 1, 6, vCoins, setCoinsRet, nValueRet) ||
             SelectCoinsMinConf(nTargetValue, 1, 1, vCoins, setCoinsRet, nValueRet) ||
@@ -1254,7 +1272,8 @@ bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned
 
 
 
-bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet)
+bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet,
+                                const CCoinControl* coinControl)
 {
     int64 nValue = 0;
     for (const std::pair<CScript, int64>& s : vecSend)
@@ -1289,7 +1308,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 // Choose coins to use
                 set<pair<const CWalletTx*,unsigned int> > setCoins;
                 int64 nValueIn = 0;
-                if (!SelectCoins(nTotalValue, setCoins, nValueIn))
+                if (!SelectCoins(nTotalValue, setCoins, nValueIn, coinControl))
                     return false;
                 for (std::pair<const CWalletTx*, unsigned int> pcoin : setCoins)
                 {
@@ -1317,15 +1336,20 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                     //  rediscover unknown transactions that were written with keys of ours to recover
                     //  post-backup change.
 
-                    // Reserve a new key pair from key pool
-                    CPubKey vchPubKey = reservekey.GetReservedKey();
-                    // assert(mapKeys.count(vchPubKey));
-
-                    // Fill a vout to ourself
-                    // TODO: pass in scriptChange instead of reservekey so
-                    // change transaction isn't always pay-to-bitcoin-address
                     CScript scriptChange;
-                    scriptChange.SetDestination(vchPubKey.GetID());
+                    if (coinControl && coinControl->HasCustomChange())
+                    {
+                        // Coin control: change goes where the user asked;
+                        // no keypool key is used.
+                        scriptChange.SetDestination(coinControl->destChange);
+                        reservekey.ReturnKey();
+                    }
+                    else
+                    {
+                        // Reserve a new key pair from key pool
+                        CPubKey vchPubKey = reservekey.GetReservedKey();
+                        scriptChange.SetDestination(vchPubKey.GetID());
+                    }
 
                     // Insert change txn at random position:
                     auto position = wtxNew.vout.begin()+GetRandInt(wtxNew.vout.size());

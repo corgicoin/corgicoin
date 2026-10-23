@@ -7,11 +7,19 @@
 #include "sendcoinsentry.h"
 #include "guiutil.h"
 #include "askpassphrasedialog.h"
+#include "coincontroldialog.h"
+#include "qvalidatedlineedit.h"
+#include "base58.h"
 
 #include <QMessageBox>
 #include <QLocale>
 #include <QTextDocument>
 #include <QScrollBar>
+#include <QCheckBox>
+#include <QGroupBox>
+#include <QGridLayout>
+#include <QLabel>
+#include <QPushButton>
 
 SendCoinsDialog::SendCoinsDialog(QWidget *parent) :
     QDialog(parent),
@@ -26,6 +34,7 @@ SendCoinsDialog::SendCoinsDialog(QWidget *parent) :
     ui->sendButton->setIcon(QIcon());
 #endif
 
+    setupCoinControl();
     addEntry();
 
     connect(ui->addButton, &QPushButton::clicked, this, &SendCoinsDialog::addEntry);
@@ -51,7 +60,10 @@ void SendCoinsDialog::setModel(WalletModel *model)
         setBalance(model->getBalance(), model->getUnconfirmedBalance(), model->getImmatureBalance());
         connect(model, &WalletModel::balanceChanged, this, &SendCoinsDialog::setBalance);
         connect(model->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &SendCoinsDialog::updateDisplayUnit);
+        // A selected coin may have been spent elsewhere; refresh the summary.
+        connect(model, &WalletModel::balanceChanged, this, &SendCoinsDialog::updateCoinControlLabel);
     }
+    updateCoinControlLabel();
 }
 
 SendCoinsDialog::~SendCoinsDialog()
@@ -88,6 +100,15 @@ void SendCoinsDialog::on_sendButton_clicked()
         return;
     }
 
+    if(customChangeCheck->isChecked() && !coinControl.HasCustomChange())
+    {
+        customChangeEdit->setValid(false);
+        QMessageBox::warning(this, tr("Send Coins"),
+            tr("Enter a valid change address, or untick \"Custom change address\"."),
+            QMessageBox::Ok, QMessageBox::Ok);
+        return;
+    }
+
     // Format confirmation message
     QStringList formatted;
     for (const SendCoinsRecipient &rcp : recipients)
@@ -97,8 +118,13 @@ void SendCoinsDialog::on_sendButton_clicked()
 
     fNewRecipientAllowed = false;
 
+    QString question = tr("Are you sure you want to send %1?").arg(formatted.join(tr(" and ")));
+    if(coinControl.HasSelected())
+        question += "<br><br>" + coinControlLabel->text();
+    if(coinControl.HasCustomChange())
+        question += "<br>" + tr("Change goes to %1").arg(customChangeEdit->text().trimmed());
     QMessageBox::StandardButton retval = QMessageBox::question(this, tr("Confirm send coins"),
-                          tr("Are you sure you want to send %1?").arg(formatted.join(tr(" and "))),
+                          question,
           QMessageBox::Yes|QMessageBox::Cancel,
           QMessageBox::Cancel);
 
@@ -116,7 +142,7 @@ void SendCoinsDialog::on_sendButton_clicked()
         return;
     }
 
-    WalletModel::SendCoinsReturn sendstatus = model->sendCoins(recipients);
+    WalletModel::SendCoinsReturn sendstatus = model->sendCoins(recipients, &coinControl);
     switch(sendstatus.status)
     {
     case WalletModel::StatusCode::InvalidAddress:
@@ -166,6 +192,11 @@ void SendCoinsDialog::on_sendButton_clicked()
 
 void SendCoinsDialog::clear()
 {
+    coinControl.SetNull();
+    customChangeCheck->setChecked(false);
+    customChangeEdit->clear();
+    updateCoinControlLabel();
+
     // Remove entries until only one left
     while(ui->entries->count())
     {
@@ -298,4 +329,94 @@ void SendCoinsDialog::updateDisplayUnit()
         // Update labelBalance with the current balance and the current unit
         ui->labelBalance->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), model->getBalance()));
     }
+}
+
+void SendCoinsDialog::setupCoinControl()
+{
+    QGroupBox *box = new QGroupBox(tr("Coin Control"), this);
+    QGridLayout *grid = new QGridLayout(box);
+
+    coinControlButton = new QPushButton(tr("Inputs..."), box);
+    coinControlButton->setToolTip(tr("Choose exactly which coins this payment spends, or lock coins"));
+    coinControlLabel = new QLabel(box);
+
+    customChangeCheck = new QCheckBox(tr("Custom change address"), box);
+    customChangeCheck->setToolTip(tr("Send any change to this address instead of a new one from the wallet"));
+    customChangeEdit = new QValidatedLineEdit(box);
+    customChangeEdit->setPlaceholderText(tr("Change address"));
+    customChangeEdit->setEnabled(false);
+    customChangeStatus = new QLabel(box);
+
+    grid->addWidget(coinControlButton, 0, 0);
+    grid->addWidget(coinControlLabel, 0, 1, 1, 2);
+    grid->addWidget(customChangeCheck, 1, 0);
+    grid->addWidget(customChangeEdit, 1, 1);
+    grid->addWidget(customChangeStatus, 1, 2);
+    grid->setColumnStretch(1, 1);
+
+    ui->verticalLayout->insertWidget(0, box);
+
+    connect(coinControlButton, &QPushButton::clicked, this, &SendCoinsDialog::coinControlButtonClicked);
+    connect(customChangeCheck, &QCheckBox::toggled, this, &SendCoinsDialog::customChangeToggled);
+    connect(customChangeEdit, &QValidatedLineEdit::textChanged, this, &SendCoinsDialog::customChangeEdited);
+}
+
+void SendCoinsDialog::coinControlButtonClicked()
+{
+    if(!model)
+        return;
+    CoinControlDialog dlg(&coinControl, model, this);
+    dlg.exec();
+    updateCoinControlLabel();
+}
+
+void SendCoinsDialog::updateCoinControlLabel()
+{
+    if(!model || !model->getOptionsModel())
+    {
+        coinControlLabel->setText(QString());
+        return;
+    }
+    if(!coinControl.HasSelected())
+    {
+        coinControlLabel->setText(tr("Inputs: chosen automatically"));
+        return;
+    }
+    std::vector<COutPoint> vSelected;
+    coinControl.ListSelected(vSelected);
+    coinControlLabel->setText(tr("Inputs: %n coin(s) picked, totalling %1", "", (int)vSelected.size())
+        .arg(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(),
+                                          model->getSelectedBalance(coinControl))));
+}
+
+void SendCoinsDialog::customChangeToggled(bool checked)
+{
+    customChangeEdit->setEnabled(checked);
+    if(checked)
+        customChangeEdit->setFocus();
+    customChangeEdited();
+}
+
+void SendCoinsDialog::customChangeEdited()
+{
+    coinControl.destChange = CNoDestination();
+    customChangeStatus->clear();
+    customChangeEdit->setValid(true);
+    if(!customChangeCheck->isChecked() || !model)
+        return;
+
+    QString text = customChangeEdit->text().trimmed();
+    if(text.isEmpty())
+        return;
+
+    CBitcoinAddress addr(text.toStdString());
+    if(!addr.IsValid())
+    {
+        customChangeEdit->setValid(false);
+        customChangeStatus->setText(tr("Invalid address"));
+        return;
+    }
+    coinControl.destChange = addr.Get();
+    if(!model->isMine(text))
+        customChangeStatus->setText(tr("Warning: not an address in this wallet"));
 }

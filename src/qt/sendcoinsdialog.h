@@ -3,6 +3,8 @@
 
 #include <QDialog>
 
+#include "coincontrol.h"
+
 namespace Ui {
     class SendCoinsDialog;
 }
@@ -10,7 +12,12 @@ class WalletModel;
 class SendCoinsEntry;
 class SendCoinsRecipient;
 
+class QValidatedLineEdit;
+
 QT_BEGIN_NAMESPACE
+class QCheckBox;
+class QLabel;
+class QPushButton;
 class QUrl;
 QT_END_NAMESPACE
 
@@ -45,10 +52,23 @@ private:
     WalletModel *model;
     bool fNewRecipientAllowed;
 
+    // Coin control: hand-picked inputs and an optional custom change address
+    CCoinControl coinControl;
+    QPushButton *coinControlButton;
+    QLabel *coinControlLabel;
+    QCheckBox *customChangeCheck;
+    QValidatedLineEdit *customChangeEdit;
+    QLabel *customChangeStatus;
+    void setupCoinControl();
+
 private slots:
     void on_sendButton_clicked();
     void removeEntry(SendCoinsEntry* entry);
     void updateDisplayUnit();
+    void coinControlButtonClicked();
+    void updateCoinControlLabel();
+    void customChangeToggled(bool checked);
+    void customChangeEdited();
 };
 
 #endif // SENDCOINSDIALOG_H

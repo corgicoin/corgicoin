@@ -3,6 +3,7 @@
 #include <memory>
 #include "main.h"
 #include "wallet.h"
+#include "coincontrol.h"
 
 // how many times to run all the tests to have a chance to catch errors that only show up with particular random shuffles
 #define RUN_TESTS 100
@@ -290,6 +291,71 @@ BOOST_AUTO_TEST_CASE(coin_selection_tests)
             BOOST_CHECK_NE(fails, RANDOM_REPEATS);
         }
     }
+}
+
+// Coin control and lockunspent both filter AvailableCoins: a selection
+// restricts it to the chosen outputs, and locked outputs never appear.
+BOOST_AUTO_TEST_CASE(coin_control_available_coins)
+{
+    CWallet w;
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_CHECK(w.LoadKey(key));
+    CScript scriptMine;
+    scriptMine.SetDestination(key.GetPubKey().GetID());
+
+    // Three wallet transactions with two outputs to us each.
+    vector<uint256> vHashes;
+    for (int n = 0; n < 3; n++)
+    {
+        CTransaction tx;
+        tx.nLockTime = 1000 + n; // distinct hashes; still final
+        tx.vout.emplace_back((n + 1) * COIN, scriptMine);
+        tx.vout.emplace_back((n + 1) * COIN + CENT, scriptMine);
+        CWalletTx wtx(&w, tx);
+        vHashes.push_back(wtx.GetHash());
+        w.mapWallet[wtx.GetHash()] = wtx;
+    }
+    for (auto& item : w.mapWallet)
+        item.second.BindWallet(&w);
+
+    vector<COutput> vOut;
+    w.AvailableCoins(vOut, false);
+    BOOST_CHECK_EQUAL(vOut.size(), 6U);
+
+    // An empty selection means automatic selection over everything.
+    CCoinControl cc;
+    w.AvailableCoins(vOut, false, &cc);
+    BOOST_CHECK_EQUAL(vOut.size(), 6U);
+
+    // A selection restricts to exactly the chosen outputs.
+    cc.Select(COutPoint(vHashes[0], 1));
+    cc.Select(COutPoint(vHashes[2], 0));
+    w.AvailableCoins(vOut, false, &cc);
+    BOOST_CHECK_EQUAL(vOut.size(), 2U);
+    for (const COutput& out : vOut)
+        BOOST_CHECK(cc.IsSelected(out.tx->GetHash(), out.i));
+
+    // Selecting an output we don't have changes nothing.
+    cc.Select(COutPoint(uint256(1), 0));
+    w.AvailableCoins(vOut, false, &cc);
+    BOOST_CHECK_EQUAL(vOut.size(), 2U);
+
+    // Locked outputs are dropped, even when selected.
+    w.LockCoin(COutPoint(vHashes[0], 1));
+    w.AvailableCoins(vOut, false, &cc);
+    BOOST_CHECK_EQUAL(vOut.size(), 1U);
+    BOOST_CHECK(vOut[0].tx->GetHash() == vHashes[2] && vOut[0].i == 0);
+    w.AvailableCoins(vOut, false);
+    BOOST_CHECK_EQUAL(vOut.size(), 5U);
+    w.UnlockAllCoins();
+
+    // Custom change destination bookkeeping.
+    BOOST_CHECK(!cc.HasCustomChange());
+    cc.destChange = key.GetPubKey().GetID();
+    BOOST_CHECK(cc.HasCustomChange());
+    cc.SetNull();
+    BOOST_CHECK(!cc.HasSelected() && !cc.HasCustomChange());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
