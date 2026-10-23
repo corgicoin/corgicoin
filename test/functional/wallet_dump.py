@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dumpwallet / importwallet round-trip, plus getrawchangeaddress."""
+"""dumpwallet / importwallet round-trip, importprivkey, plus getrawchangeaddress."""
 import os
 
 from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_error
@@ -57,6 +57,20 @@ class WalletDumpTest(CorgiTestFramework):
         n2.importwallet(dump)
         assert_equal(n2.getbalance(), 1250)
         assert_raises_rpc_error(-8, None, n2.importwallet, os.path.join(self.tmpdir, "missing.dump"))
+
+        self.log("importprivkey adds one key, rescans, and relabels a key it already has")
+        assert_raises_rpc_error(-5, "Invalid private key", n2.importprivkey, "notakey")
+        single = n0.getnewaddress()
+        n0.sendtoaddress(single, 75)
+        n0.generate(1)
+        self.sync_blocks()
+        n2.importprivkey(n0.dumpprivkey(single), "imported")
+        assert_equal(n2.validateaddress(single)["ismine"], True)
+        assert single in n2.getaddressesbyaccount("imported")
+        assert_equal(n2.getbalance(), 1325)
+        n2.importprivkey(n0.dumpprivkey(single), "renamed")
+        assert single in n2.getaddressesbyaccount("renamed")
+        assert_equal(n2.getbalance(), 1325)
 
 
 if __name__ == "__main__":

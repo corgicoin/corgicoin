@@ -105,6 +105,12 @@ public:
     // Wallet backup
     bool backupWallet(const QString &filename);
 
+    // Key export/import (dumpwallet/importwallet/importprivkey). All need an
+    // unlocked wallet; imports rescan the chain, which can take a while.
+    bool exportKeys(const QString &filename, QString &errorOut);
+    bool importKeys(const QString &filename, int &importedOut, QString &errorOut);
+    bool importPrivateKey(const QString &wif, const QString &label, bool &alreadyHadOut, QString &errorOut);
+
     // HD wallet (BIP32/39)
     bool isHDEnabled() const;
     QString getHDMnemonic() const;

@@ -193,6 +193,7 @@ set(DAEMON_SOURCES
     src/protocol.cpp
     src/corgicoinrpc.cpp
     src/rpcdump.cpp
+    src/walletdump.cpp
     src/rpcnet.cpp
     src/rpcrawtransaction.cpp
     src/bech32.cpp
