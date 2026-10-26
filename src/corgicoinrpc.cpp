@@ -2559,6 +2559,13 @@ Value createauxblock(const Array& params, bool fHelp)
         throw JSONRPCError(-7, "Out of memory");
     vAuxBlocks.push_back(pblock);
 
+    // CreateNewBlock() leaves the coinbase scriptSig empty; only IncrementExtraNonce() fills it in (the getwork,
+    // getblocktemplate and built-in miner paths call it, this RPC did not). An empty script fails the consensus
+    // check in CheckTransaction() ("coinbase script size", 2..100 bytes), so every block created here was rejected
+    // whatever proof was submitted. The extra nonce also keeps blocks created in the same second distinct.
+    static unsigned int nExtraNonceAux = 0;
+    IncrementExtraNonce(pblock, pindexBest, nExtraNonceAux);
+
     // Pay the coinbase to the requested address and flag the block for AuxPoW
     // (chain ID + AuxPoW bit) so the committed hash matches the final block.
     pblock->vtx[0].vout[0].scriptPubKey.SetDestination(address.Get());
