@@ -17,6 +17,8 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 
 AUXPOW_CHAIN_ID = 0xC6        # src/auxpow.h
 AUXPOW_FORK_REGTEST = 200     # AUXPOW_FORK_HEIGHT_TESTNET; -regtest implies testnet
+COINBASE_SCRIPT_MIN, COINBASE_SCRIPT_MAX = 2, 100
+WALLET_MATURITY = 50          # COINBASE_MATURITY (30) + the wallet's 20-block buffer
 MM_MAGIC = b"\xfa\xbe" + b"mm"
 
 
@@ -104,6 +106,26 @@ class CreateAuxBlockTest(CorgiTestFramework):
         first = n0.createauxblock(addr)
         second = n0.createauxblock(addr)
         assert first["hash"] != second["hash"], "two createauxblock calls returned the same block hash"
+
+        self.log("a transaction in a merged-mined block is indexed: getrawtransaction finds it")
+        pay = n1.getnewaddress()
+        work = n0.createauxblock(pay)
+        assert_equal(n0.submitauxblock(work["hash"], auxpow_proof(work["hash"], int(work["bits"], 16))), True)
+        self.sync_blocks()
+        coinbase = n0.getrawtransaction(n0.getblock(work["hash"])["tx"][0], 1)
+        assert_equal(coinbase["vout"][0]["scriptPubKey"]["addresses"], [pay])
+        script_len = len(coinbase["vin"][0]["coinbase"]) // 2
+        assert COINBASE_SCRIPT_MIN <= script_len <= COINBASE_SCRIPT_MAX, "coinbase script is %d bytes" % script_len
+
+        self.log("the reward of a merged-mined block can be spent once it matures")
+        n0.generate(WALLET_MATURITY)
+        self.sync_blocks()
+        assert n1.getbalance() > 1000       # node1's only coins are that merged-mined reward
+        txid = n1.sendtoaddress(n0.getnewaddress(), 1000)
+        self.sync_mempools()
+        n0.generate(1)
+        self.sync_blocks()
+        assert_equal(n1.gettransaction(txid)["confirmations"], 1)
 
 
 if __name__ == "__main__":
