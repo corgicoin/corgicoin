@@ -6,7 +6,7 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.6.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining, an HD (seed-phrase) wallet, and a non-custodial web wallet:
+**Version 4.7.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining, an HD (seed-phrase) wallet with Coin Control, and a non-custodial web wallet:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
@@ -15,6 +15,7 @@ CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in
 - AuxPoW merged mining (hard fork at block 50,000 — see `doc/auxpow-spec.md`)
 - Bech32m addresses (`corg1…` / `tcorg1…`) alongside legacy base58
 - HD (BIP32/39) wallet with a seed-phrase backup (see `doc/hd-wallet-spec.md`)
+- Qt wallet Coin Control (pick inputs, lock coins, custom change) and key import/export
 - Non-custodial web wallet (`contrib/webwallet/`): keys stay in the browser, same addresses as the desktop wallet
 - Modern P2P diagnostics and control: ping latency, traffic counters, `setban`, runtime `addnode`
 - Genesis block mined, mainnet running with seed nodes
@@ -117,7 +118,11 @@ rpcport=62555
 
 ## Version History
 
-### Unreleased
+### v4.7.0.0 — Wallet UX + Merged-Mining Fixes
+
+> **Required upgrade for merged mining.** Pools merge-mining CorgiCoin and every node that should follow merged-mined blocks need v4.7.0.0. Older nodes cannot validate a transaction that spends a merged-mined block reward and would reject the block containing it. No `-reindex` is needed: before this release no merged-mined block could be accepted at all.
+
+- **Merged mining works end to end** (thanks @colneech-dev, PR #67): `createauxblock` now fills in the coinbase script (previously empty, so every merged-mined block failed the "coinbase script size" check and `submitauxblock` always returned false), and transactions in AuxPoW blocks are indexed at their correct position on disk (the AuxPoW proof was not counted, so `getrawtransaction` could not find them and their outputs could not be spent). New `rpc_createauxblock.py` functional test plays a merged-mining pool on regtest: request work, commit it in a parent coinbase, solve a parent Scrypt header, submit, relay, and spend the matured reward
 - **Persistent bans** (`banlist.dat`): manual `setban` bans and misbehavior bans now survive a restart. Same checksummed, network-tagged, write-then-rename format as `peers.dat`; expired bans are dropped on load
 - **Ping timeout**: a peer that leaves a ping unanswered for 20 minutes is disconnected, freeing its slot (`-pingtimeout=<seconds>`). Pre-BIP31 peers are unaffected
 - **Coin control**: `lockunspent <unlock> [outputs]` / `listlockunspent` set outputs aside so coin selection won't spend them (memory-only, cleared on restart, as in Bitcoin Core)
