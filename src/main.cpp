@@ -1602,8 +1602,11 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     int64 nBIP16SwitchTime = 1349049600;
     bool fStrictPayToScriptHash = (pindex->nTime >= nBIP16SwitchTime);
 
-    //// issue here: it doesn't know the version
-    unsigned int nTxPos = pindex->nBlockPos + ::GetSerializeSize(CBlock(), SER_DISK, CLIENT_VERSION) - 1 + GetSizeOfCompactSize(vtx.size());
+    // Offset of the first transaction inside this block's disk record: everything serialized before vtx. For an
+    // AuxPoW block that includes the AuxPoW proof between the header and vtx, so measure this block's own header.
+    // Sizing an empty CBlock() (header only) indexed every transaction of a merged-mined block at the wrong
+    // position, so getrawtransaction failed for them and any spend of their outputs could not read the previous tx.
+    unsigned int nTxPos = pindex->nBlockPos + ::GetSerializeSize(*this, SER_DISK | SER_BLOCKHEADERONLY, CLIENT_VERSION) + GetSizeOfCompactSize(vtx.size());
 
     map<uint256, CTxIndex> mapQueuedChanges;
     int64 nFees = 0;
