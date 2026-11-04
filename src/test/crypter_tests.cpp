@@ -92,4 +92,24 @@ BOOST_AUTO_TEST_CASE(derivation_rejects_bad_parameters)
     BOOST_CHECK(!crypter.Encrypt(Plaintext(), out));                                                // no key set
 }
 
+
+BOOST_AUTO_TEST_CASE(empty_plaintext_and_empty_ciphertext)
+{
+    CCrypter crypter;
+    SecureString passphrase("correct horse battery staple");
+    BOOST_REQUIRE(crypter.SetKeyFromPassphrase(passphrase, Salt(), 1000, 0));
+
+    // Encrypting nothing gives one padding block, which decrypts back to nothing
+    vector<unsigned char> ciphertext;
+    BOOST_REQUIRE(crypter.Encrypt(CKeyingMaterial(), ciphertext));
+    BOOST_CHECK_EQUAL(ciphertext.size(), 16u);
+    CKeyingMaterial decrypted(5, 1);
+    BOOST_REQUIRE(crypter.Decrypt(ciphertext, decrypted));
+    BOOST_CHECK(decrypted.empty());
+
+    // Decrypting nothing is an error, not a crash: a corrupt wallet can hold an empty encrypted key
+    CKeyingMaterial out;
+    BOOST_CHECK(!crypter.Decrypt(vector<unsigned char>(), out));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
