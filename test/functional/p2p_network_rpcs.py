@@ -38,11 +38,17 @@ class P2PNetworkRPCTest(CorgiTestFramework):
         assert_raises_rpc_error(-24, None, n0.getaddednodeinfo, "10.0.0.1:1")
 
         self.log("added node is re-dialed after a disconnect")
+        # Don't poll for the node being briefly "not connected": `addnode add` wakes the
+        # added-node thread, and if its pass lands just after the disconnect it re-dials
+        # within milliseconds, so the dropped state can be missed entirely (flaky). Node1
+        # sees node0 as an inbound peer on an ephemeral port, so a re-dial shows up as
+        # an inbound peer on a different port, whichever way that race goes.
+        old_inbound = [p["addr"] for p in n1.getpeerinfo() if p["inbound"]]
+        assert_equal(len(old_inbound), 1)
         n0.disconnectnode(n1.p2p_addr)
-        wait_until(lambda: not n0.getaddednodeinfo(n1.p2p_addr)[0]["connected"],
-                   what="added node to drop")
-        wait_until(lambda: n0.getaddednodeinfo(n1.p2p_addr)[0]["connected"], timeout=150,
-                   what="added-node thread to reconnect")
+        wait_until(lambda: [p["addr"] for p in n1.getpeerinfo() if p["inbound"]]
+                   not in ([], old_inbound) and n0.getaddednodeinfo(n1.p2p_addr)[0]["connected"],
+                   timeout=150, what="added-node thread to reconnect on a new connection")
         n0.addnode(n1.p2p_addr, "remove")
         assert_raises_rpc_error(-24, None, n0.addnode, n1.p2p_addr, "remove")
         assert_raises_rpc_error(-29, None, n0.disconnectnode, "10.0.0.1:1")
