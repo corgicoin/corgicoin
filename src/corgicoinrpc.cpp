@@ -2944,6 +2944,8 @@ Value sethdseed(const Array& params, bool fHelp)
     std::string mnemonic = (params.size() == 1)
         ? params[0].get_str()
         : bip39::GenerateMnemonic(128);
+    if (params.size() == 0 && mnemonic.empty())
+        throw JSONRPCError(-4, "Could not generate a recovery phrase: the random number generator failed");
 
     std::string strError;
     if (!pwalletMain->SetHDSeedFromMnemonic(mnemonic, strError))
