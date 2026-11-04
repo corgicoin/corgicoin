@@ -26,6 +26,7 @@ TESTS = [
     "rpc_createauxblock.py",
     "rpc_mempool_verify.py",
     "rpc_invalidateblock.py",
+    "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 
 

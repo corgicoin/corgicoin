@@ -82,5 +82,6 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
+| `feature_cross_binary.py` | two different builds (e.g. against different OpenSSL versions) interoperate: blocks and signatures accepted both ways, `wallet.dat` and encrypted wallets open in either. Needs `--alt-corgicoind` or `$CORGICOIND_ALT`, otherwise it skips |
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `getnodeaddresses`, `disconnectnode` |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
