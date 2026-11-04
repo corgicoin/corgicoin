@@ -565,7 +565,7 @@ void CNode::PushVersion()
     int64 nTime = (fInbound ? GetAdjustedTime() : GetTime());
     CAddress addrYou = (addr.IsRoutable() && !IsProxy(addr) ? addr : CAddress(CService("0.0.0.0",0)));
     CAddress addrMe = GetLocalAddress(&addr);
-    RAND_bytes(reinterpret_cast<unsigned char*>(&nLocalHostNonce), sizeof(nLocalHostNonce));
+    GetRandBytes(reinterpret_cast<unsigned char*>(&nLocalHostNonce), sizeof(nLocalHostNonce));
     LogPrintf("send version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", PROTOCOL_VERSION, nBestHeight, addrMe.ToString().c_str(), addrYou.ToString().c_str(), addr.ToString().c_str());
     PushMessage("version", PROTOCOL_VERSION, nLocalServices, nTime, addrYou, addrMe,
                 nLocalHostNonce, FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, std::vector<string>()), nBestHeight);

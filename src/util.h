@@ -183,6 +183,12 @@ std::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
 void ShrinkDebugFile();
 int GetRandInt(int nMax);
 uint64 GetRand(uint64 nMax);
+// Fill buf with num cryptographically strong random bytes. RAND_bytes can fail (OS entropy unavailable,
+// DRBG reseed failure) and then leaves the buffer untouched; carrying on would silently hand out zero or
+// stale nonces, keys and seeds, so this aborts instead.
+void GetRandBytes(unsigned char* buf, int num);
+// Same, but reports failure to the caller so key and seed generation can fail cleanly.
+bool GetRandBytesChecked(unsigned char* buf, int num);
 uint256 GetRandHash();
 int64 GetTime();
 void SetMockTime(int64 nMockTimeIn);

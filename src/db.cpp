@@ -747,7 +747,7 @@ static bool WriteChecksummedFile(const std::filesystem::path& path, const char* 
 {
     // Generate random temporary filename
     unsigned short randv = 0;
-    RAND_bytes(reinterpret_cast<unsigned char*>(&randv), sizeof(randv));
+    GetRandBytes(reinterpret_cast<unsigned char*>(&randv), sizeof(randv));
     std::string tmpfn = strprintf("%s.%04x", name, randv);
 
     // serialize data, checksum data up to that point, then append csum

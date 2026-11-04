@@ -348,13 +348,21 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     RandAddSeedPerfmon();
 
     vMasterKey.resize(WALLET_CRYPTO_KEY_SIZE);
-    RAND_bytes(&vMasterKey[0], WALLET_CRYPTO_KEY_SIZE);
+    if (!GetRandBytesChecked(&vMasterKey[0], WALLET_CRYPTO_KEY_SIZE))
+    {
+        LogPrintf("EncryptWallet() : could not generate a random master key\n");
+        return false;
+    }
 
     CMasterKey kMasterKey;
 
     RandAddSeedPerfmon();
     kMasterKey.vchSalt.resize(WALLET_CRYPTO_SALT_SIZE);
-    RAND_bytes(&kMasterKey.vchSalt[0], WALLET_CRYPTO_SALT_SIZE);
+    if (!GetRandBytesChecked(&kMasterKey.vchSalt[0], WALLET_CRYPTO_SALT_SIZE))
+    {
+        LogPrintf("EncryptWallet() : could not generate a random salt\n");
+        return false;
+    }
 
     CCrypter crypter;
     int64 nStartTime = GetTimeMillis();

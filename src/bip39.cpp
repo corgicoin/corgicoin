@@ -4,6 +4,7 @@
 
 #include "bip39.h"
 #include "bip39_wordlist.h"
+#include "util.h"
 
 #include <cstring>
 #include <map>
@@ -77,12 +78,16 @@ std::string MnemonicFromEntropy(const std::vector<unsigned char>& entropy)
     return out;
 }
 
-std::string GenerateMnemonic(int nStrengthBits)
+std::string GenerateMnemonic(int nStrengthBits, bool (*rng)(unsigned char*, int))
 {
     if (nStrengthBits < 128 || nStrengthBits > 256 || nStrengthBits % 32 != 0)
         return "";
     std::vector<unsigned char> entropy(nStrengthBits / 8);
-    RAND_bytes(entropy.data(), (int)entropy.size());
+    if (rng == nullptr)
+        rng = GetRandBytesChecked;
+    // Never fall back to the zero-filled buffer: all-zero entropy is the public "abandon ... about" phrase
+    if (!rng(entropy.data(), (int)entropy.size()))
+        return "";
     return MnemonicFromEntropy(entropy);
 }
 
