@@ -43,6 +43,31 @@ jobs:
           name: corgicoind-linux-x64
           path: build/corgicoind
 
+  sanitizers:
+    # Unit tests under AddressSanitizer (memory errors, leaks), UBSan (undefined behaviour) and the
+    # standard library's assertions (-D_GLIBCXX_ASSERTIONS), which stop on out-of-range vector access
+    # that UBSan alone cannot see. UBSan is built with -fno-sanitize-recover so any report fails the job.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             build-essential             cmake             libboost-all-dev             libssl-dev             libdb++-dev             libminiupnpc-dev
+
+      - name: Build unit tests with sanitizers
+        run: |
+          mkdir build-san && cd build-san
+          SAN="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -D_GLIBCXX_ASSERTIONS"
+          cmake .. -DCMAKE_BUILD_TYPE=Debug             -DCMAKE_CXX_FLAGS="$SAN" -DCMAKE_C_FLAGS="$SAN" -DCMAKE_EXE_LINKER_FLAGS="$SAN"             -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
+          make -j$(nproc) test_corgicoin
+
+      - name: Run unit tests under the sanitizers
+        run: |
+          cd build-san
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1 ./test_corgicoin
+
   build-macos:
     runs-on: macos-15
     steps:
