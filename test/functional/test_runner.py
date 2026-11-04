@@ -26,6 +26,7 @@ TESTS = [
     "rpc_createauxblock.py",
     "rpc_mempool_verify.py",
     "rpc_invalidateblock.py",
+    "rpc_http_auth.py",
 ]
 
 
