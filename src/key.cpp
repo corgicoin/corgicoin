@@ -234,7 +234,7 @@ CSecret CKey::GetSecret(bool &fCompressed) const
     if (bn == nullptr)
         throw key_error("CKey::GetSecret() : EC_KEY_get0_private_key failed");
     int nBytes = BN_num_bytes(bn);
-    int n=BN_bn2bin(bn,&vchRet[32 - nBytes]);
+    int n=BN_bn2bin(bn,vchRet.data() + (32 - nBytes));   // a zero secret has nBytes == 0: do not index vchRet[32]
     if (n != nBytes)
         throw key_error("CKey::GetSecret(): BN_bn2bin failed");
     fCompressed = fCompressedPubKey;
@@ -261,6 +261,7 @@ bool CKey::SetPubKey(const CPubKey& vchPubKey)
     if (!o2i_ECPublicKey(&pkey, &pbegin, vchPubKey.vchPubKey.size()))
         return false;
     fSet = true;
+    fCompressedPubKey = false;   // o2i_ECPublicKey took the form from the encoding; keep our flag in step
     if (vchPubKey.vchPubKey.size() == 33)
         SetCompressedPubKey();
     return true;
@@ -376,8 +377,8 @@ bool CKey::SetCompactSignature(uint256 hash, const std::vector<unsigned char>& v
     }
     bool fRecovered = ECDSA_SIG_recover_key_GFp(pkey, sig, (unsigned char*)&hash, sizeof(hash), nV - 27, 0) == 1;
     ECDSA_SIG_free(sig);
-    if (fRecovered)
-        fSet = true;
+    // pkey was replaced above, so the object holds a usable key only if the recovery worked
+    fSet = fRecovered;
     return fRecovered;
 }
 

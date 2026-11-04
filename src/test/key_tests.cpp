@@ -190,7 +190,8 @@ BOOST_AUTO_TEST_CASE(key_compact_signature_roundtrip_and_failure)
     BOOST_CHECK(rec.GetPubKey() == key.GetPubKey());
 
     // bad shapes and signatures that do not recover a key must be rejected without leaking
-    // (the leak itself is checked with valgrind: failing calls used to leak an ECDSA_SIG each)
+    // (the leak itself is only visible to a leak checker: failing calls used to leak an ECDSA_SIG each,
+    //  and the CI sanitizers job runs this test under LeakSanitizer)
     CKey bad;
     BOOST_CHECK(!bad.SetCompactSignature(hash, std::vector<unsigned char>(64, 1)));
     for (int i = 0; i < 200; i++)
@@ -200,6 +201,53 @@ BOOST_AUTO_TEST_CASE(key_compact_signature_roundtrip_and_failure)
         CKey k;
         k.SetCompactSignature(hash, junk);
     }
+}
+
+
+BOOST_AUTO_TEST_CASE(key_failed_compact_signature_leaves_the_key_unset)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_REQUIRE(!key.IsNull());
+    uint256 hash(777);
+    bool fFailed = false;
+    // junk of the right shape; some of it does not recover a key
+    for (int i = 0; i < 200 && !fFailed; i++)
+    {
+        std::vector<unsigned char> junk(65, (unsigned char)(0x11 + (i & 0x3f)));
+        junk[0] = 27 + (i & 3);
+        if (!key.SetCompactSignature(hash, junk))
+            fFailed = true;
+        else
+            key.MakeNewKey(true);
+    }
+    BOOST_REQUIRE(fFailed);
+    // the failed attempt replaced the underlying key, so the object must not claim to hold one
+    BOOST_CHECK(key.IsNull());
+}
+
+BOOST_AUTO_TEST_CASE(key_setpubkey_resets_the_compression_flag)
+{
+    CKey compressed, uncompressed;
+    compressed.MakeNewKey(true);
+    uncompressed.MakeNewKey(false);
+    BOOST_CHECK(compressed.IsCompressed());
+    BOOST_REQUIRE(compressed.SetPubKey(uncompressed.GetPubKey()));
+    BOOST_CHECK(!compressed.IsCompressed());
+    BOOST_CHECK(compressed.GetPubKey() == uncompressed.GetPubKey());
+}
+
+BOOST_AUTO_TEST_CASE(key_getsecret_of_a_zero_secret)
+{
+    // an all-zero secret has no significant bytes; GetSecret must still return 32 bytes without
+    // indexing one past the end of its buffer
+    CKey key;
+    BOOST_REQUIRE(key.SetSecret(CSecret(32, 0), false));
+    bool fCompr = true;
+    CSecret secret = key.GetSecret(fCompr);
+    BOOST_CHECK_EQUAL(secret.size(), 32u);
+    for (unsigned char c : secret)
+        BOOST_CHECK_EQUAL((int)c, 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
