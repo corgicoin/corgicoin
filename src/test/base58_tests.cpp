@@ -83,5 +83,12 @@ BOOST_AUTO_TEST_CASE(base58_DecodeBase58)
     BOOST_CHECK(!DecodeBase58("invalid", result));
 }
 
+
+BOOST_AUTO_TEST_CASE(base58_encode_empty_vector)
+{
+    // used to index &vch[0] on an empty vector
+    BOOST_CHECK_EQUAL(EncodeBase58(std::vector<unsigned char>()), std::string());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

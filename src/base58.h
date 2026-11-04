@@ -69,7 +69,7 @@ inline std::string EncodeBase58(const unsigned char* pbegin, const unsigned char
 // Encode a byte vector as a base58-encoded string
 inline std::string EncodeBase58(const std::vector<unsigned char>& vch)
 {
-    return EncodeBase58(&vch[0], &vch[0] + vch.size());
+    return EncodeBase58(vch.data(), vch.data() + vch.size());
 }
 
 // Decode a base58-encoded string psz into byte vector vchRet
