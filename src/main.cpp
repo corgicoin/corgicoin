@@ -2056,8 +2056,32 @@ bool InvalidateBlock(CBlockIndex* pindex, string& strError)
         uiInterface.NotifyBlocksChanged();
     }
 
-    // Another branch with more work than the new tip may already be known
-    return ActivateBestValidChain(strError);
+    // Another branch with more work than the new tip may already be known. If
+    // switching to it fails (it may have failed validation before; this
+    // codebase keeps no per-block invalid flag), the rollback above still
+    // stands and the node stays on a valid tip, so report success.
+    string strSwitchError;
+    if (!ActivateBestValidChain(strSwitchError))
+        LogPrintf("InvalidateBlock: staying on the rolled-back tip: %s\n", strSwitchError.c_str());
+    return true;
+}
+
+bool RecoverInvalidatedTip()
+{
+    // InvalidateBlock persists its marker before rolling back. If the node
+    // stopped in between, it restarts on a tip inside an invalidated chain:
+    // finish the rollback from the lowest invalidated block on that chain.
+    if (!pindexBest || !pindexBest->fFailedChain)
+        return true;
+    CBlockIndex* pindexInvalid = pindexBest;
+    while (pindexInvalid->pprev && pindexInvalid->pprev->fFailedChain)
+        pindexInvalid = pindexInvalid->pprev;
+    LogPrintf("RecoverInvalidatedTip: best chain contains invalidated block %s, rolling back\n",
+      pindexInvalid->GetBlockHash().ToString().substr(0,20).c_str());
+    string strError;
+    if (!InvalidateBlock(pindexInvalid, strError))
+        return LogError("RecoverInvalidatedTip() : %s", strError.c_str());
+    return true;
 }
 
 bool ReconsiderBlock(CBlockIndex* pindex, string& strError)

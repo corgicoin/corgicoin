@@ -11,7 +11,7 @@ from zero to mining.
 |-----------|-------|
 | Algorithm | Scrypt (1024, 1, 1, 256) |
 | Block time | 1 minute |
-| Difficulty retarget | Every 4 hours |
+| Difficulty retarget | Every block (LWMA, since block 34,000; see `doc/lwma-retarget-spec.md`) |
 | Block reward | Random, seeded from previous block hash (see README for the schedule) |
 | Coinbase maturity | 30 blocks before rewards are spendable |
 | P2P / RPC ports | 62556 / 62555 |
@@ -105,6 +105,29 @@ minerd -a scrypt -o http://127.0.0.1:62555 -O corgirpc:yourpassword
 
 There is no public stratum pool yet. If you run one, let us know and we'll
 list it here.
+
+### Merged mining (pools)
+
+Since block 50,000 CorgiCoin can be merge-mined alongside another Scrypt
+chain such as Litecoin: the parent chain's work also secures CorgiCoin
+(spec: `doc/auxpow-spec.md`, chain ID `0xC6`). **Run v4.7.0.0 or later**;
+earlier releases could not accept merged-mined blocks.
+
+The daemon speaks both interfaces pool software uses:
+
+- `createauxblock <address>` / `submitauxblock <hash> <auxpow>` (pays the
+  given address)
+- `getauxblock` (no arguments: work paying a fresh key from the node's own
+  wallet) / `getauxblock <hash> <auxpow>` (submit)
+
+The work object has `hash`, `chainid`, `previousblockhash`, `coinbasevalue`,
+`bits`, `height`, and the target both as `target` (display byte order) and
+`_target` (little-endian), so pools written for Namecoin or Dogecoin work
+unchanged. Commit `hash` in the parent coinbase as usual (`fabe6d6d` magic,
+merkle root, tree size, nonce); with several aux chains, CorgiCoin's hash must
+sit in the tree slot derived from the nonce and chain ID, as on Namecoin and
+Dogecoin. `test/functional/auxpow_builder.py` builds proofs exactly the way
+the node checks them and is a handy reference.
 
 ## 5. What to do with mined CORG
 

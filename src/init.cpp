@@ -614,6 +614,12 @@ bool AppInit2()
     nStart = GetTimeMillis();
     if (!LoadBlockIndex())
         strErrors << _("Error loading blkindex.dat") << "\n";
+    else
+    {
+        LOCK(cs_main);
+        if (!RecoverInvalidatedTip())
+            strErrors << _("Error rolling back an invalidated block (see debug.log)") << "\n";
+    }
 
     // as LoadBlockIndex can take several minutes, it's possible the user
     // requested to kill corgicoin-qt during the last operation. If so, exit.

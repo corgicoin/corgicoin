@@ -84,3 +84,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `getnodeaddresses`, `disconnectnode` |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
+| `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |
+| `feature_auxpow.py` | merged mining as pools do it: multi-chain proofs, legacy commitment, one rejection per AuxPoW rule (checked against its exact error), stale work, pre-fork guard, `getauxblock`. Proofs come from `auxpow_builder.py` |
+| `rpc_mempool_verify.py` | `getmempoolinfo`; `verifychain` on a healthy chain and over a deliberately corrupted block |
+| `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |

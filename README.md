@@ -122,6 +122,9 @@ rpcport=62555
 - **Chain recovery**: `invalidateblock <hash>` rolls the node back and makes it refuse any chain through that block (persisted across restarts); `reconsiderblock <hash>` undoes it; `getchaintips` reports such tips as `invalid` (thanks @colneech-dev, #71)
 - **Diagnostics**: `getmempoolinfo` (pool size, bytes, min relay fee) and `verifychain [checklevel] [numblocks]` (the startup block checks, run on the live node, read-only) (thanks @colneech-dev, #72)
 - **`getnodeaddresses [count]`**: addresses known to the address manager (`peers.dat`), connected or not (thanks @colneech-dev, #69)
+- **`getauxblock`**: the Namecoin/Dogecoin single-call merged-mining RPC many pool stacks use (no arguments: work paying a fresh wallet key; `<hash> <auxpow>`: submit). Work objects now also carry `target` in display byte order next to `_target`. `createauxblock`/`getauxblock` refuse work before the AuxPoW fork, and `submitauxblock` rejects malformed hashes and proofs with trailing data; accepted blocks are freed instead of lingering until the tip moves
+- **Merged-mining test suite** (`feature_auxpow.py`, with a reusable pool-side proof builder `auxpow_builder.py`): multi-chain proofs under a multi-transaction parent, the legacy no-magic commitment, one rejection per AuxPoW consensus rule (each checked against its exact error), insufficient parent work, stale and expired work, and `getauxblock`
+- **`invalidateblock` follow-ups**: a node stopped between saving the invalidation and rolling back now finishes the rollback at startup; failing to switch to another known branch after a successful rollback is logged instead of reported as an error
 - **Tests**: new `rpc_invalidateblock.py` and `rpc_mempool_verify.py`; fixed a flaky added-node re-dial step in `p2p_network_rpcs.py` (#70)
 
 ### v4.7.0.0 — Wallet UX + Merged-Mining Fixes
