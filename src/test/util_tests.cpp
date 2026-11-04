@@ -10,6 +10,15 @@ using namespace std;
 
 BOOST_AUTO_TEST_SUITE(util_tests)
 
+BOOST_AUTO_TEST_CASE(empty_input_hashing_and_decoding)
+{
+    // These used to index &v[0] on an empty vector (undefined behaviour; UBSan reports it)
+    uint160 h = Hash160(std::vector<unsigned char>());
+    BOOST_CHECK_EQUAL(HexStr(h.begin(), h.end()), "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb");
+    BOOST_CHECK_EQUAL(DecodeBase64(std::string()), std::string());
+    BOOST_CHECK_EQUAL(DecodeBase32(std::string()), std::string());
+}
+
 BOOST_AUTO_TEST_CASE(util_criticalsection)
 {
     CCriticalSection cs;
@@ -295,16 +304,6 @@ BOOST_AUTO_TEST_CASE(util_ParseCommandLine)
     // Malformed input throws (preserving the old parse-error path)
     BOOST_CHECK_THROW(ParseCommandLine("bad\\"), std::runtime_error);
     BOOST_CHECK_THROW(ParseCommandLine("\"unterminated"), std::runtime_error);
-}
-
-
-BOOST_AUTO_TEST_CASE(empty_input_hashing_and_decoding)
-{
-    // These used to index &v[0] on an empty vector (undefined behaviour; UBSan reports it)
-    uint160 h = Hash160(std::vector<unsigned char>());
-    BOOST_CHECK_EQUAL(HexStr(h.begin(), h.end()), "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb");
-    BOOST_CHECK_EQUAL(DecodeBase64(std::string()), std::string());
-    BOOST_CHECK_EQUAL(DecodeBase32(std::string()), std::string());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
