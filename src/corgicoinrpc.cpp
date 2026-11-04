@@ -59,6 +59,10 @@ extern Value clearbanned(const Array& params, bool fHelp);
 extern Value addnode(const Array& params, bool fHelp);
 extern Value getaddednodeinfo(const Array& params, bool fHelp);
 extern Value getnodeaddresses(const Array& params, bool fHelp);
+extern Value getmempoolinfo(const Array& params, bool fHelp);
+extern Value verifychain(const Array& params, bool fHelp);
+extern Value invalidateblock(const Array& params, bool fHelp);
+extern Value reconsiderblock(const Array& params, bool fHelp);
 extern Value disconnectnode(const Array& params, bool fHelp);
 extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
@@ -2647,6 +2651,100 @@ Value getrawmempool(const Array& params, bool fHelp)
     return a;
 }
 
+Value getmempoolinfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getmempoolinfo\n"
+            "Returns details on the transaction memory pool: size (transaction count),\n"
+            "bytes (their total serialized size) and minrelaytxfee (the minimum fee per\n"
+            "started kB that a transaction needs to be relayed, in coins).");
+
+    int64_t nTxs = 0;
+    int64_t nBytes = 0;
+    {
+        LOCK(mempool.cs);
+        nTxs = (int64_t)mempool.mapTx.size();
+        for (const auto& item : mempool.mapTx)
+            nBytes += (int64_t)::GetSerializeSize(item.second, SER_NETWORK, PROTOCOL_VERSION);
+    }
+
+    Object obj;
+    obj.emplace_back("size", nTxs);
+    obj.emplace_back("bytes", nBytes);
+    obj.emplace_back("minrelaytxfee", ValueFromAmount(MIN_RELAY_TX_FEE));
+    return obj;
+}
+
+Value verifychain(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 2)
+        throw runtime_error(
+            "verifychain [checklevel] [numblocks]\n"
+            "Re-runs, on the live node and without a restart, the block checks done at startup.\n"
+            "checklevel 1 (default, or -checklevel): each block reads from disk and passes\n"
+            "CheckBlock. Level 2 also checks that each transaction's index entry points at it.\n"
+            "numblocks (default -checkblocks, 2500): how many blocks back from the tip; 0 = all.\n"
+            "Returns true if everything checked out. Read-only: it never changes the chain.\n"
+            "Failures are named in debug.log.");
+
+    int nCheckLevel = params.size() > 0 ? params[0].get_int() : (int)GetArg("-checklevel", 1);
+    int nCheckDepth = params.size() > 1 ? params[1].get_int() : (int)GetArg("-checkblocks", 2500);
+    if (nCheckLevel < 1 || nCheckLevel > 2)
+        throw JSONRPCError(-8, "checklevel must be 1 or 2");
+    if (nCheckDepth < 0)
+        throw JSONRPCError(-8, "numblocks must be 0 (all) or a positive number");
+
+    LOCK(cs_main);
+    if (nCheckDepth == 0 || nCheckDepth > nBestHeight)
+        nCheckDepth = nBestHeight;
+
+    CTxDB txdb("r");
+    bool fOk = true;
+    for (CBlockIndex* pindex = pindexBest; pindex && pindex->pprev; pindex = pindex->pprev)
+    {
+        if (pindex->nHeight <= nBestHeight - nCheckDepth)
+            break;
+        CBlock block;
+        if (!block.ReadFromDisk(pindex))
+        {
+            LogPrintf("verifychain: *** cannot read block %d (%s) from disk\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str());
+            fOk = false;
+            continue;
+        }
+        if (!block.CheckBlock())
+        {
+            LogPrintf("verifychain: *** block %d (%s) failed CheckBlock\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str());
+            fOk = false;
+        }
+        if (nCheckLevel < 2)
+            continue;
+        for (const CTransaction& tx : block.vtx)
+        {
+            uint256 hashTx = tx.GetHash();
+            CTxIndex txindex;
+            if (!txdb.ReadTxIndex(hashTx, txindex))
+                continue;
+            // A different position is legitimate only for a duplicate transaction
+            if (pindex->nFile != txindex.pos.nFile || pindex->nBlockPos != txindex.pos.nBlockPos)
+            {
+                CTransaction txFound;
+                if (!txFound.ReadFromDisk(txindex.pos))
+                {
+                    LogPrintf("verifychain: *** cannot read the indexed copy of transaction %s (block %d)\n", hashTx.ToString().c_str(), pindex->nHeight);
+                    fOk = false;
+                }
+                else if (txFound.GetHash() != hashTx)
+                {
+                    LogPrintf("verifychain: *** invalid tx index position for %s (block %d)\n", hashTx.ToString().c_str(), pindex->nHeight);
+                    fOk = false;
+                }
+            }
+        }
+    }
+    return fOk;
+}
+
 Value getblockhash(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
@@ -2884,10 +2982,56 @@ Value getchaintips(const Array& params, bool fHelp)
         Object o;
         o.emplace_back("height", idx->nHeight);
         o.emplace_back("hash", idx->GetBlockHash().GetHex());
-        o.emplace_back("status", string(idx == pindexBest ? "active" : "valid-headers"));
+        o.emplace_back("status", string(idx->fFailedChain ? "invalid" : idx == pindexBest ? "active" : "valid-headers"));
         res.push_back(o);
     }
     return res;
+}
+
+// Look up a block by its full hash only: unlike BlockIndexFromParam, a height is not accepted,
+// because invalidating the wrong block is expensive to undo.
+static CBlockIndex* BlockIndexFromHashParam(const Value& p)
+{
+    if (p.type() != str_type || p.get_str().size() != 64)
+        throw JSONRPCError(-8, "Expected a 64-character block hash");
+    auto it = mapBlockIndex.find(uint256(p.get_str()));
+    if (it == mapBlockIndex.end())
+        throw JSONRPCError(-5, "Block not found");
+    return it->second;
+}
+
+Value invalidateblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "invalidateblock <hash>\n"
+            "Permanently marks a block, and every block built on it, as invalid. If the block is\n"
+            "in the active chain the node rolls back to its parent and will not follow a longer\n"
+            "chain through it, even after a restart. Undo with reconsiderblock.");
+
+    LOCK(cs_main);
+    CBlockIndex* pindex = BlockIndexFromHashParam(params[0]);
+    string strError;
+    if (!InvalidateBlock(pindex, strError))
+        throw JSONRPCError(-1, "invalidateblock failed: " + strError);
+    return Value::null;
+}
+
+Value reconsiderblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "reconsiderblock <hash>\n"
+            "Removes the invalid mark set by invalidateblock from a block and its ancestors, so\n"
+            "blocks built on it are valid again unless separately invalidated, then switches to\n"
+            "the most-work valid chain.");
+
+    LOCK(cs_main);
+    CBlockIndex* pindex = BlockIndexFromHashParam(params[0]);
+    string strError;
+    if (!ReconsiderBlock(pindex, strError))
+        throw JSONRPCError(-1, "reconsiderblock failed: " + strError);
+    return Value::null;
 }
 
 Value uptime(const Array& params, bool fHelp)
@@ -3047,6 +3191,10 @@ static const CRPCCommand vRPCCommands[] =
     { "addnode",                &addnode,                true },
     { "getaddednodeinfo",       &getaddednodeinfo,       true },
     { "getnodeaddresses",       &getnodeaddresses,       true },
+    { "getmempoolinfo",         &getmempoolinfo,         true },
+    { "verifychain",            &verifychain,            true },
+    { "invalidateblock",        &invalidateblock,        true },
+    { "reconsiderblock",        &reconsiderblock,        true },
     { "disconnectnode",         &disconnectnode,         true },
     { "getdifficulty",          &getdifficulty,          true },
     { "getnetworkhashps",       &getnetworkhashps,       true },

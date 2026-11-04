@@ -41,6 +41,7 @@ CBlockIndex* pindexGenesisBlock = nullptr;
 int nBestHeight = -1;
 CBigNum bnBestChainWork = 0;
 CBigNum bnBestInvalidWork = 0;
+set<uint256> setInvalidatedBlocks;
 uint256 hashBestChain = 0;
 CBlockIndex* pindexBest = nullptr;
 int64 nTimeBestReceived = 0;
@@ -1932,6 +1933,148 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
 }
 
 
+// Recompute fFailedChain for the whole block index: a block is failed if the operator
+// invalidated it or its parent is failed. Walks in height order so parents come first.
+void UpdateFailedChainFlags()
+{
+    vector<pair<int, CBlockIndex*> > vSortedByHeight;
+    vSortedByHeight.reserve(mapBlockIndex.size());
+    for (const auto& item : mapBlockIndex)
+        vSortedByHeight.emplace_back(item.second->nHeight, item.second);
+    sort(vSortedByHeight.begin(), vSortedByHeight.end());
+    for (const std::pair<int, CBlockIndex*>& item : vSortedByHeight)
+    {
+        CBlockIndex* pindex = item.second;
+        pindex->fFailedChain = setInvalidatedBlocks.count(pindex->GetBlockHash()) ||
+                               (pindex->pprev && pindex->pprev->fFailedChain);
+    }
+}
+
+static bool WriteInvalidatedSet()
+{
+    CTxDB txdb;
+    if (!txdb.TxnBegin())
+        return false;
+    vector<uint256> vHashes(setInvalidatedBlocks.begin(), setInvalidatedBlocks.end());
+    if (!txdb.WriteInvalidatedBlocks(vHashes))
+    {
+        txdb.TxnAbort();
+        return false;
+    }
+    return txdb.TxnCommit();
+}
+
+// Make the most-work chain that contains no invalidated block the active one.
+static bool ActivateBestValidChain(string& strError)
+{
+    CBlockIndex* pindexCandidate = pindexBest;
+    for (const auto& item : mapBlockIndex)
+    {
+        CBlockIndex* pindex = item.second;
+        if (!pindex->fFailedChain && pindex->bnChainWork > pindexCandidate->bnChainWork)
+            pindexCandidate = pindex;
+    }
+    if (pindexCandidate == pindexBest)
+        return true;
+
+    CBlock block;
+    if (!block.ReadFromDisk(pindexCandidate))
+    {
+        strError = "could not read the best valid block from disk";
+        return false;
+    }
+    CTxDB txdb;
+    if (!block.SetBestChain(txdb, pindexCandidate))
+    {
+        strError = "could not switch to the best valid chain (see debug.log)";
+        return false;
+    }
+    return true;
+}
+
+bool InvalidateBlock(CBlockIndex* pindex, string& strError)
+{
+    if (!pindex->pprev)
+    {
+        strError = "cannot invalidate the genesis block";
+        return false;
+    }
+
+    // Persist the marker first: if we crash after the rollback below, a restart still
+    // refuses the heavier chain. On failure the marker is taken back out.
+    bool fWasInvalidated = setInvalidatedBlocks.count(pindex->GetBlockHash()) != 0;
+    setInvalidatedBlocks.insert(pindex->GetBlockHash());
+    UpdateFailedChainFlags();
+    if (!WriteInvalidatedSet())
+    {
+        if (!fWasInvalidated)
+            setInvalidatedBlocks.erase(pindex->GetBlockHash());
+        UpdateFailedChainFlags();
+        strError = "could not write the invalidated-block list to the block database";
+        return false;
+    }
+
+    // If the active chain contains the block, roll back to its last valid ancestor
+    if (pindexBest->fFailedChain)
+    {
+        CBlockIndex* pindexNew = pindexBest;
+        while (pindexNew && pindexNew->fFailedChain)
+            pindexNew = pindexNew->pprev;
+        if (!pindexNew)
+        {
+            strError = "no valid ancestor found";
+            return false;
+        }
+
+        CTxDB txdb;
+        if (!txdb.TxnBegin())
+        {
+            strError = "TxnBegin failed";
+            return false;
+        }
+        if (!Reorganize(txdb, pindexNew))
+        {
+            txdb.TxnAbort();
+            strError = "rolling back the chain failed (see debug.log)";
+            return false;
+        }
+
+        hashBestChain = pindexNew->GetBlockHash();
+        pindexBest = pindexNew;
+        nBestHeight = pindexBest->nHeight;
+        bnBestChainWork = pindexNew->bnChainWork;
+        nTimeBestReceived = GetTime();
+        nTransactionsUpdated++;
+        if (!IsInitialBlockDownload())
+        {
+            const CBlockLocator locator(pindexNew);
+            ::SetBestChain(locator);
+        }
+        LogPrintf("InvalidateBlock: invalidated %s, new best=%s  height=%d\n",
+          pindex->GetBlockHash().ToString().substr(0,20).c_str(),
+          hashBestChain.ToString().substr(0,20).c_str(), nBestHeight);
+        uiInterface.NotifyBlocksChanged();
+    }
+
+    // Another branch with more work than the new tip may already be known
+    return ActivateBestValidChain(strError);
+}
+
+bool ReconsiderBlock(CBlockIndex* pindex, string& strError)
+{
+    // Lift the invalidation from this block and from any invalidated ancestor
+    for (CBlockIndex* p = pindex; p; p = p->pprev)
+        setInvalidatedBlocks.erase(p->GetBlockHash());
+    UpdateFailedChainFlags();
+    if (!WriteInvalidatedSet())
+    {
+        strError = "could not write the invalidated-block list to the block database";
+        return false;
+    }
+    LogPrintf("ReconsiderBlock: reconsidered %s\n", pindex->GetBlockHash().ToString().substr(0,20).c_str());
+    return ActivateBestValidChain(strError);
+}
+
 bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
 {
     // Check for duplicate
@@ -1952,6 +2095,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
     }
     pindexNew->bnChainWork = (pindexNew->pprev ? pindexNew->pprev->bnChainWork : 0) + pindexNew->GetBlockWork();
+    pindexNew->fFailedChain = setInvalidatedBlocks.count(hash) || (pindexNew->pprev && pindexNew->pprev->fFailedChain);
 
     CTxDB txdb;
     if (!txdb.TxnBegin())
@@ -1960,8 +2104,8 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     if (!txdb.TxnCommit())
         return false;
 
-    // New best
-    if (pindexNew->bnChainWork > bnBestChainWork)
+    // New best (never on a chain the operator invalidated)
+    if (pindexNew->bnChainWork > bnBestChainWork && !pindexNew->fFailedChain)
         if (!SetBestChain(txdb, pindexNew))
             return false;
 

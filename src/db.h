@@ -322,6 +322,8 @@ public:
     bool WriteHashBestChain(uint256 hashBestChain);
     bool ReadBestInvalidWork(CBigNum& bnBestInvalidWork);
     bool WriteBestInvalidWork(CBigNum bnBestInvalidWork);
+    bool ReadInvalidatedBlocks(std::vector<uint256>& vHashes);
+    bool WriteInvalidatedBlocks(const std::vector<uint256>& vHashes);
     bool LoadBlockIndex();
 private:
     bool LoadBlockIndexGuts();

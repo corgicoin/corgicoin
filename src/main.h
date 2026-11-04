@@ -60,6 +60,7 @@ extern CBlockIndex* pindexGenesisBlock;
 extern int nBestHeight;
 extern CBigNum bnBestChainWork;
 extern CBigNum bnBestInvalidWork;
+extern std::set<uint256> setInvalidatedBlocks;
 extern uint256 hashBestChain;
 extern CBlockIndex* pindexBest;
 extern unsigned int nTransactionsUpdated;
@@ -92,6 +93,9 @@ void RegisterWallet(CWallet* pwalletIn);
 void UnregisterWallet(CWallet* pwalletIn);
 void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = nullptr, bool fUpdate = false);
 bool ProcessBlock(CNode* pfrom, CBlock* pblock);
+void UpdateFailedChainFlags();
+bool InvalidateBlock(CBlockIndex* pindex, std::string& strError);
+bool ReconsiderBlock(CBlockIndex* pindex, std::string& strError);
 bool CheckDiskSpace(uint64 nAdditionalBytes=0);
 FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
 FILE* AppendBlockFile(unsigned int& nFileRet);
@@ -1130,9 +1134,14 @@ public:
     unsigned int nBits;
     unsigned int nNonce;
 
+    // Not serialized. True if this block, or an ancestor, was invalidated with the
+    // invalidateblock RPC (see setInvalidatedBlocks); such a block never becomes best.
+    bool fFailedChain;
+
 
     CBlockIndex()
     {
+        fFailedChain = false;
         phashBlock = nullptr;
         pprev = nullptr;
         pnext = nullptr;
@@ -1150,6 +1159,7 @@ public:
 
     CBlockIndex(unsigned int nFileIn, unsigned int nBlockPosIn, CBlock& block)
     {
+        fFailedChain = false;
         phashBlock = nullptr;
         pprev = nullptr;
         pnext = nullptr;
