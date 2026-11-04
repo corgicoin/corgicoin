@@ -3022,8 +3022,9 @@ Value reconsiderblock(const Array& params, bool fHelp)
     if (fHelp || params.size() != 1)
         throw runtime_error(
             "reconsiderblock <hash>\n"
-            "Removes the invalid mark set by invalidateblock from a block and its ancestors and\n"
-            "descendants, then switches to the most-work valid chain.");
+            "Removes the invalid mark set by invalidateblock from a block and its ancestors, so\n"
+            "blocks built on it are valid again unless separately invalidated, then switches to\n"
+            "the most-work valid chain.");
 
     LOCK(cs_main);
     CBlockIndex* pindex = BlockIndexFromHashParam(params[0]);

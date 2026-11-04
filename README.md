@@ -118,6 +118,12 @@ rpcport=62555
 
 ## Version History
 
+### Unreleased
+- **Chain recovery**: `invalidateblock <hash>` rolls the node back and makes it refuse any chain through that block (persisted across restarts); `reconsiderblock <hash>` undoes it; `getchaintips` reports such tips as `invalid` (thanks @colneech-dev, #71)
+- **Diagnostics**: `getmempoolinfo` (pool size, bytes, min relay fee) and `verifychain [checklevel] [numblocks]` (the startup block checks, run on the live node, read-only) (thanks @colneech-dev, #72)
+- **`getnodeaddresses [count]`**: addresses known to the address manager (`peers.dat`), connected or not (thanks @colneech-dev, #69)
+- **Tests**: new `rpc_invalidateblock.py` and `rpc_mempool_verify.py`; fixed a flaky added-node re-dial step in `p2p_network_rpcs.py` (#70)
+
 ### v4.7.0.0 — Wallet UX + Merged-Mining Fixes
 
 > **Required upgrade for merged mining.** Pools merge-mining CorgiCoin and every node that should follow merged-mined blocks need v4.7.0.0. Older nodes cannot validate a transaction that spends a merged-mined block reward and would reject the block containing it. No `-reindex` is needed: before this release no merged-mined block could be accepted at all.
@@ -138,7 +144,7 @@ rpcport=62555
 - **Peer latency (BIP31)**: nonce'd pings every 2 minutes with pong matching; `getpeerinfo` now reports `pingtime`, `minping`, `pingwait`, plus per-peer `bytessent`/`bytesrecv` and `addrlocal`. New `ping` RPC forces an immediate round.
 - **`getnettotals`**: total bytes sent/received since startup
 - **Ban management**: `setban <ip> add|remove [bantime] [absolute]`, `listbanned`, `clearbanned` (manual bans disconnect matching peers immediately)
-- **Runtime peer management**: `addnode <node> add|remove|onetry`, `getaddednodeinfo [node]`, `getnodeaddresses [count]` (addresses from `peers.dat`, connected or not), `disconnectnode <address>`. The `-addnode` thread now re-reads its list every pass, so RPC-added nodes are dialed and kept connected
+- **Runtime peer management**: `addnode <node> add|remove|onetry`, `getaddednodeinfo [node]`, `disconnectnode <address>`. The `-addnode` thread now re-reads its list every pass, so RPC-added nodes are dialed and kept connected
 - **Regtest mode** (`-regtest`): a private chain with its own genesis, network magic, ports (64666/64665) and datadir, minimum-difficulty blocks, and a `generate <n> [address]` RPC that mines instantly
 - **Functional test suite** (`test/functional/`): Python harness that runs real multi-node regtest networks over RPC and P2P; covers mining, wallet sends, burns, block sync, reorgs and the network RPCs. Runs in CI on Linux and macOS
 - **Sync fix**: a node now requests blocks from any newly connected peer advertising a taller chain. Previously only the first peer was asked, so a node that rejoined a longer fork after a split stayed behind until the next block was mined (found by the new reorg test)
