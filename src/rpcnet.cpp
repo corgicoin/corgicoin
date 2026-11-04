@@ -296,6 +296,39 @@ Value getaddednodeinfo(const Array& params, bool fHelp)
     return ret;
 }
 
+Value getnodeaddresses(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+            "getnodeaddresses [count]\n"
+            "Returns up to [count] (default 1, 0 = all) randomly chosen peer addresses\n"
+            "from the address manager (peers.dat), whether or not we are connected to them.");
+
+    int nCount = 1;
+    if (params.size() == 1)
+        nCount = params[0].get_int();
+    if (nCount < 0)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Error: Address count out of range");
+
+    vector<CAddress> vAddr = addrman.GetAllAddr();
+    // Fisher-Yates shuffle so a limited count is a random sample
+    for (size_t i = vAddr.size(); i > 1; i--)
+        std::swap(vAddr[i - 1], vAddr[GetRandInt(i)]);
+    if (nCount > 0 && vAddr.size() > (size_t)nCount)
+        vAddr.resize(nCount);
+
+    Array ret;
+    for (const CAddress& addr : vAddr) {
+        Object obj;
+        obj.emplace_back("time", (int64_t)addr.nTime);
+        obj.emplace_back("services", (int64_t)addr.nServices);
+        obj.emplace_back("address", addr.ToStringIP());
+        obj.emplace_back("port", (int)addr.GetPort());
+        ret.push_back(obj);
+    }
+    return ret;
+}
+
 Value disconnectnode(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)

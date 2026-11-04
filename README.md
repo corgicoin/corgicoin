@@ -138,7 +138,7 @@ rpcport=62555
 - **Peer latency (BIP31)**: nonce'd pings every 2 minutes with pong matching; `getpeerinfo` now reports `pingtime`, `minping`, `pingwait`, plus per-peer `bytessent`/`bytesrecv` and `addrlocal`. New `ping` RPC forces an immediate round.
 - **`getnettotals`**: total bytes sent/received since startup
 - **Ban management**: `setban <ip> add|remove [bantime] [absolute]`, `listbanned`, `clearbanned` (manual bans disconnect matching peers immediately)
-- **Runtime peer management**: `addnode <node> add|remove|onetry`, `getaddednodeinfo [node]`, `disconnectnode <address>`. The `-addnode` thread now re-reads its list every pass, so RPC-added nodes are dialed and kept connected
+- **Runtime peer management**: `addnode <node> add|remove|onetry`, `getaddednodeinfo [node]`, `getnodeaddresses [count]` (addresses from `peers.dat`, connected or not), `disconnectnode <address>`. The `-addnode` thread now re-reads its list every pass, so RPC-added nodes are dialed and kept connected
 - **Regtest mode** (`-regtest`): a private chain with its own genesis, network magic, ports (64666/64665) and datadir, minimum-difficulty blocks, and a `generate <n> [address]` RPC that mines instantly
 - **Functional test suite** (`test/functional/`): Python harness that runs real multi-node regtest networks over RPC and P2P; covers mining, wallet sends, burns, block sync, reorgs and the network RPCs. Runs in CI on Linux and macOS
 - **Sync fix**: a node now requests blocks from any newly connected peer advertising a taller chain. Previously only the first peer was asked, so a node that rejoined a longer fork after a split stayed behind until the next block was mined (found by the new reorg test)

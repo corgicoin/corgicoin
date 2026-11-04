@@ -53,6 +53,14 @@ class P2PNetworkRPCTest(CorgiTestFramework):
         assert_raises_rpc_error(-24, None, n0.addnode, n1.p2p_addr, "remove")
         assert_raises_rpc_error(-29, None, n0.disconnectnode, "10.0.0.1:1")
 
+        self.log("getnodeaddresses lists the address manager, not just live peers")
+        assert_raises_rpc_error(-8, None, n0.getnodeaddresses, -1)
+        known = n0.getnodeaddresses(0)
+        for entry in known:
+            assert_equal(sorted(entry), ["address", "port", "services", "time"])
+        assert_equal(len(n0.getnodeaddresses(1)), min(1, len(known)))
+        assert len(n0.getnodeaddresses()) <= 1
+
         self.log("setban drops the peer and blocks it")
         n1.setban("127.0.0.1", "add", 600)
         wait_until(lambda: n1.getconnectioncount() == 0, what="ban to disconnect")

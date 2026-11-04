@@ -492,6 +492,19 @@ public:
         return vAddr;
     }
 
+    // Return every known address (unlike GetAddr, which is capped to a percentage
+    // of the table and so returns nothing for a small one). Used by getnodeaddresses.
+    std::vector<CAddress> GetAllAddr()
+    {
+        std::vector<CAddress> vAddr;
+        {
+            LOCK(cs);
+            for (std::map<int, CAddrInfo>::const_iterator it = mapInfo.begin(); it != mapInfo.end(); ++it)
+                vAddr.push_back(it->second);
+        }
+        return vAddr;
+    }
+
     // Mark an entry as currently-connected-to.
     void Connected(const CService &addr, int64 nTime = GetAdjustedTime())
     {

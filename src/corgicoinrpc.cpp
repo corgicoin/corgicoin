@@ -58,6 +58,7 @@ extern Value listbanned(const Array& params, bool fHelp);
 extern Value clearbanned(const Array& params, bool fHelp);
 extern Value addnode(const Array& params, bool fHelp);
 extern Value getaddednodeinfo(const Array& params, bool fHelp);
+extern Value getnodeaddresses(const Array& params, bool fHelp);
 extern Value disconnectnode(const Array& params, bool fHelp);
 extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
@@ -3045,6 +3046,7 @@ static const CRPCCommand vRPCCommands[] =
     { "clearbanned",            &clearbanned,            true },
     { "addnode",                &addnode,                true },
     { "getaddednodeinfo",       &getaddednodeinfo,       true },
+    { "getnodeaddresses",       &getnodeaddresses,       true },
     { "disconnectnode",         &disconnectnode,         true },
     { "getdifficulty",          &getdifficulty,          true },
     { "getnetworkhashps",       &getnetworkhashps,       true },
@@ -3973,6 +3975,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
+    if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "setban"                 && n > 3) ConvertTo<bool>(params[3]);
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<int64_t>(params[1]);
