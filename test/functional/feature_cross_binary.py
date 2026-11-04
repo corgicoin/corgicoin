@@ -6,10 +6,16 @@ Run it with a second build, for example one linked against a different OpenSSL:
     python3 test/functional/feature_cross_binary.py --corgicoind build/corgicoind \\
         --alt-corgicoind /path/to/other/build/corgicoind
 
-Without --alt-corgicoind (or $CORGICOIND_ALT) the test reports SKIPPED. Use it before moving to a new
+Without --alt-corgicoind (or $CORGICOIND_ALT) the test reports SKIPPED (exit code 77, shown as SKIP by
+test_runner.py). Use it before moving to a new
 OpenSSL version: it checks that blocks and transactions signed by one build are accepted by the other,
 that a wallet.dat opens identically in both, and that an encrypted wallet unlocks with the same
 passphrase whichever build encrypted it.
+
+Known limit: across the OpenSSL 1.1 / 3.x boundary the two encrypted-wallet checks FAIL, by design. CCrypter
+derives the wallet key with a different function on each side (EVP_BytesToKey before 3.0, PBKDF2-HMAC-SHA512
+from 3.0) yet records both as derivation method 0, so those wallets really are incompatible (see
+crypter_tests.cpp). A pair of builds on the same side of that boundary passes.
 """
 import os
 

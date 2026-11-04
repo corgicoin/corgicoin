@@ -26,6 +26,7 @@ from decimal import Decimal
 
 RPC_USER = "corgitest"
 RPC_PASS = "corgitest"
+SKIP_EXIT_CODE = 77   # a test that did not run exits with this (the automake convention)
 
 
 class JSONRPCException(Exception):
@@ -246,9 +247,9 @@ class CorgiTestFramework:
         return self.options.corgicoind
 
     def skip_test(self, reason):
-        """Report a skip and exit 0 (the runner treats exit 0 as a pass)."""
+        """Report a skip. Exits with SKIP_EXIT_CODE so test_runner.py shows SKIP, not a pass."""
         print("[%s] SKIPPED: %s" % (type(self).__name__, reason), flush=True)
-        sys.exit(0)
+        sys.exit(SKIP_EXIT_CODE)
 
     def setup_nodes(self):
         for i in range(self.num_nodes):
