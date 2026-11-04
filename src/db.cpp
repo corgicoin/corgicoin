@@ -442,6 +442,16 @@ bool CTxDB::WriteHashBestChain(uint256 hashBestChain)
     return Write(string("hashBestChain"), hashBestChain);
 }
 
+bool CTxDB::ReadInvalidatedBlocks(std::vector<uint256>& vHashes)
+{
+    return Read(string("vInvalidatedBlocks"), vHashes);
+}
+
+bool CTxDB::WriteInvalidatedBlocks(const std::vector<uint256>& vHashes)
+{
+    return Write(string("vInvalidatedBlocks"), vHashes);
+}
+
 bool CTxDB::ReadBestInvalidWork(CBigNum& bnBestInvalidWork)
 {
     return Read(string("bnBestInvalidWork"), bnBestInvalidWork);
@@ -513,6 +523,15 @@ bool CTxDB::LoadBlockIndex()
 
     // Load bnBestInvalidWork, OK if it doesn't exist
     ReadBestInvalidWork(bnBestInvalidWork);
+
+    // Blocks the operator invalidated with the invalidateblock RPC, OK if none
+    std::vector<uint256> vInvalidated;
+    if (ReadInvalidatedBlocks(vInvalidated))
+        for (const uint256& hash : vInvalidated)
+            setInvalidatedBlocks.insert(hash);
+    UpdateFailedChainFlags();
+    if (!setInvalidatedBlocks.empty())
+        LogPrintf("LoadBlockIndex(): %u block(s) invalidated by the operator\n", (unsigned)setInvalidatedBlocks.size());
 
     // Verify blocks in the best chain
     int nCheckLevel = GetArg("-checklevel", 1);

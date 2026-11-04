@@ -25,6 +25,7 @@ TESTS = [
     "p2p_ping_timeout.py",
     "rpc_createauxblock.py",
     "rpc_mempool_verify.py",
+    "rpc_invalidateblock.py",
 ]
 
 

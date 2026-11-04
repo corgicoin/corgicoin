@@ -61,6 +61,8 @@ extern Value getaddednodeinfo(const Array& params, bool fHelp);
 extern Value getnodeaddresses(const Array& params, bool fHelp);
 extern Value getmempoolinfo(const Array& params, bool fHelp);
 extern Value verifychain(const Array& params, bool fHelp);
+extern Value invalidateblock(const Array& params, bool fHelp);
+extern Value reconsiderblock(const Array& params, bool fHelp);
 extern Value disconnectnode(const Array& params, bool fHelp);
 extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
@@ -2980,10 +2982,55 @@ Value getchaintips(const Array& params, bool fHelp)
         Object o;
         o.emplace_back("height", idx->nHeight);
         o.emplace_back("hash", idx->GetBlockHash().GetHex());
-        o.emplace_back("status", string(idx == pindexBest ? "active" : "valid-headers"));
+        o.emplace_back("status", string(idx->fFailedChain ? "invalid" : idx == pindexBest ? "active" : "valid-headers"));
         res.push_back(o);
     }
     return res;
+}
+
+// Look up a block by its full hash only: unlike BlockIndexFromParam, a height is not accepted,
+// because invalidating the wrong block is expensive to undo.
+static CBlockIndex* BlockIndexFromHashParam(const Value& p)
+{
+    if (p.type() != str_type || p.get_str().size() != 64)
+        throw JSONRPCError(-8, "Expected a 64-character block hash");
+    auto it = mapBlockIndex.find(uint256(p.get_str()));
+    if (it == mapBlockIndex.end())
+        throw JSONRPCError(-5, "Block not found");
+    return it->second;
+}
+
+Value invalidateblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "invalidateblock <hash>\n"
+            "Permanently marks a block, and every block built on it, as invalid. If the block is\n"
+            "in the active chain the node rolls back to its parent and will not follow a longer\n"
+            "chain through it, even after a restart. Undo with reconsiderblock.");
+
+    LOCK(cs_main);
+    CBlockIndex* pindex = BlockIndexFromHashParam(params[0]);
+    string strError;
+    if (!InvalidateBlock(pindex, strError))
+        throw JSONRPCError(-1, "invalidateblock failed: " + strError);
+    return Value::null;
+}
+
+Value reconsiderblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "reconsiderblock <hash>\n"
+            "Removes the invalid mark set by invalidateblock from a block and its ancestors and\n"
+            "descendants, then switches to the most-work valid chain.");
+
+    LOCK(cs_main);
+    CBlockIndex* pindex = BlockIndexFromHashParam(params[0]);
+    string strError;
+    if (!ReconsiderBlock(pindex, strError))
+        throw JSONRPCError(-1, "reconsiderblock failed: " + strError);
+    return Value::null;
 }
 
 Value uptime(const Array& params, bool fHelp)
@@ -3145,6 +3192,8 @@ static const CRPCCommand vRPCCommands[] =
     { "getnodeaddresses",       &getnodeaddresses,       true },
     { "getmempoolinfo",         &getmempoolinfo,         true },
     { "verifychain",            &verifychain,            true },
+    { "invalidateblock",        &invalidateblock,        true },
+    { "reconsiderblock",        &reconsiderblock,        true },
     { "disconnectnode",         &disconnectnode,         true },
     { "getdifficulty",          &getdifficulty,          true },
     { "getnetworkhashps",       &getnetworkhashps,       true },
