@@ -119,6 +119,8 @@ rpcport=62555
 ## Version History
 
 ### Unreleased
+- **Encrypted wallets from older clients unlock again**: wallet passphrase derivation method 0 is Bitcoin's `EVP_BytesToKey` (SHA-512) again on every build. Since v4.2, builds against OpenSSL 3 (all release binaries) had silently switched it to PBKDF2 while still recording method 0, so a wallet encrypted by the original CorgiCoin client, or by any build against OpenSSL 1.x, was refused with "passphrase incorrect" even with the right passphrase. Wallets encrypted by v4.2–v4.7 still unlock (both derivations are tried), and `walletpassphrasechange` (the same passphrase is fine) re-encrypts them with the standard one. Note: v4.7 and earlier cannot unlock a wallet encrypted or re-keyed by this release (found via @colneech-dev's crypter tests, #79)
+- **`dumpprivkey` on a locked wallet** now asks for the passphrase (error -13) instead of claiming the key is not known
 - **Chain recovery**: `invalidateblock <hash>` rolls the node back and makes it refuse any chain through that block (persisted across restarts); `reconsiderblock <hash>` undoes it; `getchaintips` reports such tips as `invalid` (thanks @colneech-dev, #71)
 - **Diagnostics**: `getmempoolinfo` (pool size, bytes, min relay fee) and `verifychain [checklevel] [numblocks]` (the startup block checks, run on the live node, read-only) (thanks @colneech-dev, #72)
 - **`getnodeaddresses [count]`**: addresses known to the address manager (`peers.dat`), connected or not (thanks @colneech-dev, #69)

@@ -15,13 +15,20 @@
 constexpr unsigned int WALLET_CRYPTO_KEY_SIZE = 32;
 constexpr unsigned int WALLET_CRYPTO_SALT_SIZE = 8;
 
+// Passphrase derivation methods. Only method 0 is ever written to a wallet: it is Bitcoin's EVP_BytesToKey with
+// SHA-512, which every CorgiCoin release before v4.2 (and any build against OpenSSL < 3) used.
+constexpr unsigned int WALLET_DERIVATION_BYTESTOKEY_SHA512 = 0;
+// Never stored. CorgiCoin v4.2 to v4.7 built against OpenSSL 3 derived the key with PBKDF2-HMAC-SHA512 instead but
+// still recorded method 0, so a method-0 master key may have been made with either; CWallet tries both on unlock.
+constexpr unsigned int WALLET_DERIVATION_PBKDF2_SHA512_V4 = 0x80000000;
+
 /*
 Private key encryption is done based on a CMasterKey,
 which holds a salt and random encryption key.
 
 CMasterKeys are encrypted using AES-256-CBC using a key
 derived using derivation method nDerivationMethod
-(0 == EVP_sha512()) and derivation iterations nDeriveIterations.
+(0 == EVP_BytesToKey with EVP_sha512()) and derivation iterations nDeriveIterations.
 vchOtherDerivationParameters is provided for alternative algorithms
 which may require more parameters (such as scrypt).
 
