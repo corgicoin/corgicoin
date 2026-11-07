@@ -2527,14 +2527,10 @@ Value submitblock(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "submitblock <hexdata> [optional-params-obj]
-"
-            "Attempts to submit a new block to the network. <hexdata> is the serialized block, hex-encoded
-"
-            "(with its AuxPoW proof after the header, for a merged-mined block). The second argument is
-"
-            "accepted and ignored, for compatibility with BIP 22 callers.
-"
+            "submitblock <hexdata> [optional-params-obj]\n"
+            "Attempts to submit a new block to the network. <hexdata> is the serialized block, hex-encoded\n"
+            "(with its AuxPoW proof after the header, for a merged-mined block). The second argument is\n"
+            "accepted and ignored, for compatibility with BIP 22 callers.\n"
             "Returns null if the block was accepted, \"duplicate\" if it is already known, or \"rejected\".");
 
     RPCTypeCheck(params, {str_type, obj_type});
