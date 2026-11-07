@@ -17,6 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 TESTS = [
     "feature_regtest_basics.py",
+    "feature_zmq.py",
     "wallet_send.py",
     "wallet_lockunspent.py",
     "wallet_dump.py",
