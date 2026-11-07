@@ -3569,7 +3569,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
             {
                 uint64 nonce = 0;
                 while (nonce == 0)
-                    RAND_bytes(reinterpret_cast<unsigned char*>(&nonce), sizeof(nonce));
+                    GetRandBytes(reinterpret_cast<unsigned char*>(&nonce), sizeof(nonce));
                 pto->fPingQueued = false;
                 pto->nPingNonceSent = nonce;
                 pto->nPingUsecStart = nNowMicros;

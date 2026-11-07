@@ -21,7 +21,9 @@ std::string MnemonicFromEntropy(const std::vector<unsigned char>& entropy);
 
 // Generate a fresh mnemonic with the given entropy strength in bits
 // (128 = 12 words, 256 = 24 words). Uses the library's secure RNG.
-std::string GenerateMnemonic(int nStrengthBits = 128);
+// Returns "" if the strength is invalid or the random source fails. rng defaults to the OpenSSL generator;
+// it is a parameter so tests can inject a failing one.
+std::string GenerateMnemonic(int nStrengthBits = 128, bool (*rng)(unsigned char*, int) = nullptr);
 
 // Validate a mnemonic: every word in the list and the checksum matches.
 bool CheckMnemonic(const std::string& mnemonic);

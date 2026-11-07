@@ -359,6 +359,11 @@ bool WalletModel::setHDSeed(QString &mnemonic, QString &errorOut)
     if (mn.empty())
     {
         mn = bip39::GenerateMnemonic(128);
+        if (mn.empty())
+        {
+            errorOut = "Could not generate a recovery phrase: the random number generator failed";
+            return false;
+        }
         mnemonic = QString::fromStdString(mn); // return the generated phrase
     }
     std::string err;

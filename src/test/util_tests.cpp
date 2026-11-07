@@ -316,4 +316,16 @@ BOOST_AUTO_TEST_CASE(util_ParseCommandLine)
     BOOST_CHECK_THROW(ParseCommandLine("\"unterminated"), std::runtime_error);
 }
 
+
+BOOST_AUTO_TEST_CASE(rand_bytes_checked)
+{
+    unsigned char a[32] = {0}, b[32] = {0}, zero[32] = {0};
+    BOOST_CHECK(GetRandBytesChecked(a, sizeof(a)));
+    BOOST_CHECK(GetRandBytesChecked(b, sizeof(b)));
+    BOOST_CHECK(memcmp(a, zero, sizeof(a)) != 0);
+    BOOST_CHECK(memcmp(a, b, sizeof(a)) != 0);
+    GetRandBytes(a, sizeof(a)); // must not abort while the generator works
+    BOOST_CHECK(memcmp(a, zero, sizeof(a)) != 0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
