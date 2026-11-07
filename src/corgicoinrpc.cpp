@@ -2699,18 +2699,12 @@ Value abandontransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "abandontransaction <txid>
-"
-            "Gives up on a wallet transaction that is not in a block, together with the wallet transactions that
-"
-            "spend from it: they are removed from this node's memory pool, the coins they spent become available
-"
-            "again, and the wallet stops tracking them (the record is kept so a copy relayed later is ignored).
-"
-            "Use it for a transaction that will never confirm. It cannot undo a broadcast: peers that still hold
-"
-            "the transaction can relay it back into the pool, and if it is mined after all the wallet picks it up
-"
+            "abandontransaction <txid>\n"
+            "Gives up on a wallet transaction that is not in a block, together with the wallet transactions that\n"
+            "spend from it: they are removed from this node's memory pool, the coins they spent become available\n"
+            "again, and the wallet stops tracking them (the record is kept so a copy relayed later is ignored).\n"
+            "Use it for a transaction that will never confirm. It cannot undo a broadcast: peers that still hold\n"
+            "the transaction can relay it back into the pool, and if it is mined after all the wallet picks it up\n"
             "again.");
 
     RPCTypeCheck(params, {str_type});
