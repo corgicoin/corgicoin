@@ -198,7 +198,12 @@ bool ImportPrivateKey(CWallet* pwallet, const string& strSecret, const string& s
     CKey key;
     bool fCompressed;
     CSecret secret = vchSecret.GetSecret(fCompressed);
-    key.SetSecret(secret, fCompressed);
+    try {
+        key.SetSecret(secret, fCompressed);
+    } catch (const key_error&) {
+        strError = "Invalid private key: the value is not a valid secret (zero or at least the curve order)";
+        return false;
+    }
     CKeyID keyid = key.GetPubKey().GetID();
 
     LOCK2(cs_main, pwallet->cs_wallet);

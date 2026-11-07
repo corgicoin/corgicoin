@@ -250,4 +250,27 @@ BOOST_AUTO_TEST_CASE(key_getsecret_of_a_zero_secret)
         BOOST_CHECK_EQUAL((int)c, 0);
 }
 
+BOOST_AUTO_TEST_CASE(key_secret_must_be_in_range)
+{
+    // a private key is 1 .. n-1, n being the order of the curve
+    const char* pszOrder = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141";
+    auto secretFromHex = [](const char* psz) {
+        std::vector<unsigned char> v = ParseHex(psz);
+        return CSecret(v.begin(), v.end());
+    };
+
+    CKey key;
+    BOOST_CHECK_THROW(key.SetSecret(CSecret(32, 0), true), key_error);                                                    // zero
+    BOOST_CHECK_THROW(key.SetSecret(secretFromHex(pszOrder), true), key_error);                                           // n
+    BOOST_CHECK_THROW(key.SetSecret(secretFromHex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364142"), true), key_error);   // n + 1
+    BOOST_CHECK_THROW(key.SetSecret(secretFromHex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"), true), key_error);   // 2^256 - 1
+
+    CKey low, high;
+    BOOST_CHECK(low.SetSecret(secretFromHex("0000000000000000000000000000000000000000000000000000000000000001"), true));              // 1
+    BOOST_CHECK(low.GetPubKey().Raw().size() == 33);
+    BOOST_CHECK(high.SetSecret(secretFromHex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140"), true));              // n - 1
+    BOOST_CHECK(high.GetPubKey().Raw().size() == 33);
+    BOOST_CHECK(low.GetPubKey() != high.GetPubKey());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

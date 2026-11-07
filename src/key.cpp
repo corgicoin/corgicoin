@@ -214,6 +214,20 @@ bool CKey::SetSecret(const CSecret& vchSecret, bool fCompressed)
     BIGNUM *bn = BN_bin2bn(&vchSecret[0],32,BN_new());
     if (bn == nullptr)
         throw key_error("CKey::SetSecret() : BN_bin2bn failed");
+    // A private key is a number from 1 to n-1. Zero and anything from n up are not keys (zero would be the point at
+    // infinity), however well-formed the encoding around them looks.
+    const EC_GROUP* group = EC_KEY_get0_group(pkey);
+    const BIGNUM* order = group ? EC_GROUP_get0_order(group) : nullptr;
+    if (order == nullptr)
+    {
+        BN_clear_free(bn);
+        throw key_error("CKey::SetSecret() : no curve order");
+    }
+    if (BN_is_zero(bn) || BN_cmp(bn, order) >= 0)
+    {
+        BN_clear_free(bn);
+        throw key_error("CKey::SetSecret() : secret out of range");
+    }
     if (!EC_KEY_regenerate_key(pkey,bn))
     {
         BN_clear_free(bn);
