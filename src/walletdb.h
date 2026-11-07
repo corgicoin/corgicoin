@@ -64,6 +64,19 @@ public:
         return Erase(std::make_pair(std::string("tx"), hash));
     }
 
+    // Hashes of transactions the operator abandoned. Records of an unknown type are skipped by older clients.
+    bool WriteAbandoned(uint256 hash)
+    {
+        nWalletDBUpdated++;
+        return Write(std::make_pair(std::string("abandoned"), hash), char(1));
+    }
+
+    bool EraseAbandoned(uint256 hash)
+    {
+        nWalletDBUpdated++;
+        return Erase(std::make_pair(std::string("abandoned"), hash));
+    }
+
     bool ReadKey(const CPubKey& vchPubKey, CPrivKey& vchPrivKey)
     {
         vchPrivKey.clear();

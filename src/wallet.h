@@ -96,6 +96,10 @@ public:
 
     std::set<int64> setKeyPool;
 
+    /** Transactions given up with abandontransaction: while unconfirmed they are not tracked again if a peer relays
+     *  them, and their inputs stay available. Persisted as "abandoned" records. */
+    std::set<uint256> setAbandoned;
+
 
     using MasterKeyMap = std::map<unsigned int, CMasterKey>;
     MasterKeyMap mapMasterKeys;
@@ -194,6 +198,7 @@ public:
     bool AddToWallet(const CWalletTx& wtxIn);
     bool AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pblock, bool fUpdate = false, bool fFindBlock = false);
     bool EraseFromWallet(uint256 hash);
+    bool AbandonTransaction(const uint256& hashTx, std::string& strError);
     void WalletUpdateSpent(const CTransaction& prevout);
     int ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate = false);
     int ScanForWalletTransaction(const uint256& hashTx);
@@ -496,6 +501,18 @@ public:
     {
         pwallet = pwalletIn;
         MarkDirty();
+    }
+
+    void MarkUnspent(unsigned int nOut)
+    {
+        if (nOut >= vout.size())
+            throw std::runtime_error("CWalletTx::MarkUnspent() : nOut out of range");
+        vfSpent.resize(vout.size());
+        if (vfSpent[nOut])
+        {
+            vfSpent[nOut] = false;
+            fAvailableCreditCached = false;
+        }
     }
 
     void MarkSpent(unsigned int nOut)

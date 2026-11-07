@@ -81,6 +81,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
+| `wallet_abandon.py` | `abandontransaction`: coins and balance restored, descendants abandoned with it, survives a restart, a mined copy is tracked again |
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
 | `rpc_http_auth.py` | malformed `Authorization` headers get 401 and leave the server running; a correct login still works |
