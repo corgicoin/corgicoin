@@ -13,6 +13,7 @@
 #include "ui_interface.h"
 #include "logging.h"
 #include "base58.h"
+#include "zmqnotify.h"
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
 #include <random>
@@ -629,6 +630,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     LogPrintf("CTxMemPool::accept() : accepted %s (poolsz %u)\n",
            hash.ToString().substr(0,10).c_str(),
            mapTx.size());
+    ZMQNotifyTransaction(tx);
     return true;
 }
 
@@ -1758,7 +1760,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
     // Watch for transactions paying to me
     for (CTransaction& tx : vtx)
+    {
         SyncWithWallets(tx, this, true);
+        ZMQNotifyTransaction(tx);
+    }
 
     return true;
 }
@@ -1986,6 +1991,10 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             // strMiscWarning is read by GetWarnings(), called by Qt and the JSON-RPC code to warn the user:
 	//            strMiscWarning = _("Warning: this version is obsolete, upgrade required");
     }
+
+    // the new tip is the block being added, so it is at hand for rawblock
+    if (!fIsInitialDownload)
+        ZMQNotifyBlock(*this, hashBestChain);
 
     std::string strCmd = GetArg("-blocknotify", "");
 
