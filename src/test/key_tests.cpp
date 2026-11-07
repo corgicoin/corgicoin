@@ -237,17 +237,19 @@ BOOST_AUTO_TEST_CASE(key_setpubkey_resets_the_compression_flag)
     BOOST_CHECK(compressed.GetPubKey() == uncompressed.GetPubKey());
 }
 
-BOOST_AUTO_TEST_CASE(key_getsecret_of_a_zero_secret)
+BOOST_AUTO_TEST_CASE(key_getsecret_pads_a_small_secret)
 {
-    // an all-zero secret has no significant bytes; GetSecret must still return 32 bytes without
-    // indexing one past the end of its buffer
+    // a secret with one significant byte must come back as 32 bytes, left-padded with zeros (zero itself is not a key)
     CKey key;
-    BOOST_REQUIRE(key.SetSecret(CSecret(32, 0), false));
+    CSecret one(32, 0);
+    one[31] = 1;
+    BOOST_REQUIRE(key.SetSecret(one, false));
     bool fCompr = true;
     CSecret secret = key.GetSecret(fCompr);
-    BOOST_CHECK_EQUAL(secret.size(), 32u);
-    for (unsigned char c : secret)
-        BOOST_CHECK_EQUAL((int)c, 0);
+    BOOST_REQUIRE_EQUAL(secret.size(), 32u);
+    for (int i = 0; i < 31; i++)
+        BOOST_CHECK_EQUAL((int)secret[i], 0);
+    BOOST_CHECK_EQUAL((int)secret[31], 1);
 }
 
 BOOST_AUTO_TEST_CASE(key_secret_must_be_in_range)
