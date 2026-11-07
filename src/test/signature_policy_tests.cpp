@@ -9,6 +9,8 @@
 
 using namespace std;
 
+extern uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType);
+
 BOOST_AUTO_TEST_SUITE(signature_policy_tests)
 
 namespace {
@@ -170,9 +172,9 @@ BOOST_AUTO_TEST_CASE(high_s_twin_is_valid_by_consensus_but_not_by_policy)
     BOOST_CHECK(f.Check(high, SCRIPT_VERIFY_DERSIG));                                // it is still valid DER
 }
 
-BOOST_AUTO_TEST_CASE(padded_der_is_valid_by_consensus_but_not_by_policy)
+BOOST_AUTO_TEST_CASE(padded_der_is_refused_by_the_policy_flags)
 {
-    // Re-encode R with an unneeded leading zero: OpenSSL (>= 1.1) re-encodes and accepts it, strict DER does not
+    // Re-encode R with an unneeded leading zero: not strict DER
     SpendFixture f;
     valtype sig = f.Sign();
     const unsigned int lenR = sig[3];
