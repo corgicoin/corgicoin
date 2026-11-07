@@ -170,6 +170,21 @@ void RandAddSeedPerfmon()
 #endif
 }
 
+bool GetRandBytesChecked(unsigned char* buf, int num)
+{
+    return RAND_bytes(buf, num) == 1;
+}
+
+void GetRandBytes(unsigned char* buf, int num)
+{
+    if (!GetRandBytesChecked(buf, num))
+    {
+        fprintf(stderr, "ERROR: RAND_bytes failed: the OpenSSL random number generator is unusable, aborting\n");
+        LogPrintf("ERROR: RAND_bytes failed: the OpenSSL random number generator is unusable, aborting\n");
+        std::abort();
+    }
+}
+
 uint64 GetRand(uint64 nMax)
 {
     if (nMax == 0)
@@ -180,7 +195,7 @@ uint64 GetRand(uint64 nMax)
     uint64 nRange = (std::numeric_limits<uint64>::max() / nMax) * nMax;
     uint64 nRand = 0;
     do
-        RAND_bytes(reinterpret_cast<unsigned char*>(&nRand), sizeof(nRand));
+        GetRandBytes(reinterpret_cast<unsigned char*>(&nRand), sizeof(nRand));
     while (nRand >= nRange);
     return (nRand % nMax);
 }
@@ -193,7 +208,7 @@ int GetRandInt(int nMax)
 uint256 GetRandHash()
 {
     uint256 hash;
-    RAND_bytes(reinterpret_cast<unsigned char*>(&hash), sizeof(hash));
+    GetRandBytes(reinterpret_cast<unsigned char*>(&hash), sizeof(hash));
     return hash;
 }
 
@@ -776,7 +791,7 @@ vector<unsigned char> DecodeBase64(const char* p, bool* pfInvalid)
 string DecodeBase64(const string& str)
 {
     vector<unsigned char> vchRet = DecodeBase64(str.c_str());
-    return string(reinterpret_cast<const char*>(&vchRet[0]), vchRet.size());
+    return string(reinterpret_cast<const char*>(vchRet.data()), vchRet.size());
 }
 
 string EncodeBase32(const unsigned char* pch, size_t len)
@@ -963,7 +978,7 @@ vector<unsigned char> DecodeBase32(const char* p, bool* pfInvalid)
 string DecodeBase32(const string& str)
 {
     vector<unsigned char> vchRet = DecodeBase32(str.c_str());
-    return string(reinterpret_cast<const char*>(&vchRet[0]), vchRet.size());
+    return string(reinterpret_cast<const char*>(vchRet.data()), vchRet.size());
 }
 
 

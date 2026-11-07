@@ -10,6 +10,25 @@ using namespace std;
 
 BOOST_AUTO_TEST_SUITE(util_tests)
 
+BOOST_AUTO_TEST_CASE(empty_input_hashing_and_decoding)
+{
+    // These used to index &v[0] on an empty vector (undefined behaviour; UBSan reports it)
+    uint160 h = Hash160(std::vector<unsigned char>());
+    BOOST_CHECK_EQUAL(HexStr(h.begin(), h.end()), "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb");
+    BOOST_CHECK_EQUAL(DecodeBase64(std::string()), std::string());
+    BOOST_CHECK_EQUAL(DecodeBase32(std::string()), std::string());
+}
+
+BOOST_AUTO_TEST_CASE(decoders_return_nothing_for_garbage)
+{
+    // Input that is not valid base64/base32 decodes to nothing; reading the first element of that empty
+    // result is out of range (a standard-library assertion build stops on it, a plain build does not).
+    // This is what a malformed HTTP Authorization header looks like to the RPC login check.
+    BOOST_CHECK_EQUAL(DecodeBase64(std::string("!!!!")), std::string());
+    BOOST_CHECK_EQUAL(DecodeBase64(std::string("====")), std::string());
+    BOOST_CHECK_EQUAL(DecodeBase32(std::string("!!!!")), std::string());
+}
+
 BOOST_AUTO_TEST_CASE(util_criticalsection)
 {
     CCriticalSection cs;
@@ -295,6 +314,18 @@ BOOST_AUTO_TEST_CASE(util_ParseCommandLine)
     // Malformed input throws (preserving the old parse-error path)
     BOOST_CHECK_THROW(ParseCommandLine("bad\\"), std::runtime_error);
     BOOST_CHECK_THROW(ParseCommandLine("\"unterminated"), std::runtime_error);
+}
+
+
+BOOST_AUTO_TEST_CASE(rand_bytes_checked)
+{
+    unsigned char a[32] = {0}, b[32] = {0}, zero[32] = {0};
+    BOOST_CHECK(GetRandBytesChecked(a, sizeof(a)));
+    BOOST_CHECK(GetRandBytesChecked(b, sizeof(b)));
+    BOOST_CHECK(memcmp(a, zero, sizeof(a)) != 0);
+    BOOST_CHECK(memcmp(a, b, sizeof(a)) != 0);
+    GetRandBytes(a, sizeof(a)); // must not abort while the generator works
+    BOOST_CHECK(memcmp(a, zero, sizeof(a)) != 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

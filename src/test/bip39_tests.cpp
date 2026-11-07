@@ -7,6 +7,7 @@
 #include "bip39.h"
 #include "util.h"   // ParseHex, HexStr
 
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -79,6 +80,24 @@ BOOST_AUTO_TEST_CASE(bip39_generate_roundtrip)
     // Bad strengths rejected
     BOOST_CHECK(bip39::GenerateMnemonic(100).empty());
     BOOST_CHECK(bip39::MnemonicFromEntropy(vector<unsigned char>(15, 0)).empty());
+}
+
+
+static bool FailingRng(unsigned char*, int) { return false; }
+static bool ZeroRng(unsigned char* buf, int n) { memset(buf, 0, n); return true; }
+
+BOOST_AUTO_TEST_CASE(bip39_generate_fails_closed_when_rng_fails)
+{
+    // A failing random source must never produce a phrase (it used to leave an all-zero buffer)
+    BOOST_CHECK(bip39::GenerateMnemonic(128, FailingRng).empty());
+    BOOST_CHECK(bip39::GenerateMnemonic(256, FailingRng).empty());
+
+    // Why it matters: all-zero entropy is the public BIP39 test-vector phrase, which anyone can recompute
+    BOOST_CHECK_EQUAL(bip39::GenerateMnemonic(128, ZeroRng),
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about");
+
+    // with the real generator two phrases differ
+    BOOST_CHECK(bip39::GenerateMnemonic(128) != bip39::GenerateMnemonic(128));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

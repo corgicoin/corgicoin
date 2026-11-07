@@ -12,12 +12,16 @@
 #include "util.h"
 
 #include <stdint.h>
+#include <memory>
 
 // Tests this internal-to-main.cpp method:
 extern bool AddOrphanTx(const CDataStream& vMsg);
 extern unsigned int LimitOrphanTxSize(unsigned int nMaxOrphans);
 extern std::map<uint256, CDataStream*> mapOrphanTransactions;
 extern std::map<uint256, std::map<uint256, CDataStream*> > mapOrphanTransactionsByPrev;
+// ... and the orphan-block pool
+extern std::map<uint256, std::shared_ptr<CBlock> > mapOrphanBlocks;
+extern std::multimap<uint256, std::shared_ptr<CBlock> > mapOrphanBlocksByPrev;
 
 CService ip(uint32_t i)
 {
@@ -369,6 +373,129 @@ BOOST_AUTO_TEST_CASE(DoS_checkSig)
     mapArgs.erase("-maxsigcachesize");
 
     LimitOrphanTxSize(0);
+}
+
+
+// ---- orphan blocks ----------------------------------------------------------------------------
+
+static std::shared_ptr<CBlock> MakeOrphanBlock(unsigned int nPadBytes, const uint256& hashPrev = GetRandHash())
+{
+    auto block = std::make_shared<CBlock>();
+    block->nVersion = 1;
+    block->hashPrevBlock = hashPrev;       // a parent the node does not have
+    block->nTime = 1;
+    block->nBits = 0x1f00ffff;
+    block->nNonce = (unsigned int)GetRand(0xffffffffULL);   // different hash for every block
+    CTransaction coinbase;
+    coinbase.vin.resize(1);
+    coinbase.vin[0].prevout.SetNull();
+    coinbase.vin[0].scriptSig << OP_1;
+    coinbase.vout.resize(1);
+    coinbase.vout[0].nValue = 1;
+    coinbase.vout[0].scriptPubKey << std::vector<unsigned char>(nPadBytes, 'x');
+    block->vtx.push_back(coinbase);
+    return block;
+}
+
+// both maps agree, and the running byte total equals the real total
+static void CheckOrphanBlockPool()
+{
+    BOOST_CHECK_EQUAL(mapOrphanBlocks.size(), mapOrphanBlocksByPrev.size());
+    uint64 nBytes = 0;
+    for (const auto& item : mapOrphanBlocks)
+    {
+        nBytes += ::GetSerializeSize(*item.second, SER_NETWORK, PROTOCOL_VERSION);
+        auto range = mapOrphanBlocksByPrev.equal_range(item.second->hashPrevBlock);
+        bool fFound = false;
+        for (auto mi = range.first; mi != range.second; ++mi)
+            if (mi->second == item.second)
+                fFound = true;
+        BOOST_CHECK(fFound);
+    }
+    BOOST_CHECK_EQUAL(GetOrphanBlockBytes(), nBytes);
+}
+
+BOOST_AUTO_TEST_CASE(DoS_orphan_blocks_under_the_limits_are_kept)
+{
+    LimitOrphanBlocks(0, 0);
+    for (int i = 0; i < 10; i++)
+        AddOrphanBlock(MakeOrphanBlock(50));
+    BOOST_CHECK_EQUAL(LimitOrphanBlocks(MAX_ORPHAN_BLOCKS, MAX_ORPHAN_BLOCKS_BYTES), 0u);
+    BOOST_CHECK_EQUAL(mapOrphanBlocks.size(), 10u);
+    CheckOrphanBlockPool();
+    LimitOrphanBlocks(0, 0);
+}
+
+BOOST_AUTO_TEST_CASE(DoS_orphan_blocks_count_limit)
+{
+    LimitOrphanBlocks(0, 0);
+    for (int i = 0; i < 300; i++)
+        AddOrphanBlock(MakeOrphanBlock(50));
+    BOOST_CHECK_EQUAL(LimitOrphanBlocks(100, 0xffffffffu), 200u);
+    BOOST_CHECK_EQUAL(mapOrphanBlocks.size(), 100u);
+    CheckOrphanBlockPool();
+
+    BOOST_CHECK_EQUAL(LimitOrphanBlocks(0, 0), 100u);
+    BOOST_CHECK(mapOrphanBlocks.empty());
+    BOOST_CHECK(mapOrphanBlocksByPrev.empty());
+    BOOST_CHECK_EQUAL(GetOrphanBlockBytes(), 0u);
+}
+
+BOOST_AUTO_TEST_CASE(DoS_orphan_blocks_byte_limit)
+{
+    LimitOrphanBlocks(0, 0);
+    for (int i = 0; i < 40; i++)
+        AddOrphanBlock(MakeOrphanBlock(10000));       // about 10 kB each, 400 kB in total
+    BOOST_CHECK(GetOrphanBlockBytes() > 400000);
+    LimitOrphanBlocks(1000, 100000);
+    BOOST_CHECK(GetOrphanBlockBytes() <= 100000);
+    BOOST_CHECK(mapOrphanBlocks.size() >= 5u);        // it evicts down to the limit, not to nothing
+    CheckOrphanBlockPool();
+
+    // a single block larger than the whole budget cannot be kept
+    LimitOrphanBlocks(0, 0);
+    AddOrphanBlock(MakeOrphanBlock(20000));
+    BOOST_CHECK_EQUAL(LimitOrphanBlocks(10, 1000), 1u);
+    BOOST_CHECK(mapOrphanBlocks.empty());
+    BOOST_CHECK_EQUAL(GetOrphanBlockBytes(), 0u);
+}
+
+BOOST_AUTO_TEST_CASE(DoS_orphan_blocks_a_flood_stays_bounded)
+{
+    LimitOrphanBlocks(0, 0);
+    // what ProcessBlock does for every orphan it receives: add it, then enforce the limits
+    for (int i = 0; i < 3000; i++)
+    {
+        AddOrphanBlock(MakeOrphanBlock(100));
+        LimitOrphanBlocks(MAX_ORPHAN_BLOCKS, MAX_ORPHAN_BLOCKS_BYTES);
+        BOOST_REQUIRE(mapOrphanBlocks.size() <= MAX_ORPHAN_BLOCKS);
+        BOOST_REQUIRE(GetOrphanBlockBytes() <= MAX_ORPHAN_BLOCKS_BYTES);
+    }
+    BOOST_CHECK_EQUAL(mapOrphanBlocks.size(), (size_t)MAX_ORPHAN_BLOCKS);
+    CheckOrphanBlockPool();
+    LimitOrphanBlocks(0, 0);
+}
+
+BOOST_AUTO_TEST_CASE(DoS_orphan_blocks_taken_when_the_parent_arrives)
+{
+    LimitOrphanBlocks(0, 0);
+    uint256 hashParent = GetRandHash();
+    for (int i = 0; i < 3; i++)
+        AddOrphanBlock(MakeOrphanBlock(200, hashParent));   // three children of the same missing parent
+    for (int i = 0; i < 5; i++)
+        AddOrphanBlock(MakeOrphanBlock(200));                // unrelated orphans
+    BOOST_CHECK_EQUAL(mapOrphanBlocks.size(), 8u);
+
+    auto vTaken = TakeOrphanBlocksByPrev(hashParent);
+    BOOST_CHECK_EQUAL(vTaken.size(), 3u);
+    for (const auto& pblock : vTaken)
+        BOOST_CHECK(pblock->hashPrevBlock == hashParent);
+    BOOST_CHECK_EQUAL(mapOrphanBlocks.size(), 5u);
+    CheckOrphanBlockPool();                                  // byte total still exact
+
+    BOOST_CHECK(TakeOrphanBlocksByPrev(hashParent).empty()); // nothing left for that parent
+    LimitOrphanBlocks(0, 0);
+    BOOST_CHECK_EQUAL(GetOrphanBlockBytes(), 0u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

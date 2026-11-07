@@ -50,6 +50,7 @@ CMedianFilter<int> cPeerBlockCounts(5, 0); // Amount of blocks that other nodes 
 
 map<uint256, std::shared_ptr<CBlock>> mapOrphanBlocks;
 multimap<uint256, std::shared_ptr<CBlock>> mapOrphanBlocksByPrev;
+static uint64 nOrphanBlockBytes = 0;  // serialized size of everything in mapOrphanBlocks
 
 map<uint256, std::shared_ptr<CDataStream>> mapOrphanTransactions;
 map<uint256, map<uint256, std::shared_ptr<CDataStream>>> mapOrphanTransactionsByPrev;
@@ -836,6 +837,72 @@ uint256 static GetOrphanRoot(std::shared_ptr<const CBlock> pblock)
     while (mapOrphanBlocks.count(pblock->hashPrevBlock))
         pblock = mapOrphanBlocks[pblock->hashPrevBlock];
     return pblock->GetHash();
+}
+
+static unsigned int OrphanBlockSize(const CBlock& block)
+{
+    return ::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION);
+}
+
+void AddOrphanBlock(const std::shared_ptr<CBlock>& pblock)
+{
+    if (!mapOrphanBlocks.insert({pblock->GetHash(), pblock}).second)
+        return;
+    mapOrphanBlocksByPrev.insert({pblock->hashPrevBlock, pblock});
+    nOrphanBlockBytes += OrphanBlockSize(*pblock);
+}
+
+uint64 GetOrphanBlockBytes()
+{
+    return nOrphanBlockBytes;
+}
+
+// Remove and return every orphan that was waiting for hashPrev (its parent has now arrived).
+std::vector<std::shared_ptr<CBlock> > TakeOrphanBlocksByPrev(const uint256& hashPrev)
+{
+    std::vector<std::shared_ptr<CBlock> > vTaken;
+    auto range = mapOrphanBlocksByPrev.equal_range(hashPrev);
+    for (auto mi = range.first; mi != range.second; ++mi)
+    {
+        if (mapOrphanBlocks.erase(mi->second->GetHash()))
+            nOrphanBlockBytes -= OrphanBlockSize(*mi->second);
+        vTaken.push_back(mi->second);
+    }
+    mapOrphanBlocksByPrev.erase(range.first, range.second);
+    return vTaken;
+}
+
+// Keep the orphan-block pool bounded by evicting random orphans until both limits hold.
+//
+// An orphan arrives before its parent is known, so its proof of work can only be compared with the
+// network minimum, not with the difficulty that is actually required at its height. ProcessBlock's
+// extra check against the last checkpoint does not narrow that when the only checkpoint is the
+// genesis block. Without a cap, a peer could therefore fill the node's memory with blocks that only
+// meet the minimum difficulty.
+unsigned int LimitOrphanBlocks(unsigned int nMaxBlocks, unsigned int nMaxBytes)
+{
+    unsigned int nEvicted = 0;
+    while (!mapOrphanBlocks.empty() && (mapOrphanBlocks.size() > nMaxBlocks || nOrphanBlockBytes > nMaxBytes))
+    {
+        // Evict a random orphan
+        auto it = mapOrphanBlocks.lower_bound(GetRandHash());
+        if (it == mapOrphanBlocks.end())
+            it = mapOrphanBlocks.begin();
+        std::shared_ptr<CBlock> pblock = it->second;
+        auto range = mapOrphanBlocksByPrev.equal_range(pblock->hashPrevBlock);
+        for (auto mi = range.first; mi != range.second; ++mi)
+        {
+            if (mi->second == pblock)
+            {
+                mapOrphanBlocksByPrev.erase(mi);
+                break;
+            }
+        }
+        nOrphanBlockBytes -= OrphanBlockSize(*pblock);
+        mapOrphanBlocks.erase(it);
+        nEvicted++;
+    }
+    return nEvicted;
 }
 
 
@@ -2056,8 +2123,32 @@ bool InvalidateBlock(CBlockIndex* pindex, string& strError)
         uiInterface.NotifyBlocksChanged();
     }
 
-    // Another branch with more work than the new tip may already be known
-    return ActivateBestValidChain(strError);
+    // Another branch with more work than the new tip may already be known. If
+    // switching to it fails (it may have failed validation before; this
+    // codebase keeps no per-block invalid flag), the rollback above still
+    // stands and the node stays on a valid tip, so report success.
+    string strSwitchError;
+    if (!ActivateBestValidChain(strSwitchError))
+        LogPrintf("InvalidateBlock: staying on the rolled-back tip: %s\n", strSwitchError.c_str());
+    return true;
+}
+
+bool RecoverInvalidatedTip()
+{
+    // InvalidateBlock persists its marker before rolling back. If the node
+    // stopped in between, it restarts on a tip inside an invalidated chain:
+    // finish the rollback from the lowest invalidated block on that chain.
+    if (!pindexBest || !pindexBest->fFailedChain)
+        return true;
+    CBlockIndex* pindexInvalid = pindexBest;
+    while (pindexInvalid->pprev && pindexInvalid->pprev->fFailedChain)
+        pindexInvalid = pindexInvalid->pprev;
+    LogPrintf("RecoverInvalidatedTip: best chain contains invalidated block %s, rolling back\n",
+      pindexInvalid->GetBlockHash().ToString().substr(0,20).c_str());
+    string strError;
+    if (!InvalidateBlock(pindexInvalid, strError))
+        return LogError("RecoverInvalidatedTip() : %s", strError.c_str());
+    return true;
 }
 
 bool ReconsiderBlock(CBlockIndex* pindex, string& strError)
@@ -2298,8 +2389,10 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     {
         LogPrintf("ProcessBlock: ORPHAN BLOCK, prev=%s\n", pblock->hashPrevBlock.ToString().substr(0,20).c_str());
         auto pblock2 = std::make_shared<CBlock>(*pblock);
-        mapOrphanBlocks.insert({hash, pblock2});
-        mapOrphanBlocksByPrev.insert({pblock2->hashPrevBlock, pblock2});
+        AddOrphanBlock(pblock2);
+        unsigned int nEvicted = LimitOrphanBlocks(MAX_ORPHAN_BLOCKS, MAX_ORPHAN_BLOCKS_BYTES);
+        if (nEvicted)
+            LogPrintf("ProcessBlock: evicted %u orphan block(s) to stay within the orphan limits\n", nEvicted);
 
         // Ask this guy to fill in what we're missing
         if (pfrom)
@@ -2317,16 +2410,13 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     for (unsigned int i = 0; i < vWorkQueue.size(); i++)
     {
         uint256 hashPrev = vWorkQueue[i];
-        for (auto mi = mapOrphanBlocksByPrev.lower_bound(hashPrev);
-             mi != mapOrphanBlocksByPrev.upper_bound(hashPrev);
-             ++mi)
+        // Take the orphans that were waiting for this block out of the pool first, so the pool's
+        // size accounting lives in one place
+        for (const auto& pblockOrphan : TakeOrphanBlocksByPrev(hashPrev))
         {
-            auto pblockOrphan = (*mi).second;
             if (pblockOrphan->AcceptBlock())
                 vWorkQueue.push_back(pblockOrphan->GetHash());
-            mapOrphanBlocks.erase(pblockOrphan->GetHash());  // shared_ptr automatically deletes
         }
-        mapOrphanBlocksByPrev.erase(hashPrev);
     }
 
     LogPrintf("ProcessBlock: ACCEPTED\n");
@@ -3545,7 +3635,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
             {
                 uint64 nonce = 0;
                 while (nonce == 0)
-                    RAND_bytes(reinterpret_cast<unsigned char*>(&nonce), sizeof(nonce));
+                    GetRandBytes(reinterpret_cast<unsigned char*>(&nonce), sizeof(nonce));
                 pto->fPingQueued = false;
                 pto->nPingNonceSent = nonce;
                 pto->nPingUsecStart = nNowMicros;

@@ -125,4 +125,46 @@ BOOST_AUTO_TEST_CASE(unlock_rejects_unknown_stored_method)
     BOOST_CHECK(wallet.IsLocked());
 }
 
+// What a v4.5-v4.7 HD wallet looked like after encryptwallet: plaintext "key" records (which load first) next to
+// encrypted ones. Loading used to fail with "LoadCryptedKey failed"; now the plaintext keys are recognised while
+// locked and encrypted on unlock.
+BOOST_AUTO_TEST_CASE(leftover_plaintext_keys_load_and_are_encrypted_on_unlock)
+{
+    TestCryptoWallet source("passphrase", WALLET_DERIVATION_BYTESTOKEY_SHA512);
+    // the encrypted record of source's key, as it sits in wallet.dat
+    bool fCompressed = false;
+    CSecret secret = source.key.GetSecret(fCompressed);
+    vector<unsigned char> vchCrypted;
+    BOOST_REQUIRE(EncryptSecret(source.vMasterKeyPlain, secret, source.key.GetPubKey().GetHash(), vchCrypted));
+
+    CKey stray;
+    stray.MakeNewKey(true);
+    const CKeyID strayID = stray.GetPubKey().GetID();
+
+    CWallet wallet;
+    BOOST_REQUIRE(wallet.LoadKey(stray));                                  // "key" sorts before "ckey"
+    BOOST_REQUIRE(wallet.LoadCryptedKey(source.key.GetPubKey(), vchCrypted));   // used to fail here
+    wallet.mapMasterKeys = source.mapMasterKeys;
+    BOOST_CHECK(wallet.IsCrypted());
+    BOOST_CHECK(wallet.IsLocked());
+
+    // recognised while locked (so balances and IsMine are right), but not usable
+    BOOST_CHECK(wallet.HaveKey(strayID));
+    CPubKey pub;
+    BOOST_CHECK(wallet.GetPubKey(strayID, pub) && pub == stray.GetPubKey());
+    std::set<CKeyID> ids;
+    wallet.GetKeys(ids);
+    BOOST_CHECK(ids.count(strayID) && ids.count(source.key.GetPubKey().GetID()));
+    CKey out;
+    BOOST_CHECK(!wallet.GetKey(strayID, out));
+
+    BOOST_REQUIRE(wallet.Unlock("passphrase"));
+    BOOST_CHECK(wallet.mapUnencryptedKeys.empty());                        // now an ordinary encrypted key
+    BOOST_CHECK(wallet.GetKey(strayID, out) && out.GetPubKey() == stray.GetPubKey() && out.IsCompressed());
+
+    BOOST_REQUIRE(wallet.Lock());
+    BOOST_CHECK(wallet.HaveKey(strayID));
+    BOOST_CHECK(!wallet.GetKey(strayID, out));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

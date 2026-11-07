@@ -36,6 +36,9 @@ constexpr unsigned int MAX_BLOCK_SIZE = 1000000;
 constexpr unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
 constexpr unsigned int MAX_BLOCK_SIGOPS = MAX_BLOCK_SIZE/50;
 constexpr unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
+// Orphan blocks (parent not yet known) are held in memory. Cap how many, and how many bytes in total.
+constexpr unsigned int MAX_ORPHAN_BLOCKS = 750;
+constexpr unsigned int MAX_ORPHAN_BLOCKS_BYTES = 32 * MAX_BLOCK_SIZE;
 constexpr int64 MIN_TX_FEE = 100000000;
 constexpr int64 MIN_RELAY_TX_FEE = MIN_TX_FEE;
 constexpr int64 MAX_MONEY = 10000000000 * COIN;
@@ -93,9 +96,15 @@ void RegisterWallet(CWallet* pwalletIn);
 void UnregisterWallet(CWallet* pwalletIn);
 void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = nullptr, bool fUpdate = false);
 bool ProcessBlock(CNode* pfrom, CBlock* pblock);
+void AddOrphanBlock(const std::shared_ptr<CBlock>& pblock);
+unsigned int LimitOrphanBlocks(unsigned int nMaxBlocks, unsigned int nMaxBytes);
+uint64 GetOrphanBlockBytes();
+std::vector<std::shared_ptr<CBlock> > TakeOrphanBlocksByPrev(const uint256& hashPrev);
 void UpdateFailedChainFlags();
 bool InvalidateBlock(CBlockIndex* pindex, std::string& strError);
 bool ReconsiderBlock(CBlockIndex* pindex, std::string& strError);
+/** Finish an invalidateblock rollback interrupted by a shutdown (called after LoadBlockIndex). */
+bool RecoverInvalidatedTip();
 bool CheckDiskSpace(uint64 nAdditionalBytes=0);
 FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
 FILE* AppendBlockFile(unsigned int& nFileRet);

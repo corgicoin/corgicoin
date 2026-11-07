@@ -175,6 +175,105 @@ bool CWallet::AddKey(const CKey& key)
     return true;
 }
 
+bool CWallet::LoadKey(const CKey& key)
+{
+    LOCK(cs_KeyStore);
+    if (!IsCrypted())
+        return CCryptoKeyStore::AddKey(key);
+    // a plaintext key in an encrypted wallet: keep it aside until the next unlock
+    bool fCompressed = false;
+    CSecret vchSecret = key.GetSecret(fCompressed);
+    CPubKey vchPubKey = key.GetPubKey();
+    mapUnencryptedKeys[vchPubKey.GetID()] = {vchPubKey, vchSecret, fCompressed};
+    return true;
+}
+
+bool CWallet::LoadCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret)
+{
+    SetMinVersion(WalletFeature::FEATURE_WALLETCRYPT);
+    LOCK(cs_KeyStore);
+    if (!IsCrypted() && !mapKeys.empty())
+    {
+        // Plaintext keys were loaded before the first encrypted one (the "key" records sort first). Normal
+        // encryption never leaves any; see mapUnencryptedKeys.
+        for (const auto& [keyID, secret] : mapKeys)
+        {
+            CKey key;
+            if (!key.SetSecret(secret.first, secret.second))
+                return false;
+            mapUnencryptedKeys[keyID] = {key.GetPubKey(), secret.first, secret.second};
+        }
+        mapKeys.clear();
+        LogPrintf("Wallet: %u plaintext key(s) found next to encrypted ones; they will be encrypted on the next unlock\n",
+                  (unsigned int)mapUnencryptedKeys.size());
+    }
+    return CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret);
+}
+
+void CWallet::EncryptLeftoverPlaintextKeys()
+{
+    std::map<CKeyID, UnencryptedKey> mapPending;
+    {
+        LOCK(cs_KeyStore);
+        if (mapUnencryptedKeys.empty() || !IsCrypted() || IsLocked())
+            return;
+        mapPending.swap(mapUnencryptedKeys);
+    }
+    unsigned int nDone = 0;
+    for (const auto& [keyID, item] : mapPending)
+    {
+        CKey key;
+        // AddKey encrypts the key, and WriteCryptedKey erases its plaintext "key" record
+        if (key.SetSecret(item.vchSecret, item.fCompressed) && key.GetPubKey() == item.vchPubKey && AddKey(key))
+        {
+            nDone++;
+            continue;
+        }
+        LOCK(cs_KeyStore);
+        mapUnencryptedKeys[keyID] = item;   // keep it usable and try again on the next unlock
+    }
+    LogPrintf("Wallet: encrypted %u leftover plaintext key(s) and erased their plaintext records (%u failed)\n",
+              nDone, (unsigned int)(mapPending.size() - nDone));
+}
+
+bool CWallet::HaveKey(const CKeyID &address) const
+{
+    LOCK(cs_KeyStore);
+    return CCryptoKeyStore::HaveKey(address) || mapUnencryptedKeys.count(address) > 0;
+}
+
+bool CWallet::GetKey(const CKeyID &address, CKey& keyOut) const
+{
+    LOCK(cs_KeyStore);
+    if (CCryptoKeyStore::GetKey(address, keyOut))
+        return true;
+    // only while unlocked, like every other key in an encrypted wallet
+    auto mi = mapUnencryptedKeys.find(address);
+    if (mi == mapUnencryptedKeys.end() || IsLocked())
+        return false;
+    return keyOut.SetSecret(mi->second.vchSecret, mi->second.fCompressed);
+}
+
+bool CWallet::GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const
+{
+    LOCK(cs_KeyStore);
+    if (CCryptoKeyStore::GetPubKey(address, vchPubKeyOut))
+        return true;
+    auto mi = mapUnencryptedKeys.find(address);
+    if (mi == mapUnencryptedKeys.end())
+        return false;
+    vchPubKeyOut = mi->second.vchPubKey;
+    return true;
+}
+
+void CWallet::GetKeys(std::set<CKeyID> &setAddress) const
+{
+    LOCK(cs_KeyStore);
+    CCryptoKeyStore::GetKeys(setAddress);
+    for (const auto& item : mapUnencryptedKeys)
+        setAddress.insert(item.first);
+}
+
 bool CWallet::AddCryptedKey(const CPubKey &vchPubKey, const vector<unsigned char> &vchCryptedSecret)
 {
     if (!CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret))
@@ -221,6 +320,7 @@ bool CWallet::UnlockWithMasterKey(const SecureString& strWalletPassphrase, const
             continue;
         if (CCryptoKeyStore::Unlock(vMasterKeyOut))
         {
+            EncryptLeftoverPlaintextKeys();
             if (nMethod == WALLET_DERIVATION_PBKDF2_SHA512_V4)
                 LogPrintf("Wallet unlocked with the v4.2-v4.7 PBKDF2 passphrase derivation; changing the passphrase "
                           "(it may be the same one) re-encrypts it with the standard derivation\n");
@@ -371,13 +471,21 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     RandAddSeedPerfmon();
 
     vMasterKey.resize(WALLET_CRYPTO_KEY_SIZE);
-    RAND_bytes(&vMasterKey[0], WALLET_CRYPTO_KEY_SIZE);
+    if (!GetRandBytesChecked(&vMasterKey[0], WALLET_CRYPTO_KEY_SIZE))
+    {
+        LogPrintf("EncryptWallet() : could not generate a random master key\n");
+        return false;
+    }
 
     CMasterKey kMasterKey;
 
     RandAddSeedPerfmon();
     kMasterKey.vchSalt.resize(WALLET_CRYPTO_SALT_SIZE);
-    RAND_bytes(&kMasterKey.vchSalt[0], WALLET_CRYPTO_SALT_SIZE);
+    if (!GetRandBytesChecked(&kMasterKey.vchSalt[0], WALLET_CRYPTO_SALT_SIZE))
+    {
+        LogPrintf("EncryptWallet() : could not generate a random salt\n");
+        return false;
+    }
 
     CCrypter crypter;
     int64 nStartTime = GetTimeMillis();

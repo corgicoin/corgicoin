@@ -2523,29 +2523,23 @@ Value getblocktemplate(const Array& params, bool fHelp)
     throw JSONRPCError(-8, "Invalid mode");
 }
 
-// Pending aux blocks handed out by createauxblock, keyed by block hash.
-// Cleared whenever the chain tip moves. See doc/auxpow-spec.md.
+// Pending aux blocks handed out by createauxblock/getauxblock, keyed by block
+// hash. Cleared whenever the chain tip moves. See doc/auxpow-spec.md.
+// (The RPC dispatcher holds cs_main and cs_wallet around every call.)
 static std::map<uint256, CBlock*> mapAuxBlocks;
 static std::vector<CBlock*> vAuxBlocks;
 static CBlockIndex* pindexPrevAux = nullptr;
 
-Value createauxblock(const Array& params, bool fHelp)
+// Build a merged-mining block paying scriptPubKey and return its work.
+static Object AuxMiningCreateBlock(const CScript& scriptPubKey)
 {
-    if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "createauxblock <paytoaddress>\n"
-            "Create a new block for merged mining and return its target.\n"
-            "The caller commits the returned 'hash' in its parent-chain\n"
-            "coinbase, then returns the proof via submitauxblock.");
-
-    if (vNodes.empty())
+    // Regtest mines without peers, like generate
+    if (vNodes.empty() && !fRegTest)
         throw JSONRPCError(-9, "CorgiCoin is not connected!");
-    if (IsInitialBlockDownload())
+    if (IsInitialBlockDownload() && !fRegTest)
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
-
-    CBitcoinAddress address(params[0].get_str());
-    if (!address.IsValid())
-        throw JSONRPCError(-5, "Invalid CorgiCoin address");
+    if (pindexBest->nHeight + 1 < GetAuxPowForkHeight())
+        throw JSONRPCError(-1, strprintf("Merged mining is not active until block %d", GetAuxPowForkHeight()));
 
     static CReserveKey reservekey(pwalletMain.get());
 
@@ -2571,9 +2565,9 @@ Value createauxblock(const Array& params, bool fHelp)
     static unsigned int nExtraNonceAux = 0;
     IncrementExtraNonce(pblock, pindexBest, nExtraNonceAux);
 
-    // Pay the coinbase to the requested address and flag the block for AuxPoW
+    // Pay the coinbase to the requested script and flag the block for AuxPoW
     // (chain ID + AuxPoW bit) so the committed hash matches the final block.
-    pblock->vtx[0].vout[0].scriptPubKey.SetDestination(address.Get());
+    pblock->vtx[0].vout[0].scriptPubKey = scriptPubKey;
     pblock->nVersion = MakeVersion(CBlock::CURRENT_VERSION, AUXPOW_CHAIN_ID, true);
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
@@ -2592,8 +2586,70 @@ Value createauxblock(const Array& params, bool fHelp)
     result.emplace_back("coinbasevalue", (int64_t)pblock->vtx[0].vout[0].nValue);
     result.emplace_back("bits", strprintf("%08x", pblock->nBits));
     result.emplace_back("height", (int)(pindexBest->nHeight + 1));
+    // Pools read either: "target" in display (big-endian) order as newer
+    // Namecoin returns it, "_target" little-endian as Dogecoin/older Namecoin do
+    result.emplace_back("target", hashTarget.GetHex());
     result.emplace_back("_target", HexStr(BEGIN(hashTarget), END(hashTarget)));
     return result;
+}
+
+// Attach a solved AuxPoW to a pending block and submit it. reservekey is kept
+// (removed from the keypool) if the block is accepted.
+static bool AuxMiningSubmitBlock(const string& strHash, const string& strAuxPow, CReserveKey& reservekey)
+{
+    if (!IsHex(strHash) || strHash.size() != 64)
+        throw JSONRPCError(-8, "block hash must be 64 hex characters");
+    uint256 hash;
+    hash.SetHex(strHash);
+
+    auto it = mapAuxBlocks.find(hash);
+    if (it == mapAuxBlocks.end())
+        throw JSONRPCError(-8, "block hash unknown (expired or never created)");
+    CBlock* pblock = it->second;
+
+    if (!IsHex(strAuxPow))
+        throw JSONRPCError(-22, "AuxPoW decode failed");
+    std::vector<unsigned char> vchAuxPow = ParseHex(strAuxPow);
+    CDataStream ss(vchAuxPow, SER_NETWORK, PROTOCOL_VERSION);
+    auto auxpow = std::make_shared<CAuxPow>();
+    try {
+        ss >> *auxpow;
+    } catch (std::exception& e) {
+        throw JSONRPCError(-22, "AuxPoW decode failed");
+    }
+    if (!ss.empty())
+        throw JSONRPCError(-22, "AuxPoW decode failed: trailing data");
+    pblock->auxpow = auxpow;
+
+    bool fAccepted = CheckWork(pblock, *pwalletMain, reservekey);
+    if (fAccepted)
+    {
+        // Block was consumed by the chain; drop it from the pending set
+        mapAuxBlocks.erase(it);
+        vAuxBlocks.erase(std::remove(vAuxBlocks.begin(), vAuxBlocks.end(), pblock), vAuxBlocks.end());
+        delete pblock;
+    }
+    else
+        pblock->auxpow.reset();  // a later, valid proof for the same block can still be submitted
+    return fAccepted;
+}
+
+Value createauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "createauxblock <paytoaddress>\n"
+            "Create a new block for merged mining and return its target.\n"
+            "The caller commits the returned 'hash' in its parent-chain\n"
+            "coinbase, then returns the proof via submitauxblock.");
+
+    CBitcoinAddress address(params[0].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(-5, "Invalid CorgiCoin address");
+
+    CScript scriptPubKey;
+    scriptPubKey.SetDestination(address.Get());
+    return AuxMiningCreateBlock(scriptPubKey);
 }
 
 Value submitauxblock(const Array& params, bool fHelp)
@@ -2603,35 +2659,39 @@ Value submitauxblock(const Array& params, bool fHelp)
             "submitauxblock <hash> <auxpow>\n"
             "Submit a solved AuxPoW for a block from createauxblock.\n"
             "<hash> is the block hash returned by createauxblock; <auxpow>\n"
-            "is the serialized CAuxPow proof as a hex string.");
+            "is the serialized CAuxPow proof as a hex string.\n"
+            "Returns true if the block was accepted.");
 
-    uint256 hash;
-    hash.SetHex(params[0].get_str());
-
-    auto it = mapAuxBlocks.find(hash);
-    if (it == mapAuxBlocks.end())
-        throw JSONRPCError(-8, "block hash unknown (expired or never created)");
-    CBlock* pblock = it->second;
-
-    std::vector<unsigned char> vchAuxPow = ParseHex(params[1].get_str());
-    CDataStream ss(vchAuxPow, SER_NETWORK, PROTOCOL_VERSION);
-    auto auxpow = std::make_shared<CAuxPow>();
-    try {
-        ss >> *auxpow;
-    } catch (std::exception& e) {
-        throw JSONRPCError(-22, "AuxPoW decode failed");
-    }
-    pblock->auxpow = auxpow;
-
+    // The coinbase pays the address given to createauxblock, so no wallet
+    // key is consumed here
     static CReserveKey reservekey(pwalletMain.get());
-    bool fAccepted = CheckWork(pblock, *pwalletMain, reservekey);
-    if (fAccepted)
+    return AuxMiningSubmitBlock(params[0].get_str(), params[1].get_str(), reservekey);
+}
+
+// Namecoin/Dogecoin-compatible single-call interface used by many pool stacks.
+// With no arguments it returns work paying a key from this wallet's keypool;
+// with <hash> <auxpow> it submits a solution, like submitauxblock.
+Value getauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || (params.size() != 0 && params.size() != 2))
+        throw runtime_error(
+            "getauxblock [<hash> <auxpow>]\n"
+            "Without arguments: create a merged-mining block paying to a new\n"
+            "wallet key and return its work (same fields as createauxblock).\n"
+            "With <hash> and <auxpow>: submit the solved AuxPoW for that block;\n"
+            "returns true if it was accepted.");
+
+    // One keypool key is reserved for getauxblock work at a time and only
+    // removed from the pool when a block paying it is accepted.
+    static CReserveKey reservekey(pwalletMain.get());
+
+    if (params.size() == 0)
     {
-        // Block was consumed by the chain; drop it from the pending set
-        mapAuxBlocks.erase(it);
-        vAuxBlocks.erase(std::remove(vAuxBlocks.begin(), vAuxBlocks.end(), pblock), vAuxBlocks.end());
+        CScript scriptPubKey;
+        scriptPubKey.SetDestination(reservekey.GetReservedKey().GetID());
+        return AuxMiningCreateBlock(scriptPubKey);
     }
-    return fAccepted;
+    return AuxMiningSubmitBlock(params[0].get_str(), params[1].get_str(), reservekey);
 }
 
 Value getrawmempool(const Array& params, bool fHelp)
@@ -2944,6 +3004,8 @@ Value sethdseed(const Array& params, bool fHelp)
     std::string mnemonic = (params.size() == 1)
         ? params[0].get_str()
         : bip39::GenerateMnemonic(128);
+    if (params.size() == 0 && mnemonic.empty())
+        throw JSONRPCError(-4, "Could not generate a recovery phrase: the random number generator failed");
 
     std::string strError;
     if (!pwalletMain->SetHDSeedFromMnemonic(mnemonic, strError))
@@ -3253,6 +3315,7 @@ static const CRPCCommand vRPCCommands[] =
     { "uptime",                 &uptime,                 true },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
+    { "getauxblock",            &getauxblock,            true },
     { "listsinceblock",         &listsinceblock,         false },
     { "dumpprivkey",            &dumpprivkey,            false },
     { "importprivkey",          &importprivkey,          false },
@@ -3728,7 +3791,7 @@ void ThreadRPCServer2(void* parg)
     if (mapArgs["-rpcpassword"] == "")
     {
         unsigned char rand_pwd[32];
-        RAND_bytes(rand_pwd, 32);
+        GetRandBytes(rand_pwd, 32);
         string strWhatAmI = "To use corgicoind";
         if (mapArgs.count("-server"))
             strWhatAmI = strprintf(_("To use the %s option"), "\"-server\"");

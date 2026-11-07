@@ -440,4 +440,26 @@ BOOST_AUTO_TEST_CASE(script_combineSigs)
     BOOST_CHECK(combined == partial3c);
 }
 
+
+BOOST_AUTO_TEST_CASE(script_hash_of_empty_item)
+{
+    // (empty item -- hash): the hash opcodes used to index &v[0] on the empty vector
+    struct { opcodetype op; const char* hex; } cases[] = {
+        { OP_RIPEMD160, "9c1185a5c5e9fc54612808977ee8f548b2258d31" },
+        { OP_SHA1,      "da39a3ee5e6b4b0d3255bfef95601890afd80709" },
+        { OP_SHA256,    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+        { OP_HASH160,   "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb" },
+        { OP_HASH256,   "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456" },
+    };
+    for (const auto& c : cases)
+    {
+        std::vector<std::vector<unsigned char> > stack;
+        CScript script;
+        script << OP_0 << c.op;
+        BOOST_CHECK(EvalScript(stack, script, CTransaction(), 0, 0));
+        BOOST_REQUIRE_EQUAL(stack.size(), 1u);
+        BOOST_CHECK_EQUAL(HexStr(stack[0].begin(), stack[0].end()), std::string(c.hex));
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

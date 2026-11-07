@@ -25,8 +25,12 @@ TESTS = [
     "p2p_network_rpcs.py",
     "p2p_ping_timeout.py",
     "rpc_createauxblock.py",
+    "feature_auxpow.py",
     "rpc_mempool_verify.py",
     "rpc_invalidateblock.py",
+    "wallet_hd_encryption.py",
+    "rpc_http_auth.py",
+    "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 
 
@@ -39,7 +43,7 @@ def run(name, binary):
 
 def main():
     sys.path.insert(0, HERE)
-    from test_framework import default_binary
+    from test_framework import SKIP_EXIT_CODE, default_binary
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("tests", nargs="*", help="test scripts to run (default: all)")
     p.add_argument("--corgicoind", default=os.environ.get("CORGICOIND", default_binary()))
@@ -53,14 +57,20 @@ def main():
 
     print("Running %d functional tests against %s" % (len(tests), binary), flush=True)
     failed = []
+    skipped = []
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         for name, rc, secs, out in pool.map(lambda t: run(t, binary), tests):
-            status = "PASS" if rc == 0 else "FAIL"
+            if rc == SKIP_EXIT_CODE:
+                status = "SKIP"
+                skipped.append(name)
+            else:
+                status = "PASS" if rc == 0 else "FAIL"
             print("  %-28s %s  %5.1fs" % (name, status, secs), flush=True)
-            if rc != 0:
+            if rc not in (0, SKIP_EXIT_CODE):
                 failed.append(name)
                 print("\n".join("      " + line for line in out.rstrip().splitlines()), flush=True)
-    print("%d/%d passed" % (len(tests) - len(failed), len(tests)))
+    print("%d/%d passed%s" % (len(tests) - len(failed) - len(skipped), len(tests),
+                           (", %d skipped" % len(skipped)) if skipped else ""))
     sys.exit(1 if failed else 0)
 
 
