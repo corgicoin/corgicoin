@@ -89,3 +89,4 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `feature_auxpow.py` | merged mining as pools do it: multi-chain proofs, legacy commitment, one rejection per AuxPoW rule (checked against its exact error), stale work, pre-fork guard, `getauxblock`. Proofs come from `auxpow_builder.py` |
 | `rpc_mempool_verify.py` | `getmempoolinfo`; `verifychain` on a healthy chain and over a deliberately corrupted block |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
+| `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |

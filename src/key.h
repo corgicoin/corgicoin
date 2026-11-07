@@ -115,8 +115,8 @@ class CKey
 {
 protected:
     EC_KEY* pkey;
-    bool fSet;
-    bool fCompressedPubKey;
+    bool fSet = false;
+    bool fCompressedPubKey = false;
 
     void SetCompressedPubKey();
 

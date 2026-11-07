@@ -28,6 +28,7 @@ TESTS = [
     "feature_auxpow.py",
     "rpc_mempool_verify.py",
     "rpc_invalidateblock.py",
+    "wallet_hd_encryption.py",
 ]
 
 
