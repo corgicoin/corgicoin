@@ -26,6 +26,7 @@ from decimal import Decimal
 
 RPC_USER = "corgitest"
 RPC_PASS = "corgitest"
+SKIP_EXIT_CODE = 77   # a test that did not run exits with this (the automake convention)
 
 
 class JSONRPCException(Exception):
@@ -193,6 +194,9 @@ class CorgiTestFramework:
         p = argparse.ArgumentParser(description=self.__doc__)
         p.add_argument("--corgicoind", default=os.environ.get("CORGICOIND", default_binary()),
                        help="path to corgicoind (default: $CORGICOIND or build*/corgicoind)")
+        p.add_argument("--alt-corgicoind", default=os.environ.get("CORGICOIND_ALT"),
+                       help="a second corgicoind build (e.g. against a different OpenSSL) for cross-binary tests "
+                            "(default: $CORGICOIND_ALT)")
         p.add_argument("--tmpdir", help="directory for node datadirs (default: a fresh temp dir)")
         p.add_argument("--nocleanup", action="store_true", help="keep datadirs after a passing run")
         self.options = p.parse_args()
@@ -238,10 +242,19 @@ class CorgiTestFramework:
                    timeout=timeout, what="mempool sync")
 
     # -- lifecycle ---------------------------------------------------------
+    def node_binary(self, index):
+        """The corgicoind build node `index` runs; tests override this to mix builds."""
+        return self.options.corgicoind
+
+    def skip_test(self, reason):
+        """Report a skip. Exits with SKIP_EXIT_CODE so test_runner.py shows SKIP, not a pass."""
+        print("[%s] SKIPPED: %s" % (type(self).__name__, reason), flush=True)
+        sys.exit(SKIP_EXIT_CODE)
+
     def setup_nodes(self):
         for i in range(self.num_nodes):
             args = self.extra_args[i] if self.extra_args else None
-            node = TestNode(i, self.options.corgicoind, os.path.join(self.tmpdir, "node%d" % i), args)
+            node = TestNode(i, self.node_binary(i), os.path.join(self.tmpdir, "node%d" % i), args)
             self.nodes.append(node)
             node.start()
 

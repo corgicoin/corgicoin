@@ -84,6 +84,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
 | `rpc_http_auth.py` | malformed `Authorization` headers get 401 and leave the server running; a correct login still works |
+| `feature_cross_binary.py` | two different builds (e.g. against different OpenSSL versions) interoperate: blocks and signatures accepted both ways, `wallet.dat` and encrypted wallets open in either. Needs `--alt-corgicoind` or `$CORGICOIND_ALT`, otherwise it is shown as SKIP. Fails across the OpenSSL 1.1 / 3.x boundary (known wallet-derivation incompatibility) |
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `getnodeaddresses`, `disconnectnode` |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
 | `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |
