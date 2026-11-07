@@ -182,12 +182,21 @@ Add the modern pool RPC pair (Dogecoin/Namecoin `createauxblock` /
 `submitauxblock`), which pools already speak:
 
 - `createauxblock <paytoaddress>` → returns the current aux block target:
-  `{hash, chainid, bits, height, _target, coinbasevalue, previousblockhash}`.
+  `{hash, chainid, bits, height, target, _target, coinbasevalue, previousblockhash}`.
   The pool inserts `hash` into its merged-mining merkle tree and commits the
   root in the parent coinbase.
 - `submitauxblock <hash> <auxpow_hex>` → the pool submits the serialized
   AuxPoW once the parent block is found; the node assembles the full CBlock,
   runs `CheckAuxPowProofOfWork`, and accepts it if valid.
+- `getauxblock` / `getauxblock <hash> <auxpow_hex>` (added in v4.8): the
+  older Namecoin/Dogecoin single-call form. Without arguments it returns the
+  same work object, paying a key reserved from the node's wallet (kept only
+  once a block paying it is accepted); with arguments it submits.
+
+The work object also carries `target` (the target in display byte order, as
+newer Namecoin returns it) next to the little-endian `_target`. Work expires
+when the tip moves. `createauxblock`/`getauxblock` refuse to hand out work
+before the fork height.
 
 The legacy `getblocktemplate`/`getwork` paths continue to serve solo CPU
 miners unchanged (they produce AuxPoW-bit-clear blocks).

@@ -96,6 +96,8 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock);
 void UpdateFailedChainFlags();
 bool InvalidateBlock(CBlockIndex* pindex, std::string& strError);
 bool ReconsiderBlock(CBlockIndex* pindex, std::string& strError);
+/** Finish an invalidateblock rollback interrupted by a shutdown (called after LoadBlockIndex). */
+bool RecoverInvalidatedTip();
 bool CheckDiskSpace(uint64 nAdditionalBytes=0);
 FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
 FILE* AppendBlockFile(unsigned int& nFileRet);
