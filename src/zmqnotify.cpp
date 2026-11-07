@@ -69,8 +69,9 @@ void Publish(ZMQTopic& topic, const unsigned char* pBody, size_t nBody)
 }
 
 // the hash the way it is printed, not the way it is stored
-void PublishHash(ZMQTopic& topic, const uint256& hash)
+void PublishHash(ZMQTopic& topic, const uint256& hashIn)
 {
+    uint256 hash = hashIn;      // begin() is not const
     unsigned char out[32];
     for (int i = 0; i < 32; i++)
         out[31 - i] = hash.begin()[i];
@@ -167,7 +168,8 @@ void ZMQNotifyBlock(const CBlock& block, const uint256& hash)
     {
         CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
         ss << block;
-        Publish(RawBlock(), (const unsigned char*)ss.data(), ss.size());
+        std::vector<unsigned char> vch(ss.begin(), ss.end());
+        Publish(RawBlock(), vch.data(), vch.size());
     }
 }
 
@@ -186,7 +188,8 @@ void ZMQNotifyTransaction(const CTransaction& tx)
     }
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
     ss << tx;
-    Publish(RawTx(), (const unsigned char*)ss.data(), ss.size());
+    std::vector<unsigned char> vch(ss.begin(), ss.end());
+    Publish(RawTx(), vch.data(), vch.size());
 }
 
 #else   // built without libzmq
