@@ -73,7 +73,7 @@ class StandardSignaturesTest(CorgiTestFramework):
             assert parse_rs(sig)[1] <= ORDER // 2, "high S in a wallet signature"
         strict.generate(1)
         self.sync_blocks()
-        utxos = [u for u in strict.listunspent() if u["confirmations"] > 0][:4]
+        utxos = [u for u in strict.listunspent() if u["confirmations"] > 0 and u["amount"] > 10][:4]
 
         self.log("a high-S twin of a valid transaction is refused by the default pool")
         good = self.spend_raw(strict, utxos[0])
