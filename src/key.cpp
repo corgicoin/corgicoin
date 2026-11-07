@@ -281,14 +281,58 @@ CPubKey CKey::GetPubKey() const
 
 bool CKey::Sign(uint256 hash, std::vector<unsigned char>& vchSig)
 {
-    unsigned int nSize = ECDSA_size(pkey);
-    vchSig.resize(nSize); // Make sure it is big enough
-    if (!ECDSA_sign(0, (unsigned char*)&hash, sizeof(hash), &vchSig[0], &nSize, pkey))
+    vchSig.clear();
+    ECDSA_SIG* sig = ECDSA_do_sign((unsigned char*)&hash, sizeof(hash), pkey);
+    if (sig == nullptr)
+        return false;
+
+    // (r, s) and (r, n - s) both verify. OpenSSL picks either at random; always emit the lower S, so a third party
+    // cannot re-encode a signed transaction under another txid by flipping it (and so the signature is accepted
+    // under the low-S relay policy)
+    const BIGNUM *sig_r, *sig_s;
+    ECDSA_SIG_get0(sig, &sig_r, &sig_s);
+    const EC_GROUP* group = EC_KEY_get0_group(pkey);
+    const BIGNUM* order = group ? EC_GROUP_get0_order(group) : nullptr;
+    if (order != nullptr)
+    {
+        BIGNUM* halfOrder = BN_dup(order);
+        if (halfOrder == nullptr || !BN_rshift1(halfOrder, halfOrder))
+        {
+            BN_free(halfOrder);
+            ECDSA_SIG_free(sig);
+            return false;
+        }
+        if (BN_cmp(sig_s, halfOrder) > 0)
+        {
+            BIGNUM* newR = BN_dup(sig_r);
+            BIGNUM* newS = BN_new();
+            if (newR == nullptr || newS == nullptr || !BN_sub(newS, order, sig_s) || !ECDSA_SIG_set0(sig, newR, newS))
+            {
+                BN_free(newR);
+                BN_free(newS);
+                BN_free(halfOrder);
+                ECDSA_SIG_free(sig);
+                return false;
+            }
+        }
+        BN_free(halfOrder);
+    }
+
+    const int nSize = i2d_ECDSA_SIG(sig, nullptr);
+    if (nSize <= 0)
+    {
+        ECDSA_SIG_free(sig);
+        return false;
+    }
+    vchSig.resize(nSize);
+    unsigned char* pbegin = &vchSig[0];
+    const int nWritten = i2d_ECDSA_SIG(sig, &pbegin);
+    ECDSA_SIG_free(sig);
+    if (nWritten != nSize)
     {
         vchSig.clear();
         return false;
     }
-    vchSig.resize(nSize); // Shrink to fit actual size
     return true;
 }
 

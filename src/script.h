@@ -588,7 +588,22 @@ public:
 
 
 
+/** Extra rules a script is checked against. They are relay policy, never consensus: a block may contain signatures
+ *  that break them. */
+enum
+{
+    SCRIPT_VERIFY_NONE  = 0,
+    SCRIPT_VERIFY_DERSIG = (1U << 0),   // signatures must be strict DER (BIP 66 encoding)
+    SCRIPT_VERIFY_LOW_S  = (1U << 1),   // and S must be in the lower half of the curve order
+};
+
+/** The signature (with its trailing hash type byte) is exactly the strict DER encoding of an ECDSA signature. */
+bool IsValidSignatureEncoding(const std::vector<unsigned char>& vchSig);
+/** The S value of a strictly DER encoded signature (hash type byte included) is at most half the curve order. */
+bool IsLowDERSignature(const std::vector<unsigned char>& vchSig);
+
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType);
+bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType, unsigned int flags);
 bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet);
 int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned char> >& vSolutions);
 bool IsStandard(const CScript& scriptPubKey);
@@ -600,7 +615,10 @@ bool SignSignature(const CKeyStore& keystore, const CScript& fromPubKey, CTransa
 bool SignSignature(const CKeyStore& keystore, const CTransaction& txFrom, CTransaction& txTo, unsigned int nIn, int nHashType=SIGHASH_ALL);
 bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn,
                   bool fValidatePayToScriptHash, int nHashType);
+bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn,
+                  bool fValidatePayToScriptHash, int nHashType, unsigned int flags);
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType);
+bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType, unsigned int flags);
 
 // Given two sets of signatures for scriptPubKey, possibly with OP_0 placeholders,
 // combine them intelligently and return the result.
