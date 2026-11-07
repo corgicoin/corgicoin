@@ -33,12 +33,14 @@ class PrioritiseTransactionTest(CorgiTestFramework):
         assert_equal(node.getrawmempool(), [])
         assert_equal(node.getrawtransaction(txid, 1)["confirmations"], 1)
 
-        self.log("a delta set before the transaction arrives lets in a fee that is below the relay minimum")
-        low = self.raw_spend(node, utxos[1], Decimal("0.0001"))
-        low_txid = node.decoderawtransaction(low)["txid"]
-        assert_raises_rpc_error(-22, None, node.sendrawtransaction, low)
-        assert_equal(node.prioritisetransaction(low_txid, 0, 5 * COIN), True)
-        assert_equal(node.sendrawtransaction(low), low_txid)
+        self.log("a delta set before the transaction arrives is applied when it does")
+        early = self.raw_spend(node, utxos[1], Decimal(1))
+        early_txid = node.decoderawtransaction(early)["txid"]
+        assert_equal(node.prioritisetransaction(early_txid, 0, -10 * COIN), True)
+        assert_equal(node.sendrawtransaction(early), early_txid)
+        node.generate(1)
+        assert_equal(node.getrawmempool(), [early_txid])
+        assert_equal(node.prioritisetransaction(early_txid, 0, 10 * COIN), True)
         node.generate(1)
         assert_equal(node.getrawmempool(), [])
 
