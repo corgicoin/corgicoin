@@ -61,7 +61,7 @@ class StandardSignaturesTest(CorgiTestFramework):
     def run_test(self):
         permissive, strict = self.nodes
         self.connect_nodes(1, 0)
-        strict.generate(51)
+        strict.generate(80)     # plenty of mature coinbases: each send below spends a different one
         self.sync_blocks()
         utxos = strict.listunspent()
 
