@@ -91,6 +91,7 @@ constexpr uint64 nMinDiskSpace = 52428800;
 class CReserveKey;
 class CTxDB;
 class CTxIndex;
+struct CTxAcceptCheck;
 
 void RegisterWallet(CWallet* pwalletIn);
 void UnregisterWallet(CWallet* pwalletIn);
@@ -702,7 +703,7 @@ public:
                        const CBlockIndex* pindexBlock, bool fBlock, bool fMiner, bool fStrictPayToScriptHash=true);
     bool ClientConnectInputs();
     bool CheckTransaction() const;
-    bool AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs=true, bool* pfMissingInputs=nullptr);
+    bool AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs=true, bool* pfMissingInputs=nullptr, CTxAcceptCheck* pcheck=nullptr);
 
 protected:
     const CTxOut& GetOutputFor(const CTxIn& input, const MapPrevTx& inputs) const;
@@ -1685,6 +1686,14 @@ public:
     static CAlert getAlertByHash(const uint256 &hash);
 };
 
+/** Optional extras for CTxMemPool::accept: ask for a dry run, and learn why a transaction was refused. */
+struct CTxAcceptCheck
+{
+    bool fTestOnly = false;     // in: run every check, but do not store the transaction or count it against rate limits
+    std::string strReject;      // out: short reason when the transaction is refused
+    int64 nFees = -1;           // out: fee paid, once the inputs were found (-1 until then)
+};
+
 class CTxMemPool
 {
 public:
@@ -1693,7 +1702,7 @@ public:
     std::map<COutPoint, CInPoint> mapNextTx;
 
     bool accept(CTxDB& txdb, CTransaction &tx,
-                bool fCheckInputs, bool* pfMissingInputs);
+                bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck = nullptr);
     bool addUnchecked(const uint256& hash, CTransaction &tx);
     bool remove(CTransaction &tx);
     void queryHashes(std::vector<uint256>& vtxid);

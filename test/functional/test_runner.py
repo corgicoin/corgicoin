@@ -27,6 +27,7 @@ TESTS = [
     "rpc_createauxblock.py",
     "feature_auxpow.py",
     "rpc_mempool_verify.py",
+    "rpc_testmempoolaccept.py",
     "rpc_invalidateblock.py",
     "wallet_hd_encryption.py",
     "rpc_http_auth.py",

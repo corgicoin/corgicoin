@@ -538,6 +538,56 @@ Value signrawtransaction(const Array& params, bool fHelp)
     return result;
 }
 
+Value testmempoolaccept(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "testmempoolaccept [\"rawtx\"]
+"
+            "Checks whether a raw transaction would be accepted into the memory pool, without adding it,
+"
+            "relaying it or touching the wallet. The argument is an array holding one hex-encoded transaction.
+"
+            "Result: [{txid, allowed, reject-reason (when not allowed), fee (when the inputs were found)}]");
+
+    RPCTypeCheck(params, {array_type});
+    const Array& txs = params[0].get_array();
+    if (txs.size() != 1)
+        throw JSONRPCError(-8, "Array must contain exactly one raw transaction for now");
+    if (txs[0].type() != str_type)
+        throw JSONRPCError(-3, "Expected a hex string");
+
+    vector<unsigned char> txData(ParseHex(txs[0].get_str()));
+    CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION);
+    CTransaction tx;
+    try {
+        ssData >> tx;
+    }
+    catch (std::exception &e) {
+        throw JSONRPCError(-22, "TX decode failed");
+    }
+    if (!ssData.empty())
+        throw JSONRPCError(-22, "TX decode failed: trailing data");
+
+    Object result;
+    result.emplace_back("txid", tx.GetHash().GetHex());
+
+    CTxAcceptCheck check;
+    check.fTestOnly = true;
+    bool fMissingInputs = false;
+    CTxDB txdb("r");
+    const bool fAllowed = tx.AcceptToMemoryPool(txdb, true, &fMissingInputs, &check);
+    result.emplace_back("allowed", fAllowed);
+    if (!fAllowed)
+        result.emplace_back("reject-reason", check.strReject.empty() ? string("rejected") : check.strReject);
+    if (check.nFees >= 0)
+        result.emplace_back("fee", ValueFromAmount(check.nFees));
+
+    Array ret;
+    ret.push_back(result);
+    return ret;
+}
+
 Value sendrawtransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 1)
