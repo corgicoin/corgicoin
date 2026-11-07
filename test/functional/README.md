@@ -84,3 +84,4 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `disconnectnode` |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
+| `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |
