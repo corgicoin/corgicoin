@@ -48,6 +48,10 @@ static void empty_wallet(void)
     vCoins.clear();
 }
 
+// The last test case leaves its coins in vCoins; free them when the program exits so LeakSanitizer
+// does not report them. Declared after vCoins, so it is destroyed first.
+static struct FreeCoinsAtExit { ~FreeCoinsAtExit() { empty_wallet(); } } freeCoinsAtExit;
+
 static bool equal_sets(CoinSet a, CoinSet b)
 {
     pair<CoinSet::iterator, CoinSet::iterator> ret = mismatch(a.begin(), a.end(), b.begin());
