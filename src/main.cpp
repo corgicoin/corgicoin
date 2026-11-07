@@ -684,8 +684,7 @@ void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelt
     if (deltas.first == 0 && deltas.second == 0)
         mapDeltas.erase(hash);
     nTransactionsUpdated++;     // a cached block template no longer reflects the order
-    LogPrintf("PrioritiseTransaction: %s priority += %f, fee += %" PRI64d "
-", hash.ToString().c_str(), dPriorityDelta, nFeeDelta);
+    LogPrintf("PrioritiseTransaction: %s priority += %f, fee += %" PRI64d "\n", hash.ToString().c_str(), dPriorityDelta, nFeeDelta);
 }
 
 void CTxMemPool::ApplyDeltas(const uint256& hash, double& dPriorityDelta, int64& nFeeDelta) const
