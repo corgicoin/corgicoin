@@ -22,7 +22,7 @@ valtype Hex(const char* psz) { return ParseHex(psz); }
 // A strict DER signature with a hash type byte: R = 1, S = the given big-endian bytes
 valtype SigWithS(const valtype& s, unsigned char nHashType = 1)
 {
-    valtype sig = {0x30, static_cast<unsigned char>(6 + s.size()), 0x02, 0x01, 0x01, 0x02, static_cast<unsigned char>(s.size())};
+    valtype sig = {0x30, static_cast<unsigned char>(5 + s.size()), 0x02, 0x01, 0x01, 0x02, static_cast<unsigned char>(s.size())};
     sig.insert(sig.end(), s.begin(), s.end());
     sig.push_back(nHashType);
     return sig;
@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(strict_der_rejects_malformed_signatures)
     BOOST_CHECK(!IsValidSignatureEncoding(Hex("3006020101028001" "01")));          // S negative
     BOOST_CHECK(!IsValidSignatureEncoding(Hex("300702020001020101" "01")));        // R padded with an unneeded zero
     BOOST_CHECK(!IsValidSignatureEncoding(Hex("3007020101020200" "0101")));        // S padded with an unneeded zero
-    BOOST_CHECK(!IsValidSignatureEncoding(Hex("30060201010201" "0101")));          // R/S lengths run past the data
+    BOOST_CHECK(!IsValidSignatureEncoding(Hex("3006020101020201" "01")));          // R/S lengths run past the data
 }
 
 BOOST_AUTO_TEST_CASE(low_s_boundary)
