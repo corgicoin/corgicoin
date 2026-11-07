@@ -144,6 +144,10 @@ void ParseString(const std::string& str, char c, std::vector<std::string>& v);
 // Small string helpers (replace the boost::algorithm::string uses).
 std::string ToLower(const std::string& str);
 std::string TrimString(const std::string& str);
+
+/** Compare two secrets without stopping at the first difference, so the time taken does not tell a caller how many
+ *  leading characters it guessed right. Only the lengths can leak. */
+bool TimingResistantEqual(const std::string& a, const std::string& b);
 // Case-insensitive ASCII prefix test (boost::algorithm::istarts_with).
 bool IStartsWith(const std::string& str, const std::string& prefix);
 // Shell-style tokenizer matching boost::escaped_list_separator('\\',' ','"'):

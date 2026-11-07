@@ -353,6 +353,20 @@ std::string ToLower(const std::string& str)
     return r;
 }
 
+bool TimingResistantEqual(const std::string& a, const std::string& b)
+{
+    // Walk the longer string end to end and fold a length mismatch into the result, instead of returning early
+    const std::size_t n = a.size() > b.size() ? a.size() : b.size();
+    unsigned char diff = a.size() == b.size() ? 0 : 1;
+    for (std::size_t i = 0; i < n; i++)
+    {
+        const unsigned char ca = i < a.size() ? static_cast<unsigned char>(a[i]) : 0;
+        const unsigned char cb = i < b.size() ? static_cast<unsigned char>(b[i]) : 0;
+        diff |= ca ^ cb;
+    }
+    return diff == 0;
+}
+
 std::string TrimString(const std::string& str)
 {
     std::string::size_type b = str.find_first_not_of(" \t\r\n");

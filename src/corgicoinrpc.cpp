@@ -3512,7 +3512,7 @@ bool HTTPAuthorized(map<string, string>& mapHeaders)
         return false;
     string strUserPass64 = TrimString(strAuth.substr(6));
     string strUserPass = DecodeBase64(strUserPass64);
-    return strUserPass == strRPCUserColonPass;
+    return TimingResistantEqual(strUserPass, strRPCUserColonPass);
 }
 
 //
