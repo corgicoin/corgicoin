@@ -542,12 +542,9 @@ Value testmempoolaccept(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "testmempoolaccept [\"rawtx\"]
-"
-            "Checks whether a raw transaction would be accepted into the memory pool, without adding it,
-"
-            "relaying it or touching the wallet. The argument is an array holding one hex-encoded transaction.
-"
+            "testmempoolaccept [\"rawtx\"]\n"
+            "Checks whether a raw transaction would be accepted into the memory pool, without adding it,\n"
+            "relaying it or touching the wallet. The argument is an array holding one hex-encoded transaction.\n"
             "Result: [{txid, allowed, reject-reason (when not allowed), fee (when the inputs were found)}]");
 
     RPCTypeCheck(params, {array_type});
