@@ -299,6 +299,14 @@ bool CWallet::AddCScript(const CScript& redeemScript)
     return CWalletDB(strWalletFile).WriteCScript(Hash160(redeemScript), redeemScript);
 }
 
+// Milliseconds since nStart, at least 1: the key-derivation calibration divides by this, and a fast machine can finish
+// a short derivation inside one clock tick
+static double ElapsedMillis(int64 nStart)
+{
+    int64 nElapsed = GetTimeMillis() - nStart;
+    return nElapsed < 1 ? 1.0 : (double)nElapsed;
+}
+
 bool CWallet::UnlockWithMasterKey(const SecureString& strWalletPassphrase, const CMasterKey& kMasterKey, CKeyingMaterial& vMasterKeyOut)
 {
     // Method 0 is Bitcoin's EVP_BytesToKey, but CorgiCoin v4.2 to v4.7 built against OpenSSL 3 wrote PBKDF2-derived
@@ -366,26 +374,48 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
         {
             if (UnlockWithMasterKey(strOldWalletPassphrase, pMasterKey.second, vMasterKey))
             {
+                // Keep the current master key: if the new one cannot be derived, encrypted or written, the old
+                // passphrase must keep working in memory as well as on disk
+                const CMasterKey kOldMasterKey = pMasterKey.second;
+
                 // Re-encrypt with the standard derivation (this also migrates a v4.2-v4.7 PBKDF2 master key)
                 pMasterKey.second.nDerivationMethod = WALLET_DERIVATION_BYTESTOKEY_SHA512;
                 int64 nStartTime = GetTimeMillis();
                 crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod);
-                pMasterKey.second.nDeriveIterations = pMasterKey.second.nDeriveIterations * (100 / ((double)(GetTimeMillis() - nStartTime)));
+                pMasterKey.second.nDeriveIterations = pMasterKey.second.nDeriveIterations * (100 / ElapsedMillis(nStartTime));
 
                 nStartTime = GetTimeMillis();
                 crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod);
-                pMasterKey.second.nDeriveIterations = (pMasterKey.second.nDeriveIterations + pMasterKey.second.nDeriveIterations * 100 / ((double)(GetTimeMillis() - nStartTime))) / 2;
+                pMasterKey.second.nDeriveIterations = (pMasterKey.second.nDeriveIterations + pMasterKey.second.nDeriveIterations * 100 / ElapsedMillis(nStartTime)) / 2;
 
                 if (pMasterKey.second.nDeriveIterations < 25000)
                     pMasterKey.second.nDeriveIterations = 25000;
 
                 LogPrintf("Wallet passphrase changed to an nDeriveIterations of %i\n", pMasterKey.second.nDeriveIterations);
 
-                if (!crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod))
+                // The database can fail by returning false or by throwing (it cannot open its file): either way the
+                // old master key goes back, so memory and disk agree
+                bool fPersisted = false;
+                try
+                {
+                    fPersisted = crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod) &&
+                                 crypter.Encrypt(vMasterKey, pMasterKey.second.vchCryptedKey) &&
+                                 CWalletDB(strWalletFile).WriteMasterKey(pMasterKey.first, pMasterKey.second);
+                }
+                catch (...)
+                {
+                    pMasterKey.second = kOldMasterKey;
+                    if (fWasLocked)
+                        Lock();   // verifying the old passphrase unlocked the key store
+                    throw;
+                }
+                if (!fPersisted)
+                {
+                    pMasterKey.second = kOldMasterKey;
+                    if (fWasLocked)
+                        Lock();
                     return false;
-                if (!crypter.Encrypt(vMasterKey, pMasterKey.second.vchCryptedKey))
-                    return false;
-                CWalletDB(strWalletFile).WriteMasterKey(pMasterKey.first, pMasterKey.second);
+                }
                 if (fWasLocked)
                     Lock();
                 return true;
@@ -490,11 +520,11 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     CCrypter crypter;
     int64 nStartTime = GetTimeMillis();
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, 25000, kMasterKey.nDerivationMethod);
-    kMasterKey.nDeriveIterations = 2500000 / ((double)(GetTimeMillis() - nStartTime));
+    kMasterKey.nDeriveIterations = 2500000 / ElapsedMillis(nStartTime);
 
     nStartTime = GetTimeMillis();
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, kMasterKey.nDeriveIterations, kMasterKey.nDerivationMethod);
-    kMasterKey.nDeriveIterations = (kMasterKey.nDeriveIterations + kMasterKey.nDeriveIterations * 100 / ((double)(GetTimeMillis() - nStartTime))) / 2;
+    kMasterKey.nDeriveIterations = (kMasterKey.nDeriveIterations + kMasterKey.nDeriveIterations * 100 / ElapsedMillis(nStartTime)) / 2;
 
     if (kMasterKey.nDeriveIterations < 25000)
         kMasterKey.nDeriveIterations = 25000;
