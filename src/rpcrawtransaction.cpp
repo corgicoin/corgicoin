@@ -145,14 +145,10 @@ Value gettxout(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 2 || params.size() > 3)
         throw runtime_error(
-            "gettxout <txid> <n> [includemempool=true]
-"
-            "Returns details about an unspent transaction output, or null if the output does not exist
-"
-            "or has been spent. With includemempool (the default) an output spent by a transaction in the
-"
-            "memory pool counts as spent, and outputs of unconfirmed transactions are found.
-"
+            "gettxout <txid> <n> [includemempool=true]\n"
+            "Returns details about an unspent transaction output, or null if the output does not exist\n"
+            "or has been spent. With includemempool (the default) an output spent by a transaction in the\n"
+            "memory pool counts as spent, and outputs of unconfirmed transactions are found.\n"
             "Result: {bestblock, confirmations, value, scriptPubKey, version, coinbase}");
 
     RPCTypeCheck(params, {str_type, int_type, bool_type});
