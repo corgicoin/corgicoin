@@ -574,14 +574,20 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         int64 nFees = tx.GetValueIn(mapInputs)-tx.GetValueOut();
         unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
 
+        // A prioritisetransaction fee delta counts as extra fee here and when the block is assembled
+        double dPriorityDelta = 0;
+        int64 nFeeDelta = 0;
+        ApplyDeltas(hash, dPriorityDelta, nFeeDelta);
+        const int64 nModifiedFees = nFees + nFeeDelta;
+
         // Don't accept it if it can't get into a block
-        if (nFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
+        if (nModifiedFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
             return LogError("CTxMemPool::accept() : not enough fees");
 
         // Continuously rate-limit free transactions
         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
         // be annoying or make other's transactions take longer to confirm.
-        if (nFees < MIN_RELAY_TX_FEE)
+        if (nModifiedFees < MIN_RELAY_TX_FEE)
         {
             static CCriticalSection cs;
             static double dFreeCount;
@@ -662,10 +668,34 @@ bool CTxMemPool::remove(CTransaction &tx)
             for (const CTxIn& txin : tx.vin)
                 mapNextTx.erase(txin.prevout);
             mapTx.erase(hash);
+            mapDeltas.erase(hash);
             nTransactionsUpdated++;
         }
     }
     return true;
+}
+
+void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)
+{
+    LOCK(cs);
+    std::pair<double, int64>& deltas = mapDeltas[hash];
+    deltas.first += dPriorityDelta;
+    deltas.second += nFeeDelta;
+    if (deltas.first == 0 && deltas.second == 0)
+        mapDeltas.erase(hash);
+    nTransactionsUpdated++;     // a cached block template no longer reflects the order
+    LogPrintf("PrioritiseTransaction: %s priority += %f, fee += %" PRI64d "
+", hash.ToString().c_str(), dPriorityDelta, nFeeDelta);
+}
+
+void CTxMemPool::ApplyDeltas(const uint256& hash, double& dPriorityDelta, int64& nFeeDelta) const
+{
+    LOCK(cs);
+    auto it = mapDeltas.find(hash);
+    if (it == mapDeltas.end())
+        return;
+    dPriorityDelta += it->second.first;
+    nFeeDelta += it->second.second;
 }
 
 void CTxMemPool::queryHashes(std::vector<uint256>& vtxid)
@@ -3988,6 +4018,12 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             // Priority is sum(valuein * age) / txsize
             dPriority /= ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
 
+            // plus whatever the operator added with prioritisetransaction
+            double dPriorityDelta = 0;
+            int64 nUnusedFeeDelta = 0;
+            mempool.ApplyDeltas(tx.GetHash(), dPriorityDelta, nUnusedFeeDelta);
+            dPriority += dPriorityDelta;
+
             if (porphan)
                 porphan->dPriority = dPriority;
             else
@@ -4038,7 +4074,10 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                 continue;
 
             int64 nTxFees = tx.GetValueIn(mapInputs)-tx.GetValueOut();
-            if (nTxFees < nMinFee)
+            double dUnusedPriorityDelta = 0;
+            int64 nFeeDelta = 0;
+            mempool.ApplyDeltas(tx.GetHash(), dUnusedPriorityDelta, nFeeDelta);
+            if (nTxFees + nFeeDelta < nMinFee)      // the delta steers inclusion; the block reward below counts the real fee
                 continue;
 
             nTxSigOps += tx.GetP2SHSigOpCount(mapInputs);

@@ -538,6 +538,39 @@ Value signrawtransaction(const Array& params, bool fHelp)
     return result;
 }
 
+Value prioritisetransaction(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 3)
+        throw runtime_error(
+            "prioritisetransaction <txid> <priority delta> <fee delta>
+"
+            "Adjusts how a transaction is treated when blocks are assembled, without changing the transaction.
+"
+            "The priority delta is added to its priority; the fee delta (in base units, 1 coin = 100000000)
+"
+            "counts as extra fee when checking the minimum fee, and also when the pool decides whether to
+"
+            "accept it. The real fee is still what the miner collects. A negative delta holds a transaction
+"
+            "back. Deltas are cumulative, apply to transactions not yet seen, and are forgotten on restart.");
+
+    RPCTypeCheck(params, {str_type});
+    if (params[1].type() != real_type && params[1].type() != int_type)
+        throw JSONRPCError(-3, "priority delta must be a number");
+    if (params[2].type() != int_type)
+        throw JSONRPCError(-3, "fee delta must be an integer number of base units");
+
+    const std::string strHash = params[0].get_str();
+    if (!IsHex(strHash) || strHash.size() != 64)
+        throw JSONRPCError(-8, "txid must be 64 hex characters");
+    uint256 hash;
+    hash.SetHex(strHash);
+
+    const double dPriorityDelta = params[1].type() == int_type ? static_cast<double>(params[1].get_int64()) : params[1].get_real();
+    mempool.PrioritiseTransaction(hash, dPriorityDelta, params[2].get_int64());
+    return true;
+}
+
 Value sendrawtransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 1)
