@@ -173,6 +173,8 @@ public:
     bool LoadCScript(const CScript& redeemScript) { return CCryptoKeyStore::AddCScript(redeemScript); }
 
     bool Unlock(const SecureString& strWalletPassphrase);
+    // Derive the key for one master key from the passphrase, decrypt the master key and unlock the keystore with it
+    bool UnlockWithMasterKey(const SecureString& strWalletPassphrase, const CMasterKey& kMasterKey, CKeyingMaterial& vMasterKeyOut);
     bool ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase);
     bool EncryptWallet(const SecureString& strWalletPassphrase);
 

@@ -523,6 +523,7 @@ if(BUILD_TESTS)
         src/test/uint256_tests.cpp
         src/test/util_tests.cpp
         src/test/wallet_tests.cpp
+        src/test/wallet_crypto_tests.cpp
         src/test/scrypt_tests.cpp
         src/test/address_tests.cpp
         src/test/auxpow_tests.cpp

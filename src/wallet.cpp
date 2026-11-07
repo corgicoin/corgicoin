@@ -200,23 +200,48 @@ bool CWallet::AddCScript(const CScript& redeemScript)
     return CWalletDB(strWalletFile).WriteCScript(Hash160(redeemScript), redeemScript);
 }
 
+bool CWallet::UnlockWithMasterKey(const SecureString& strWalletPassphrase, const CMasterKey& kMasterKey, CKeyingMaterial& vMasterKeyOut)
+{
+    // Method 0 is Bitcoin's EVP_BytesToKey, but CorgiCoin v4.2 to v4.7 built against OpenSSL 3 wrote PBKDF2-derived
+    // master keys under the same number. Try both. A wrong key is caught by the master key's padding and length
+    // (a 32-byte key encrypts to 48 bytes; a wrong key decrypts to exactly 32 bytes with probability ~2^-128) and
+    // then by CCryptoKeyStore::Unlock, which checks a decrypted private key against its public key.
+    std::vector<unsigned int> vMethods;
+    if (kMasterKey.nDerivationMethod == WALLET_DERIVATION_BYTESTOKEY_SHA512)
+        vMethods = {WALLET_DERIVATION_BYTESTOKEY_SHA512, WALLET_DERIVATION_PBKDF2_SHA512_V4};
+    else
+        vMethods = {kMasterKey.nDerivationMethod};
+
+    for (unsigned int nMethod : vMethods)
+    {
+        CCrypter crypter;
+        if (!crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, kMasterKey.nDeriveIterations, nMethod))
+            continue;
+        if (!crypter.Decrypt(kMasterKey.vchCryptedKey, vMasterKeyOut) || vMasterKeyOut.size() != WALLET_CRYPTO_KEY_SIZE)
+            continue;
+        if (CCryptoKeyStore::Unlock(vMasterKeyOut))
+        {
+            if (nMethod == WALLET_DERIVATION_PBKDF2_SHA512_V4)
+                LogPrintf("Wallet unlocked with the v4.2-v4.7 PBKDF2 passphrase derivation; changing the passphrase "
+                          "(it may be the same one) re-encrypts it with the standard derivation\n");
+            return true;
+        }
+    }
+    return false;
+}
+
 bool CWallet::Unlock(const SecureString& strWalletPassphrase)
 {
     if (!IsLocked())
         return false;
 
-    CCrypter crypter;
     CKeyingMaterial vMasterKey;
 
     {
         LOCK(cs_wallet);
         for (const MasterKeyMap::value_type& pMasterKey : mapMasterKeys)
         {
-            if(!crypter.SetKeyFromPassphrase(strWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod))
-                return false;
-            if (!crypter.Decrypt(pMasterKey.second.vchCryptedKey, vMasterKey))
-                return false;
-            if (CCryptoKeyStore::Unlock(vMasterKey))
+            if (UnlockWithMasterKey(strWalletPassphrase, pMasterKey.second, vMasterKey))
             {
                 // Make the HD seed usable for this unlocked session.
                 DecryptHDSeed(vMasterKey);
@@ -239,12 +264,10 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
         CKeyingMaterial vMasterKey;
         for (MasterKeyMap::value_type& pMasterKey : mapMasterKeys)
         {
-            if(!crypter.SetKeyFromPassphrase(strOldWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod))
-                return false;
-            if (!crypter.Decrypt(pMasterKey.second.vchCryptedKey, vMasterKey))
-                return false;
-            if (CCryptoKeyStore::Unlock(vMasterKey))
+            if (UnlockWithMasterKey(strOldWalletPassphrase, pMasterKey.second, vMasterKey))
             {
+                // Re-encrypt with the standard derivation (this also migrates a v4.2-v4.7 PBKDF2 master key)
+                pMasterKey.second.nDerivationMethod = WALLET_DERIVATION_BYTESTOKEY_SHA512;
                 int64 nStartTime = GetTimeMillis();
                 crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod);
                 pMasterKey.second.nDeriveIterations = pMasterKey.second.nDeriveIterations * (100 / ((double)(GetTimeMillis() - nStartTime)));
