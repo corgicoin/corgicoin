@@ -18,7 +18,7 @@ class TestMempoolAcceptTest(CorgiTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        node.generate(51)
+        node.generate(53)       # three mature coinbases
         utxos = node.listunspent()
         dest = node.getnewaddress()
 
