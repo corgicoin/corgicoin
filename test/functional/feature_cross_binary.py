@@ -12,10 +12,10 @@ OpenSSL version: it checks that blocks and transactions signed by one build are 
 that a wallet.dat opens identically in both, and that an encrypted wallet unlocks with the same
 passphrase whichever build encrypted it.
 
-Known limit: across the OpenSSL 1.1 / 3.x boundary the two encrypted-wallet checks FAIL, by design. CCrypter
-derives the wallet key with a different function on each side (EVP_BytesToKey before 3.0, PBKDF2-HMAC-SHA512
-from 3.0) yet records both as derivation method 0, so those wallets really are incompatible (see
-crypter_tests.cpp). A pair of builds on the same side of that boundary passes.
+Wallet encryption: since v4.8 derivation method 0 is EVP_BytesToKey on every build (wallet_crypto_tests.cpp), so
+two v4.8+ builds pass whatever OpenSSL they use. Run against a v4.2-v4.7 alternate build, the "encrypted by the main
+build, unlocked by the alternate one" check fails by design: v4.8 still unlocks those PBKDF2 wallets, but v4.7 cannot unlock one that
+v4.8 encrypted.
 """
 import os
 
