@@ -49,9 +49,10 @@ class TestMempoolAcceptTest(CorgiTestFramework):
         known = node.testmempoolaccept([good])[0]
         assert_equal((known["allowed"], known["reject-reason"]), (False, "txn-already-known"))
 
-        self.log("fee below the relay minimum")
+        self.log("a small transaction with a tiny fee is allowed (free relay) and reports its fee")
         low = node.testmempoolaccept([self.raw_spend(node, utxos[1], dest, Decimal("0.0001"))])[0]
-        assert_equal((low["allowed"], low["reject-reason"]), (False, "insufficient-fee"))
+        assert_equal(low["allowed"], True)
+        assert "reject-reason" not in low
         assert_equal(low["fee"], Decimal("0.0001"))
 
         self.log("missing inputs")
