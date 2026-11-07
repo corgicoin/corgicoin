@@ -542,16 +542,11 @@ Value prioritisetransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 3)
         throw runtime_error(
-            "prioritisetransaction <txid> <priority delta> <fee delta>
-"
-            "Adjusts how a transaction is treated when blocks are assembled, without changing the transaction.
-"
-            "The priority delta is added to its priority; the fee delta (in base units, 1 coin = 100000000)
-"
-            "counts as extra fee when checking the minimum fee, and also when the pool decides whether to
-"
-            "accept it. The real fee is still what the miner collects. A negative delta holds a transaction
-"
+            "prioritisetransaction <txid> <priority delta> <fee delta>\n"
+            "Adjusts how a transaction is treated when blocks are assembled, without changing the transaction.\n"
+            "The priority delta is added to its priority; the fee delta (in base units, 1 coin = 100000000)\n"
+            "counts as extra fee when checking the minimum fee, and also when the pool decides whether to\n"
+            "accept it. The real fee is still what the miner collects. A negative delta holds a transaction\n"
             "back. Deltas are cumulative, apply to transactions not yet seen, and are forgotten on restart.");
 
     RPCTypeCheck(params, {str_type});
