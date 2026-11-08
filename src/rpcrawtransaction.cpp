@@ -652,6 +652,8 @@ Value testmempoolaccept(const Array& params, bool fHelp)
     Array ret;
     ret.push_back(result);
     return ret;
+}
+
 Value prioritisetransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 3)
