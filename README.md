@@ -6,7 +6,7 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.7.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining, an HD (seed-phrase) wallet with Coin Control, and a non-custodial web wallet:
+**Version 4.8.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining (pool-ready `getauxblock`), an HD (seed-phrase) wallet with Coin Control, and a non-custodial web wallet:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
@@ -118,7 +118,7 @@ rpcport=62555
 
 ## Version History
 
-### Unreleased
+### v4.8.0.0 — HD Wallet Fixes, Wallet Compatibility + Pool-Ready Merged Mining
 
 > **Required upgrade for HD wallets.** If you ran `sethdseed` (or set a recovery phrase in the GUI) on v4.5–v4.7, coins received on HD addresses could not be spent, and `dumpprivkey` exported those keys in the wrong (uncompressed) form. Upgrading fixes both, with the same addresses and no rescan. If you also encrypted such a wallet, v4.5–v4.7 left the HD private keys in `wallet.dat` **unencrypted** and the wallet then refused to load ("Wallet corrupted"). This release loads it, and the first `walletpassphrase` encrypts those keys and deletes the plaintext records. The database may still hold old copies in free space, so if anyone else may have had access to that file, move the funds to a new wallet.
 
