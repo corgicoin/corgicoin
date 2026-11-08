@@ -1700,12 +1700,17 @@ public:
     mutable CCriticalSection cs;
     std::map<uint256, CTransaction> mapTx;
     std::map<COutPoint, CInPoint> mapNextTx;
+    /** Operator adjustments from prioritisetransaction: priority and fee deltas that only steer block assembly and
+     *  relay admission. Kept by txid (so a transaction can be prioritised before it arrives), dropped when it leaves. */
+    std::map<uint256, std::pair<double, int64> > mapDeltas;
 
     bool accept(CTxDB& txdb, CTransaction &tx,
                 bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck = nullptr);
     bool addUnchecked(const uint256& hash, CTransaction &tx);
     bool remove(CTransaction &tx);
     void queryHashes(std::vector<uint256>& vtxid);
+    void PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta);
+    void ApplyDeltas(const uint256& hash, double& dPriorityDelta, int64& nFeeDelta) const;
 
     unsigned long size()
     {
