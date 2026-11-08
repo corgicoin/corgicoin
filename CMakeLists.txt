@@ -34,6 +34,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_QT_GUI "Build Qt GUI wallet" ON)
 option(USE_UPNP "Enable UPnP support" ON)
 option(USE_QRCODE "Enable QR code support" OFF)
+option(USE_ZMQ "Enable ZeroMQ notifications (-zmqpub*) when libzmq is installed" ON)
 option(USE_DBUS "Enable D-Bus support for desktop notifications" OFF)
 option(BUILD_TESTS "Build test suite" OFF)
 option(ENABLE_HARDENING "Enable security hardening flags" ON)
@@ -180,6 +181,7 @@ include_directories(
 # Source files for daemon
 set(DAEMON_SOURCES
     src/version.cpp
+    src/zmqnotify.cpp
     src/checkpoints.cpp
     src/netbase.cpp
     src/addrman.cpp
@@ -228,6 +230,21 @@ add_custom_target(generate_build_info ALL
 add_definitions(-DHAVE_BUILD_INFO)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+# Optional ZeroMQ notifications
+set(ZMQ_LIBRARIES "")
+if(USE_ZMQ)
+    find_path(ZMQ_INCLUDE_DIR zmq.h)
+    find_library(ZMQ_LIBRARY NAMES zmq libzmq)
+    if(ZMQ_INCLUDE_DIR AND ZMQ_LIBRARY)
+        message(STATUS "ZeroMQ found: ${ZMQ_LIBRARY} (-zmqpub* notifications enabled)")
+        add_definitions(-DENABLE_ZMQ)
+        include_directories(${ZMQ_INCLUDE_DIR})
+        set(ZMQ_LIBRARIES ${ZMQ_LIBRARY})
+    else()
+        message(STATUS "ZeroMQ not found: -zmqpub* notifications disabled")
+    endif()
+endif()
+
 # Daemon executable
 add_executable(corgicoind ${DAEMON_SOURCES} ${JSON_SOURCES})
 add_dependencies(corgicoind generate_build_info)
@@ -237,6 +254,7 @@ target_link_libraries(corgicoind
     ${OPENSSL_LIBRARIES}
     ${BERKELEYDB_LIBRARY}
     ${Boost_LIBRARIES}
+    ${ZMQ_LIBRARIES}
     Threads::Threads
     ${CMAKE_DL_LIBS}
 )
@@ -550,6 +568,7 @@ if(BUILD_TESTS)
         ${OPENSSL_LIBRARIES}
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
+        ${ZMQ_LIBRARIES}
         Threads::Threads
         ${CMAKE_DL_LIBS}
     )

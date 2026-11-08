@@ -77,6 +77,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 
 | Test | Covers |
 |---|---|
+| `feature_zmq.py` | `-zmqpub*` notifications: block and transaction topics, byte order and sequence numbers (needs `pyzmq`; skipped without it or without libzmq) |
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
