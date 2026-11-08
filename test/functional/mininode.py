@@ -45,6 +45,7 @@ class P2PConnection:
         self.got_verack = False
         self.pings_received = 0
         self.closed = False
+        self.messages = {}     # command -> list of raw payloads received, in order
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
         self.sock.settimeout(None)
         self._lock = threading.Lock()
@@ -90,6 +91,7 @@ class P2PConnection:
             self.closed = True
 
     def _on_message(self, command, payload):
+        self.messages.setdefault(command, []).append(payload)
         if command == "version":
             self.send("verack")
         elif command == "verack":
