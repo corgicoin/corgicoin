@@ -10,6 +10,7 @@
 #include "util.h"
 #include "main.h"
 #include "logging.h"
+#include <cerrno>
 #include <memory>
 #include <boost/version.hpp>
 #include <filesystem>
@@ -139,12 +140,21 @@ CDB::CDB(const char *pszFile, const char* pszMode) :
         {
             dbptr = std::make_shared<Db>(&bitdb.dbenv, 0);
 
-            ret = dbptr->open(nullptr,      // Txn pointer
-                            pszFile,   // Filename
-                            "main",    // Logical db name
-                            DB_BTREE,  // Database type
-                            nFlags,    // Flags
-                            0);
+            // Db::open throws when the environment has exceptions enabled; treat that like an error return so the
+            // dead handle does not stay in mapDb (a later open would reuse it, and teardown would crash on it)
+            try
+            {
+                ret = dbptr->open(nullptr,      // Txn pointer
+                                pszFile,   // Filename
+                                "main",    // Logical db name
+                                DB_BTREE,  // Database type
+                                nFlags,    // Flags
+                                0);
+            }
+            catch (const DbException& e)
+            {
+                ret = e.get_errno() > 0 ? e.get_errno() : EIO;
+            }
 
             if (ret > 0)
             {
