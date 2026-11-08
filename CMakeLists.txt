@@ -517,6 +517,7 @@ if(BUILD_TESTS)
         src/test/rpc_tests.cpp
         src/test/script_P2SH_tests.cpp
         src/test/script_tests.cpp
+        src/test/signature_policy_tests.cpp
         src/test/sigopcount_tests.cpp
         src/test/transaction_tests.cpp
         src/test/uint160_tests.cpp

@@ -95,6 +95,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_submitblock.py` | `submitblock`: accepted, duplicate, orphan, rejected and undecodable blocks |
 | `rpc_testmempoolaccept.py` | `testmempoolaccept`: dry-run acceptance and reject reasons, with no change to the pool or wallet |
 | `rpc_prioritisetransaction.py` | `prioritisetransaction`: holding a transaction out of blocks, releasing it, and admitting one below the relay fee |
+| `rpc_standard_signatures.py` | the low-S / strict-DER relay policy: wallet signatures, a refused high-S twin, `-standardsigs=0`, and a block carrying a twin |
 | `rpc_mempool_verify.py` | `getmempoolinfo`; `verifychain` on a healthy chain and over a deliberately corrupted block |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |

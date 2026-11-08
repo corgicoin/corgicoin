@@ -239,7 +239,85 @@ const char* GetOpName(opcodetype opcode)
     }
 }
 
+bool IsValidSignatureEncoding(const std::vector<unsigned char>& sig)
+{
+    // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S] [sighash type]
+    // * total-length: 1-byte length descriptor of everything that follows, excluding the sighash byte.
+    // * R-length / S-length: 1-byte length descriptors; R and S are big-endian, minimal, and non-negative.
+    if (sig.size() < 9 || sig.size() > 73)
+        return false;                       // 9 bytes at least (1-byte R and S); 73 at most (33-byte R and S)
+    if (sig[0] != 0x30)
+        return false;
+    if (sig[1] != sig.size() - 3)
+        return false;                       // the length must cover the signature exactly, up to the hash type byte
+    const unsigned int lenR = sig[3];
+    if (5 + lenR >= sig.size())
+        return false;                       // the S length byte must be inside the signature
+    const unsigned int lenS = sig[5 + lenR];
+    if (lenR + lenS + 7 != sig.size())
+        return false;                       // R and S must account for every remaining byte
+
+    if (sig[2] != 0x02)
+        return false;
+    if (lenR == 0)
+        return false;
+    if (sig[4] & 0x80)
+        return false;                       // R must not be negative
+    if (lenR > 1 && sig[4] == 0x00 && !(sig[5] & 0x80))
+        return false;                       // no unnecessary leading zero in R
+
+    if (sig[lenR + 4] != 0x02)
+        return false;
+    if (lenS == 0)
+        return false;
+    if (sig[lenR + 6] & 0x80)
+        return false;                       // S must not be negative
+    if (lenS > 1 && sig[lenR + 6] == 0x00 && !(sig[lenR + 7] & 0x80))
+        return false;                       // no unnecessary leading zero in S
+    return true;
+}
+
+bool IsLowDERSignature(const std::vector<unsigned char>& sig)
+{
+    if (!IsValidSignatureEncoding(sig))
+        return false;
+    // Half the order of the secp256k1 group, big-endian
+    static const unsigned char vchHalfOrder[32] = {
+        0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D, 0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0};
+    const unsigned int lenR = sig[3];
+    const unsigned int lenS = sig[5 + lenR];
+    const unsigned char* pS = &sig[6 + lenR];
+    // a leading zero byte only pads a high first byte; strip it
+    const unsigned int nStrip = (lenS > 1 && pS[0] == 0x00) ? 1 : 0;
+    const unsigned int nBytes = lenS - nStrip;
+    if (nBytes > 32)
+        return false;
+    // compare as 32-byte big-endian numbers
+    unsigned char vchS[32] = {0};
+    memcpy(vchS + (32 - nBytes), pS + nStrip, nBytes);
+    return memcmp(vchS, vchHalfOrder, 32) <= 0;
+}
+
+// Policy checks on a signature before it is verified; with no flags set every signature passes
+static bool CheckSignatureEncoding(const valtype& vchSig, unsigned int flags)
+{
+    // An empty signature is allowed: it simply fails the check, which lets scripts pass a deliberate "no"
+    if (vchSig.empty() || !(flags & (SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S)))
+        return true;
+    if (!IsValidSignatureEncoding(vchSig))
+        return false;
+    if ((flags & SCRIPT_VERIFY_LOW_S) && !IsLowDERSignature(vchSig))
+        return false;
+    return true;
+}
+
 bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType)
+{
+    return EvalScript(stack, script, txTo, nIn, nHashType, SCRIPT_VERIFY_NONE);
+}
+
+bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType, unsigned int flags)
 {
     CAutoBN_CTX pctx;
     auto pc = script.begin();
@@ -925,6 +1003,8 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     // Drop the signature, since there's no way for a signature to sign itself
                     scriptCode.FindAndDelete(CScript(vchSig));
 
+                    if (!CheckSignatureEncoding(vchSig, flags))
+                        return false;
                     bool fSuccess = CheckSig(vchSig, vchPubKey, scriptCode, txTo, nIn, nHashType);
 
                     popstack(stack);
@@ -985,6 +1065,8 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                         valtype& vchPubKey = stacktop(-ikey);
 
                         // Check signature
+                        if (!CheckSignatureEncoding(vchSig, flags))
+                            return false;
                         if (CheckSig(vchSig, vchPubKey, scriptCode, txTo, nIn, nHashType))
                         {
                             isig++;
@@ -1570,12 +1652,18 @@ bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, vecto
 bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn,
                   bool fValidatePayToScriptHash, int nHashType)
 {
+    return VerifyScript(scriptSig, scriptPubKey, txTo, nIn, fValidatePayToScriptHash, nHashType, SCRIPT_VERIFY_NONE);
+}
+
+bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn,
+                  bool fValidatePayToScriptHash, int nHashType, unsigned int flags)
+{
     vector<vector<unsigned char> > stack, stackCopy;
-    if (!EvalScript(stack, scriptSig, txTo, nIn, nHashType))
+    if (!EvalScript(stack, scriptSig, txTo, nIn, nHashType, flags))
         return false;
     if (fValidatePayToScriptHash)
         stackCopy = stack;
-    if (!EvalScript(stack, scriptPubKey, txTo, nIn, nHashType))
+    if (!EvalScript(stack, scriptPubKey, txTo, nIn, nHashType, flags))
         return false;
     if (stack.empty())
         return false;
@@ -1593,7 +1681,7 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
         CScript pubKey2(pubKeySerialized.begin(), pubKeySerialized.end());
         popstack(stackCopy);
 
-        if (!EvalScript(stackCopy, pubKey2, txTo, nIn, nHashType))
+        if (!EvalScript(stackCopy, pubKey2, txTo, nIn, nHashType, flags))
             return false;
         if (stackCopy.empty())
             return false;
@@ -1651,6 +1739,11 @@ bool SignSignature(const CKeyStore &keystore, const CTransaction& txFrom, CTrans
 
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType)
 {
+    return VerifySignature(txFrom, txTo, nIn, fValidatePayToScriptHash, nHashType, SCRIPT_VERIFY_NONE);
+}
+
+bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType, unsigned int flags)
+{
     assert(nIn < txTo.vin.size());
     const CTxIn& txin = txTo.vin[nIn];
     if (txin.prevout.n >= txFrom.vout.size())
@@ -1660,7 +1753,7 @@ bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsig
     if (txin.prevout.hash != txFrom.GetHash())
         return false;
 
-    return VerifyScript(txin.scriptSig, txout.scriptPubKey, txTo, nIn, fValidatePayToScriptHash, nHashType);
+    return VerifyScript(txin.scriptSig, txout.scriptPubKey, txTo, nIn, fValidatePayToScriptHash, nHashType, flags);
 }
 
 static CScript PushAll(const vector<valtype>& values)

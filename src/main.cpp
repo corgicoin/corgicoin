@@ -625,6 +625,19 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         {
             return RejectTx(pcheck, "bad-txns-inputs", LogError("CTxMemPool::accept() : ConnectInputs failed %s", hash.ToString().substr(0,10).c_str()));
         }
+
+        // Relay policy, not consensus: only strict-DER, low-S signatures. A third party can otherwise re-encode a
+        // valid signature and change the txid of a transaction in flight. (The checks above already verified the
+        // signatures, so this pass mostly hits the signature cache.)
+        if (GetBoolArg("-standardsigs", true))
+        {
+            for (unsigned int i = 0; i < tx.vin.size(); i++)
+            {
+                const CTransaction& txPrev = mapInputs[tx.vin[i].prevout.hash].second;
+                if (!VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
+                    return LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str());
+            }
+        }
     }
 
     // A dry run stops here: the transaction passed every check
