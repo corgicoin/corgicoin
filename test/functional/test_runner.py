@@ -20,6 +20,7 @@ TESTS = [
     "wallet_send.py",
     "wallet_lockunspent.py",
     "wallet_dump.py",
+    "wallet_import_range.py",
     "wallet_encryption.py",
     "feature_block_sync.py",
     "p2p_network_rpcs.py",
