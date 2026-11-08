@@ -141,6 +141,75 @@ Value getrawtransaction(const Array& params, bool fHelp)
     return result;
 }
 
+Value gettxout(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 2 || params.size() > 3)
+        throw runtime_error(
+            "gettxout <txid> <n> [includemempool=true]\n"
+            "Returns details about an unspent transaction output, or null if the output does not exist\n"
+            "or has been spent. With includemempool (the default) an output spent by a transaction in the\n"
+            "memory pool counts as spent, and outputs of unconfirmed transactions are found.\n"
+            "Result: {bestblock, confirmations, value, scriptPubKey, version, coinbase}");
+
+    RPCTypeCheck(params, {str_type, int_type, bool_type});
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+    const int n = params[1].get_int();
+    const bool fIncludeMempool = params.size() > 2 ? params[2].get_bool() : true;
+    if (n < 0)
+        throw JSONRPCError(-8, "Invalid parameter, vout must be positive");
+
+    CTransaction tx;
+    int nConfirmations = 0;
+    {
+        LOCK(mempool.cs);
+        if (fIncludeMempool && mempool.exists(hash))
+            tx = mempool.lookup(hash);
+        else
+            tx.SetNull();
+    }
+    if (tx.IsNull())
+    {
+        CTxDB txdb("r");
+        CTxIndex txindex;
+        if (!tx.ReadFromDisk(txdb, COutPoint(hash, 0), txindex))
+            return Value::null;
+        if (static_cast<unsigned int>(n) >= tx.vout.size() || static_cast<unsigned int>(n) >= txindex.vSpent.size())
+            return Value::null;
+        if (!txindex.vSpent[n].IsNull())
+            return Value::null;                 // spent in the chain
+
+        CBlock block;
+        if (!block.ReadFromDisk(txindex.pos.nFile, txindex.pos.nBlockPos, false))
+            return Value::null;
+        auto mi = mapBlockIndex.find(block.GetHash());
+        if (mi == mapBlockIndex.end() || !mi->second || !mi->second->IsInMainChain())
+            return Value::null;
+        nConfirmations = 1 + nBestHeight - mi->second->nHeight;
+    }
+    if (static_cast<unsigned int>(n) >= tx.vout.size())
+        return Value::null;
+
+    if (fIncludeMempool)
+    {
+        LOCK(mempool.cs);
+        if (mempool.mapNextTx.count(COutPoint(hash, n)))
+            return Value::null;                 // spent by a transaction waiting in the pool
+    }
+
+    Object ret;
+    ret.emplace_back("bestblock", hashBestChain.GetHex());
+    ret.emplace_back("confirmations", nConfirmations);
+    ret.emplace_back("value", ValueFromAmount(tx.vout[n].nValue));
+    Object o;
+    ScriptPubKeyToJSON(tx.vout[n].scriptPubKey, o);
+    ret.emplace_back("scriptPubKey", o);
+    ret.emplace_back("version", tx.nVersion);
+    ret.emplace_back("coinbase", tx.IsCoinBase());
+    return ret;
+}
+
 Value listunspent(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 2)
