@@ -30,6 +30,7 @@ TESTS = [
     "rpc_mempool_verify.py",
     "rpc_gettxout.py",
     "rpc_submitblock.py",
+    "rpc_testmempoolaccept.py",
     "rpc_invalidateblock.py",
     "wallet_hd_encryption.py",
     "rpc_http_auth.py",

@@ -68,6 +68,7 @@ extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
 extern Value getrawtransaction(const Array& params, bool fHelp); // in rcprawtransaction.cpp
 extern Value gettxout(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
+extern Value testmempoolaccept(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
 extern Value listunspent(const Array& params, bool fHelp);
 extern Value lockunspent(const Array& params, bool fHelp);
 extern Value listlockunspent(const Array& params, bool fHelp);
@@ -3365,6 +3366,7 @@ static const CRPCCommand vRPCCommands[] =
     { "decoderawtransaction",   &decoderawtransaction,   false },
     { "signrawtransaction",     &signrawtransaction,     false },
     { "sendrawtransaction",     &sendrawtransaction,     false },
+    { "testmempoolaccept",      &testmempoolaccept,      false },
 };
 
 CRPCTable::CRPCTable()
@@ -4262,6 +4264,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "getrawtransaction"      && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "gettxout"               && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "gettxout"               && n > 2) ConvertTo<bool>(params[2]);
+    if (strMethod == "testmempoolaccept"      && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "createrawtransaction"   && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "createrawtransaction"   && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "signrawtransaction"     && n > 1) ConvertTo<Array>(params[1]);

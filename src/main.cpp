@@ -489,37 +489,45 @@ bool CTransaction::CheckTransaction() const
     return true;
 }
 
+// Record why a transaction was refused (when the caller asked) and pass the result through
+static bool RejectTx(CTxAcceptCheck* pcheck, const char* strReason, bool fResult = false)
+{
+    if (pcheck && !fResult)
+        pcheck->strReject = strReason;
+    return fResult;
+}
+
 bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
-                        bool* pfMissingInputs)
+                        bool* pfMissingInputs, CTxAcceptCheck* pcheck)
 {
     if (pfMissingInputs)
         *pfMissingInputs = false;
 
     if (!tx.CheckTransaction())
-        return LogError("CTxMemPool::accept() : CheckTransaction failed");
+        return RejectTx(pcheck, "invalid-transaction", LogError("CTxMemPool::accept() : CheckTransaction failed"));
 
     // Coinbase is only valid in a block, not as a loose transaction
     if (tx.IsCoinBase())
-        return tx.DoS(100, LogError("CTxMemPool::accept() : coinbase as individual tx"));
+        return RejectTx(pcheck, "coinbase", tx.DoS(100, LogError("CTxMemPool::accept() : coinbase as individual tx")));
 
     // To help v0.1.5 clients who would see it as a negative number
     if (static_cast<int64>(tx.nLockTime) > std::numeric_limits<int>::max())
-        return LogError("CTxMemPool::accept() : not accepting nLockTime beyond 2038 yet");
+        return RejectTx(pcheck, "locktime-too-far", LogError("CTxMemPool::accept() : not accepting nLockTime beyond 2038 yet"));
 
     // Rather not work on nonstandard transactions (unless -testnet)
     if (!fTestNet && !tx.IsStandard())
-        return LogError("CTxMemPool::accept() : nonstandard transaction type");
+        return RejectTx(pcheck, "nonstandard", LogError("CTxMemPool::accept() : nonstandard transaction type"));
 
     // Do we already have it?
     uint256 hash = tx.GetHash();
     {
         LOCK(cs);
         if (mapTx.count(hash))
-            return false;
+            return RejectTx(pcheck, "txn-already-in-mempool");
     }
     if (fCheckInputs)
         if (txdb.ContainsTx(hash))
-            return false;
+            return RejectTx(pcheck, "txn-already-known");
 
     // Check for conflicts with in-memory transactions
     CTransaction* ptxOld = nullptr;
@@ -529,7 +537,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         if (mapNextTx.count(outpoint))
         {
             // Disable replacement feature for now
-            return false;
+            return RejectTx(pcheck, "txn-mempool-conflict");
 
             // Allow replacing with a newer version of the same transaction
             if (i != 0)
@@ -557,15 +565,15 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         if (!tx.FetchInputs(txdb, mapUnused, false, false, mapInputs, fInvalid))
         {
             if (fInvalid)
-                return LogError("CTxMemPool::accept() : FetchInputs found invalid tx %s", hash.ToString().substr(0,10).c_str());
+                return RejectTx(pcheck, "bad-txns-inputs", LogError("CTxMemPool::accept() : FetchInputs found invalid tx %s", hash.ToString().substr(0,10).c_str()));
             if (pfMissingInputs)
                 *pfMissingInputs = true;
-            return false;
+            return RejectTx(pcheck, "missing-inputs");
         }
 
         // Check for non-standard pay-to-script-hash in inputs
         if (!tx.AreInputsStandard(mapInputs) && !fTestNet)
-            return LogError("CTxMemPool::accept() : nonstandard transaction input");
+            return RejectTx(pcheck, "nonstandard-inputs", LogError("CTxMemPool::accept() : nonstandard transaction input"));
 
         // Note: if you modify this code to accept non-standard transactions, then
         // you should add code here to check that the transaction does a
@@ -573,10 +581,12 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
         int64 nFees = tx.GetValueIn(mapInputs)-tx.GetValueOut();
         unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+        if (pcheck)
+            pcheck->nFees = nFees;
 
         // Don't accept it if it can't get into a block
         if (nFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
-            return LogError("CTxMemPool::accept() : not enough fees");
+            return RejectTx(pcheck, "insufficient-fee", LogError("CTxMemPool::accept() : not enough fees"));
 
         // Continuously rate-limit free transactions
         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
@@ -596,9 +606,10 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
                 // -limitfreerelay unit is thousand-bytes-per-minute
                 // At default rate it would take over a month to fill 1GB
                 if (dFreeCount > GetArg("-limitfreerelay", 15)*10*1000 && !IsFromMe(tx))
-                    return LogError("CTxMemPool::accept() : free transaction rejected by rate limiter");
+                    return RejectTx(pcheck, "rate-limited", LogError("CTxMemPool::accept() : free transaction rejected by rate limiter"));
                 LogDebug("Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount+nSize);
-                dFreeCount += nSize;
+                if (!(pcheck && pcheck->fTestOnly))
+                    dFreeCount += nSize;
             }
         }
 
@@ -606,9 +617,13 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         // This is done last to help prevent CPU exhaustion denial-of-service attacks.
         if (!tx.ConnectInputs(mapInputs, mapUnused, CDiskTxPos(1,1,1), pindexBest, false, false))
         {
-            return LogError("CTxMemPool::accept() : ConnectInputs failed %s", hash.ToString().substr(0,10).c_str());
+            return RejectTx(pcheck, "bad-txns-inputs", LogError("CTxMemPool::accept() : ConnectInputs failed %s", hash.ToString().substr(0,10).c_str()));
         }
     }
+
+    // A dry run stops here: the transaction passed every check
+    if (pcheck && pcheck->fTestOnly)
+        return true;
 
     // Store transaction in memory
     {
@@ -632,9 +647,9 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     return true;
 }
 
-bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMissingInputs)
+bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck)
 {
-    return mempool.accept(txdb, *this, fCheckInputs, pfMissingInputs);
+    return mempool.accept(txdb, *this, fCheckInputs, pfMissingInputs, pcheck);
 }
 
 bool CTxMemPool::addUnchecked(const uint256& hash, CTransaction &tx)
