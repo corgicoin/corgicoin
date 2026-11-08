@@ -627,10 +627,12 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             return RejectTx(pcheck, "bad-txns-inputs", LogError("CTxMemPool::accept() : ConnectInputs failed %s", hash.ToString().substr(0,10).c_str()));
         }
 
-        // Relay policy, not consensus: only strict-DER, low-S signatures. A third party can otherwise re-encode a
+        // Relay policy, not consensus: only strict-DER, low-S signatures. Off by default for now: wallets before v4.9
+        // emit a high S on about half of all inputs, so enforcing it before they have upgraded would strand their
+        // payments (Bitcoin Core likewise shipped low-S signing well before it enforced low-S relay). A third party can otherwise re-encode a
         // valid signature and change the txid of a transaction in flight. (The checks above already verified the
         // signatures, so this pass mostly hits the signature cache.)
-        if (GetBoolArg("-standardsigs", true))
+        if (GetBoolArg("-standardsigs", false))
         {
             for (unsigned int i = 0; i < tx.vin.size(); i++)
             {

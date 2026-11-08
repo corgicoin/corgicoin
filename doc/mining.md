@@ -129,6 +129,17 @@ sit in the tree slot derived from the nonce and chain ID, as on Namecoin and
 Dogecoin. `test/functional/auxpow_builder.py` builds proofs exactly the way
 the node checks them and is a handy reference.
 
+Other RPCs pool software expects are there too: `submitblock` (BIP 22, for
+solo and non-merged pools), `gettxout`, `testmempoolaccept` and
+`prioritisetransaction`. For new-block notifications without polling, build
+with ZeroMQ (`cmake .. -DUSE_ZMQ=ON`, needs libzmq; release binaries leave it
+out) and start the node with, for example,
+`-zmqpubhashblock=tcp://127.0.0.1:28332`. There are also `-zmqpubrawblock`,
+`-zmqpubhashtx` and `-zmqpubrawtx`. Each message has three frames: topic, body
+and a 4-byte little-endian sequence number. Bind to localhost unless the
+subscriber is on another machine. Without ZeroMQ, `-blocknotify=<cmd>` still
+works.
+
 ## 5. What to do with mined CORG
 
 Beyond holding and transacting, CorgiCoin has an on-chain burn mechanism

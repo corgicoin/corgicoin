@@ -49,7 +49,7 @@ def flip_s(tx_hex, node):
 
 class StandardSignaturesTest(CorgiTestFramework):
     num_nodes = 2
-    extra_args = [["-standardsigs=0"], []]     # node 0 relays anything valid; node 1 is the default
+    extra_args = [["-standardsigs=0"], ["-standardsigs=1"]]     # node 0 relays anything valid; node 1 enforces the policy
 
     def spend_raw(self, node, utxo, fee=Decimal(1)):
         raw = node.createrawtransaction([{"txid": utxo["txid"], "vout": utxo["vout"]}],
@@ -75,7 +75,7 @@ class StandardSignaturesTest(CorgiTestFramework):
         self.sync_blocks()
         utxos = [u for u in strict.listunspent() if u["confirmations"] > 0 and u["amount"] > 10][:4]
 
-        self.log("a high-S twin of a valid transaction is refused by the default pool")
+        self.log("a high-S twin of a valid transaction is refused by a -standardsigs=1 pool")
         good = self.spend_raw(strict, utxos[0])
         twin = flip_s(good, strict)
         good_id = strict.decoderawtransaction(good)["txid"]
