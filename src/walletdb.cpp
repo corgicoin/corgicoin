@@ -280,6 +280,12 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
             {
                 ssValue >> pwallet->vchDefaultKey;
             }
+            else if (strType == "abandoned")
+            {
+                uint256 hash;
+                ssKey >> hash;
+                pwallet->setAbandoned.insert(hash);
+            }
             else if (strType == "pool")
             {
                 int64 nIndex;

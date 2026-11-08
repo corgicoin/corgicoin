@@ -72,6 +72,7 @@ extern Value testmempoolaccept(const Array& params, bool fHelp); // in rpcrawtra
 extern Value prioritisetransaction(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
 extern Value listunspent(const Array& params, bool fHelp);
 extern Value lockunspent(const Array& params, bool fHelp);
+extern Value abandontransaction(const Array& params, bool fHelp);
 extern Value listlockunspent(const Array& params, bool fHelp);
 extern Value dumpwallet(const Array& params, bool fHelp);
 extern Value importwallet(const Array& params, bool fHelp);
@@ -2729,6 +2730,31 @@ Value getauxblock(const Array& params, bool fHelp)
     return AuxMiningSubmitBlock(params[0].get_str(), params[1].get_str(), reservekey);
 }
 
+Value abandontransaction(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "abandontransaction <txid>\n"
+            "Gives up on a wallet transaction that is not in a block, together with the wallet transactions that\n"
+            "spend from it: they are removed from this node's memory pool, the coins they spent become available\n"
+            "again, and the wallet stops tracking them (the record is kept so a copy relayed later is ignored).\n"
+            "Use it for a transaction that will never confirm. It cannot undo a broadcast: peers that still hold\n"
+            "the transaction can relay it back into the pool, and if it is mined after all the wallet picks it up\n"
+            "again.");
+
+    RPCTypeCheck(params, {str_type});
+    const std::string strHash = params[0].get_str();
+    if (!IsHex(strHash) || strHash.size() != 64)
+        throw JSONRPCError(-8, "txid must be 64 hex characters");
+    uint256 hash;
+    hash.SetHex(strHash);
+
+    std::string strError;
+    if (!pwalletMain->AbandonTransaction(hash, strError))
+        throw JSONRPCError(-5, strError);
+    return Value::null;
+}
+
 Value getrawmempool(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 0)
@@ -3356,6 +3382,7 @@ static const CRPCCommand vRPCCommands[] =
     { "dumpprivkey",            &dumpprivkey,            false },
     { "importprivkey",          &importprivkey,          false },
     { "listunspent",            &listunspent,            false },
+    { "abandontransaction",     &abandontransaction,     false },
     { "lockunspent",            &lockunspent,            false },
     { "listlockunspent",        &listlockunspent,        false },
     { "dumpwallet",             &dumpwallet,             true },
