@@ -328,4 +328,20 @@ BOOST_AUTO_TEST_CASE(rand_bytes_checked)
     BOOST_CHECK(memcmp(a, zero, sizeof(a)) != 0);
 }
 
+BOOST_AUTO_TEST_CASE(timing_resistant_equal)
+{
+    BOOST_CHECK(TimingResistantEqual("", ""));
+    BOOST_CHECK(TimingResistantEqual("user:password", "user:password"));
+    BOOST_CHECK(!TimingResistantEqual("user:password", "user:passworD"));   // last character
+    BOOST_CHECK(!TimingResistantEqual("user:password", "Xser:password"));   // first character
+    BOOST_CHECK(!TimingResistantEqual("user:password", "user:passwor"));    // shorter
+    BOOST_CHECK(!TimingResistantEqual("user:password", "user:password!"));  // longer
+    BOOST_CHECK(!TimingResistantEqual("", "x"));
+    BOOST_CHECK(!TimingResistantEqual("x", ""));
+    // embedded NULs, which a C-string compare would stop at
+    BOOST_CHECK(!TimingResistantEqual(std::string("ab\0c", 4), std::string("ab\0d", 4)));
+    BOOST_CHECK(!TimingResistantEqual(std::string("ab\0", 3), "ab"));
+    BOOST_CHECK(TimingResistantEqual(std::string("\xff\x80", 2), std::string("\xff\x80", 2)));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

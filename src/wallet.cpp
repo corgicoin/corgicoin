@@ -299,6 +299,14 @@ bool CWallet::AddCScript(const CScript& redeemScript)
     return CWalletDB(strWalletFile).WriteCScript(Hash160(redeemScript), redeemScript);
 }
 
+// Milliseconds since nStart, at least 1: the key-derivation calibration divides by this, and a fast machine can finish
+// a short derivation inside one clock tick
+static double ElapsedMillis(int64 nStart)
+{
+    int64 nElapsed = GetTimeMillis() - nStart;
+    return nElapsed < 1 ? 1.0 : (double)nElapsed;
+}
+
 bool CWallet::UnlockWithMasterKey(const SecureString& strWalletPassphrase, const CMasterKey& kMasterKey, CKeyingMaterial& vMasterKeyOut)
 {
     // Method 0 is Bitcoin's EVP_BytesToKey, but CorgiCoin v4.2 to v4.7 built against OpenSSL 3 wrote PBKDF2-derived
@@ -366,26 +374,48 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
         {
             if (UnlockWithMasterKey(strOldWalletPassphrase, pMasterKey.second, vMasterKey))
             {
+                // Keep the current master key: if the new one cannot be derived, encrypted or written, the old
+                // passphrase must keep working in memory as well as on disk
+                const CMasterKey kOldMasterKey = pMasterKey.second;
+
                 // Re-encrypt with the standard derivation (this also migrates a v4.2-v4.7 PBKDF2 master key)
                 pMasterKey.second.nDerivationMethod = WALLET_DERIVATION_BYTESTOKEY_SHA512;
                 int64 nStartTime = GetTimeMillis();
                 crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod);
-                pMasterKey.second.nDeriveIterations = pMasterKey.second.nDeriveIterations * (100 / ((double)(GetTimeMillis() - nStartTime)));
+                pMasterKey.second.nDeriveIterations = pMasterKey.second.nDeriveIterations * (100 / ElapsedMillis(nStartTime));
 
                 nStartTime = GetTimeMillis();
                 crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod);
-                pMasterKey.second.nDeriveIterations = (pMasterKey.second.nDeriveIterations + pMasterKey.second.nDeriveIterations * 100 / ((double)(GetTimeMillis() - nStartTime))) / 2;
+                pMasterKey.second.nDeriveIterations = (pMasterKey.second.nDeriveIterations + pMasterKey.second.nDeriveIterations * 100 / ElapsedMillis(nStartTime)) / 2;
 
                 if (pMasterKey.second.nDeriveIterations < 25000)
                     pMasterKey.second.nDeriveIterations = 25000;
 
                 LogPrintf("Wallet passphrase changed to an nDeriveIterations of %i\n", pMasterKey.second.nDeriveIterations);
 
-                if (!crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod))
+                // The database can fail by returning false or by throwing (it cannot open its file): either way the
+                // old master key goes back, so memory and disk agree
+                bool fPersisted = false;
+                try
+                {
+                    fPersisted = crypter.SetKeyFromPassphrase(strNewWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod) &&
+                                 crypter.Encrypt(vMasterKey, pMasterKey.second.vchCryptedKey) &&
+                                 CWalletDB(strWalletFile).WriteMasterKey(pMasterKey.first, pMasterKey.second);
+                }
+                catch (...)
+                {
+                    pMasterKey.second = kOldMasterKey;
+                    if (fWasLocked)
+                        Lock();   // verifying the old passphrase unlocked the key store
+                    throw;
+                }
+                if (!fPersisted)
+                {
+                    pMasterKey.second = kOldMasterKey;
+                    if (fWasLocked)
+                        Lock();
                     return false;
-                if (!crypter.Encrypt(vMasterKey, pMasterKey.second.vchCryptedKey))
-                    return false;
-                CWalletDB(strWalletFile).WriteMasterKey(pMasterKey.first, pMasterKey.second);
+                }
                 if (fWasLocked)
                     Lock();
                 return true;
@@ -490,11 +520,11 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     CCrypter crypter;
     int64 nStartTime = GetTimeMillis();
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, 25000, kMasterKey.nDerivationMethod);
-    kMasterKey.nDeriveIterations = 2500000 / ((double)(GetTimeMillis() - nStartTime));
+    kMasterKey.nDeriveIterations = 2500000 / ElapsedMillis(nStartTime);
 
     nStartTime = GetTimeMillis();
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, kMasterKey.nDeriveIterations, kMasterKey.nDerivationMethod);
-    kMasterKey.nDeriveIterations = (kMasterKey.nDeriveIterations + kMasterKey.nDeriveIterations * 100 / ((double)(GetTimeMillis() - nStartTime))) / 2;
+    kMasterKey.nDeriveIterations = (kMasterKey.nDeriveIterations + kMasterKey.nDeriveIterations * 100 / ElapsedMillis(nStartTime)) / 2;
 
     if (kMasterKey.nDeriveIterations < 25000)
         kMasterKey.nDeriveIterations = 25000;
@@ -682,6 +712,16 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
         LOCK(cs_wallet);
         bool fExisted = mapWallet.count(hash);
         if (fExisted && !fUpdate) return false;
+        if (setAbandoned.count(hash))
+        {
+            // A copy still circulating among peers must not bring an abandoned transaction back...
+            if (!pblock)
+                return false;
+            // ...but one that was mined after all is real: track it again
+            setAbandoned.erase(hash);
+            if (fFileBacked)
+                CWalletDB(strWalletFile).EraseAbandoned(hash);
+        }
         if (fExisted || IsMine(tx) || IsFromMe(tx))
         {
             CWalletTx wtx(this,tx);
@@ -694,6 +734,89 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
             WalletUpdateSpent(tx);
     }
     return false;
+}
+
+bool CWallet::AbandonTransaction(const uint256& hashTx, std::string& strError)
+{
+    LOCK(cs_wallet);
+    if (!mapWallet.count(hashTx))
+    {
+        strError = "Invalid or non-wallet transaction id";
+        return false;
+    }
+
+    // The transaction and every wallet transaction that spends from it, none of which may be in a block
+    CTxDB txdb("r");
+    std::set<uint256> setAbandon;
+    std::vector<uint256> vTodo(1, hashTx);
+    while (!vTodo.empty())
+    {
+        const uint256 hash = vTodo.back();
+        vTodo.pop_back();
+        if (!setAbandon.insert(hash).second)
+            continue;
+        if (txdb.ContainsTx(hash))
+        {
+            strError = hash == hashTx ? "Transaction not eligible for abandonment: it is in a block"
+                                      : "Transaction not eligible for abandonment: a transaction that spends it is in a block";
+            return false;
+        }
+        for (const std::pair<const uint256, CWalletTx>& item : mapWallet)
+            for (const CTxIn& txin : item.second.vin)
+                if (txin.prevout.hash == hash)
+                    vTodo.push_back(item.first);
+    }
+
+    // Out of this node's pool (a peer may still hold a copy), then hand back the coins they spent
+    for (const uint256& hash : setAbandon)
+    {
+        LOCK(mempool.cs);
+        if (mempool.exists(hash))
+        {
+            CTransaction tx = mempool.lookup(hash);
+            mempool.remove(tx);
+        }
+    }
+    for (const uint256& hash : setAbandon)
+    {
+        for (const CTxIn& txin : mapWallet[hash].vin)
+        {
+            if (setAbandon.count(txin.prevout.hash))
+                continue;
+            auto mi = mapWallet.find(txin.prevout.hash);
+            if (mi == mapWallet.end() || txin.prevout.n >= mi->second.vout.size() || !mi->second.IsSpent(txin.prevout.n))
+                continue;
+
+            // Only if nothing else spends it: a transaction in a block, or one waiting in the pool
+            CTxIndex txindex;
+            if (txdb.ReadTxIndex(txin.prevout.hash, txindex) && txin.prevout.n < txindex.vSpent.size() && !txindex.vSpent[txin.prevout.n].IsNull())
+                continue;
+            {
+                LOCK(mempool.cs);
+                if (mempool.mapNextTx.count(txin.prevout))
+                    continue;
+            }
+            mi->second.MarkUnspent(txin.prevout.n);
+            mi->second.MarkDirty();
+            mi->second.WriteToDisk();
+            NotifyTransactionChanged(this, mi->first, ChangeType::CT_UPDATED);
+        }
+    }
+
+    // Stop tracking them, and remember that, so a copy relayed later is not taken back in
+    for (const uint256& hash : setAbandon)
+    {
+        mapWallet.erase(hash);
+        setAbandoned.insert(hash);
+        if (fFileBacked)
+        {
+            CWalletDB walletdb(strWalletFile);
+            walletdb.EraseTx(hash);
+            walletdb.WriteAbandoned(hash);
+        }
+        NotifyTransactionChanged(this, hash, ChangeType::CT_DELETED);
+    }
+    return true;
 }
 
 bool CWallet::EraseFromWallet(uint256 hash)

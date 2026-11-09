@@ -77,10 +77,13 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 
 | Test | Covers |
 |---|---|
+| `feature_zmq.py` | `-zmqpub*` notifications: block and transaction topics, byte order and sequence numbers (needs `pyzmq`; skipped without it or without libzmq) |
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
+| `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |
+| `wallet_abandon.py` | `abandontransaction`: coins and balance restored, descendants abandoned with it, survives a restart, a mined copy is tracked again |
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
 | `rpc_http_auth.py` | malformed `Authorization` headers get 401 and leave the server running; a correct login still works |
@@ -89,6 +92,11 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
 | `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |
 | `feature_auxpow.py` | merged mining as pools do it: multi-chain proofs, legacy commitment, one rejection per AuxPoW rule (checked against its exact error), stale work, pre-fork guard, `getauxblock`. Proofs come from `auxpow_builder.py` |
+| `rpc_gettxout.py` | `gettxout`: confirmed, unconfirmed and spent outputs, with and without the memory pool |
+| `rpc_submitblock.py` | `submitblock`: accepted, duplicate, orphan, rejected and undecodable blocks |
+| `rpc_testmempoolaccept.py` | `testmempoolaccept`: dry-run acceptance and reject reasons, with no change to the pool or wallet |
+| `rpc_prioritisetransaction.py` | `prioritisetransaction`: holding a transaction out of blocks, releasing it, and admitting one below the relay fee |
+| `rpc_standard_signatures.py` | the low-S / strict-DER relay policy: wallet signatures, a refused high-S twin, `-standardsigs=0`, and a block carrying a twin |
 | `rpc_mempool_verify.py` | `getmempoolinfo`; `verifychain` on a healthy chain and over a deliberately corrupted block |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |

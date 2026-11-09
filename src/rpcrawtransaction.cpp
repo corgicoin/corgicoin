@@ -141,6 +141,75 @@ Value getrawtransaction(const Array& params, bool fHelp)
     return result;
 }
 
+Value gettxout(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 2 || params.size() > 3)
+        throw runtime_error(
+            "gettxout <txid> <n> [includemempool=true]\n"
+            "Returns details about an unspent transaction output, or null if the output does not exist\n"
+            "or has been spent. With includemempool (the default) an output spent by a transaction in the\n"
+            "memory pool counts as spent, and outputs of unconfirmed transactions are found.\n"
+            "Result: {bestblock, confirmations, value, scriptPubKey, version, coinbase}");
+
+    RPCTypeCheck(params, {str_type, int_type, bool_type});
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+    const int n = params[1].get_int();
+    const bool fIncludeMempool = params.size() > 2 ? params[2].get_bool() : true;
+    if (n < 0)
+        throw JSONRPCError(-8, "Invalid parameter, vout must be positive");
+
+    CTransaction tx;
+    int nConfirmations = 0;
+    {
+        LOCK(mempool.cs);
+        if (fIncludeMempool && mempool.exists(hash))
+            tx = mempool.lookup(hash);
+        else
+            tx.SetNull();
+    }
+    if (tx.IsNull())
+    {
+        CTxDB txdb("r");
+        CTxIndex txindex;
+        if (!tx.ReadFromDisk(txdb, COutPoint(hash, 0), txindex))
+            return Value::null;
+        if (static_cast<unsigned int>(n) >= tx.vout.size() || static_cast<unsigned int>(n) >= txindex.vSpent.size())
+            return Value::null;
+        if (!txindex.vSpent[n].IsNull())
+            return Value::null;                 // spent in the chain
+
+        CBlock block;
+        if (!block.ReadFromDisk(txindex.pos.nFile, txindex.pos.nBlockPos, false))
+            return Value::null;
+        auto mi = mapBlockIndex.find(block.GetHash());
+        if (mi == mapBlockIndex.end() || !mi->second || !mi->second->IsInMainChain())
+            return Value::null;
+        nConfirmations = 1 + nBestHeight - mi->second->nHeight;
+    }
+    if (static_cast<unsigned int>(n) >= tx.vout.size())
+        return Value::null;
+
+    if (fIncludeMempool)
+    {
+        LOCK(mempool.cs);
+        if (mempool.mapNextTx.count(COutPoint(hash, n)))
+            return Value::null;                 // spent by a transaction waiting in the pool
+    }
+
+    Object ret;
+    ret.emplace_back("bestblock", hashBestChain.GetHex());
+    ret.emplace_back("confirmations", nConfirmations);
+    ret.emplace_back("value", ValueFromAmount(tx.vout[n].nValue));
+    Object o;
+    ScriptPubKeyToJSON(tx.vout[n].scriptPubKey, o);
+    ret.emplace_back("scriptPubKey", o);
+    ret.emplace_back("version", tx.nVersion);
+    ret.emplace_back("coinbase", tx.IsCoinBase());
+    return ret;
+}
+
 Value listunspent(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 2)
@@ -536,6 +605,81 @@ Value signrawtransaction(const Array& params, bool fHelp)
     result.emplace_back("complete", fComplete);
 
     return result;
+}
+
+Value testmempoolaccept(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "testmempoolaccept [\"rawtx\"]\n"
+            "Checks whether a raw transaction would be accepted into the memory pool, without adding it,\n"
+            "relaying it or touching the wallet. The argument is an array holding one hex-encoded transaction.\n"
+            "Result: [{txid, allowed, reject-reason (when not allowed), fee (when the inputs were found)}]");
+
+    RPCTypeCheck(params, {array_type});
+    const Array& txs = params[0].get_array();
+    if (txs.size() != 1)
+        throw JSONRPCError(-8, "Array must contain exactly one raw transaction for now");
+    if (txs[0].type() != str_type)
+        throw JSONRPCError(-3, "Expected a hex string");
+
+    vector<unsigned char> txData(ParseHex(txs[0].get_str()));
+    CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION);
+    CTransaction tx;
+    try {
+        ssData >> tx;
+    }
+    catch (std::exception &e) {
+        throw JSONRPCError(-22, "TX decode failed");
+    }
+    if (!ssData.empty())
+        throw JSONRPCError(-22, "TX decode failed: trailing data");
+
+    Object result;
+    result.emplace_back("txid", tx.GetHash().GetHex());
+
+    CTxAcceptCheck check;
+    check.fTestOnly = true;
+    bool fMissingInputs = false;
+    CTxDB txdb("r");
+    const bool fAllowed = tx.AcceptToMemoryPool(txdb, true, &fMissingInputs, &check);
+    result.emplace_back("allowed", fAllowed);
+    if (!fAllowed)
+        result.emplace_back("reject-reason", check.strReject.empty() ? string("rejected") : check.strReject);
+    if (check.nFees >= 0)
+        result.emplace_back("fee", ValueFromAmount(check.nFees));
+
+    Array ret;
+    ret.push_back(result);
+    return ret;
+}
+
+Value prioritisetransaction(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 3)
+        throw runtime_error(
+            "prioritisetransaction <txid> <priority delta> <fee delta>\n"
+            "Adjusts how a transaction is treated when blocks are assembled, without changing the transaction.\n"
+            "The priority delta is added to its priority; the fee delta (in base units, 1 coin = 100000000)\n"
+            "counts as extra fee when checking the minimum fee, and also when the pool decides whether to\n"
+            "accept it. The real fee is still what the miner collects. A negative delta holds a transaction\n"
+            "back. Deltas are cumulative, apply to transactions not yet seen, and are forgotten on restart.");
+
+    RPCTypeCheck(params, {str_type});
+    if (params[1].type() != real_type && params[1].type() != int_type)
+        throw JSONRPCError(-3, "priority delta must be a number");
+    if (params[2].type() != int_type)
+        throw JSONRPCError(-3, "fee delta must be an integer number of base units");
+
+    const std::string strHash = params[0].get_str();
+    if (!IsHex(strHash) || strHash.size() != 64)
+        throw JSONRPCError(-8, "txid must be 64 hex characters");
+    uint256 hash;
+    hash.SetHex(strHash);
+
+    const double dPriorityDelta = params[1].type() == int_type ? static_cast<double>(params[1].get_int64()) : params[1].get_real();
+    mempool.PrioritiseTransaction(hash, dPriorityDelta, params[2].get_int64());
+    return true;
 }
 
 Value sendrawtransaction(const Array& params, bool fHelp)

@@ -118,6 +118,19 @@ rpcport=62555
 
 ## Version History
 
+### Unreleased
+- **Pool and integration RPCs** (thanks @colneech-dev):
+  - `submitblock` (BIP 22, #90)
+  - `gettxout` (#89)
+  - `testmempoolaccept`, a dry run that reports why a transaction would be refused (#91)
+  - `prioritisetransaction` (#92)
+  - `abandontransaction`, which gives up on an unconfirmed wallet transaction and its wallet descendants and frees their coins (#93)
+- **ZeroMQ notifications** (thanks @colneech-dev, #95): `-zmqpubhashblock`, `-zmqpubrawblock`, `-zmqpubhashtx` and `-zmqpubrawtx`. Opt-in at build time (`-DUSE_ZMQ=ON`); release binaries leave it out. See `doc/mining.md`
+- **Low-S signatures** (thanks @colneech-dev, #94): the wallet now always signs with a low S value, so a third party can't re-encode its transactions under a different txid. A new `-standardsigs=1` option makes the node relay only strict-DER, low-S signatures. It is **off by default** for now, because older wallets produce a high S on about half of their inputs. It is relay policy only, and blocks are unaffected
+- **RPC credentials are compared in constant time** (thanks @colneech-dev, #87)
+- **`importprivkey` rejects keys outside 1…n−1** (zero, the curve order, or larger) instead of importing a key that isn't valid (thanks @colneech-dev, #88)
+- **`walletpassphrasechange` keeps the old passphrase working** if the new master key can't be written. Previously, memory and disk could end up disagreeing. A database file that fails to open is now handled instead of leaving a dead handle behind (thanks @colneech-dev, #86)
+
 ### v4.8.0.0 — HD Wallet Fixes, Wallet Compatibility + Pool-Ready Merged Mining
 
 > **Required upgrade for HD wallets.** If you ran `sethdseed` (or set a recovery phrase in the GUI) on v4.5–v4.7, coins received on HD addresses could not be spent, and `dumpprivkey` exported those keys in the wrong (uncompressed) form. Upgrading fixes both, with the same addresses and no rescan. If you also encrypted such a wallet, v4.5–v4.7 left the HD private keys in `wallet.dat` **unencrypted** and the wallet then refused to load ("Wallet corrupted"). This release loads it, and the first `walletpassphrase` encrypts those keys and deletes the plaintext records. The database may still hold old copies in free space, so if anyone else may have had access to that file, move the funds to a new wallet.

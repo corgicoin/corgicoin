@@ -17,6 +17,7 @@
 #include "compat_openssl.h"
 #include "compat_boost.h"
 #include "logging.h"
+#include "zmqnotify.h"
 #include <filesystem>
 #include <boost/interprocess/sync/file_lock.hpp>
 
@@ -78,6 +79,7 @@ void Shutdown(void* parg)
         nTransactionsUpdated++;
         bitdb.Flush(false);
         StopNode();
+        ZMQShutdown();
         bitdb.Flush(true);
         std::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain.get());
@@ -277,6 +279,11 @@ std::string HelpMessage()
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
+        "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
+        "  -zmqpubhashblock=<address> " + _("Publish the hash of each new best block on a ZeroMQ socket, e.g. tcp://127.0.0.1:28332") + "\n" +
+        "  -zmqpubrawblock=<address>  " + _("Publish each new best block, serialized") + "\n" +
+        "  -zmqpubhashtx=<address>    " + _("Publish the txid of each transaction entering the memory pool or a block") + "\n" +
+        "  -zmqpubrawtx=<address>     " + _("Publish each such transaction, serialized") + "\n" +
         "  -upgradewallet         " + _("Upgrade wallet to latest format") + "\n" +
         "  -keypool=<n>           " + _("Set key pool size to <n> (default: 100)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
@@ -779,6 +786,12 @@ bool AppInit2()
     LogPrintf("setKeyPool.size() = %d\n",      pwalletMain->setKeyPool.size());
     LogPrintf("mapWallet.size() = %d\n",       pwalletMain->mapWallet.size());
     LogPrintf("mapAddressBook.size() = %d\n",  pwalletMain->mapAddressBook.size());
+
+    {
+        std::string strZMQError;
+        if (!ZMQInit(strZMQError))
+            return InitError(strZMQError);
+    }
 
     if (!CreateThread(StartNode, nullptr))
         InitError(_("Error: could not start node"));

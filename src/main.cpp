@@ -13,6 +13,7 @@
 #include "ui_interface.h"
 #include "logging.h"
 #include "base58.h"
+#include "zmqnotify.h"
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
 #include <random>
@@ -489,37 +490,45 @@ bool CTransaction::CheckTransaction() const
     return true;
 }
 
+// Record why a transaction was refused (when the caller asked) and pass the result through
+static bool RejectTx(CTxAcceptCheck* pcheck, const char* strReason, bool fResult = false)
+{
+    if (pcheck && !fResult)
+        pcheck->strReject = strReason;
+    return fResult;
+}
+
 bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
-                        bool* pfMissingInputs)
+                        bool* pfMissingInputs, CTxAcceptCheck* pcheck)
 {
     if (pfMissingInputs)
         *pfMissingInputs = false;
 
     if (!tx.CheckTransaction())
-        return LogError("CTxMemPool::accept() : CheckTransaction failed");
+        return RejectTx(pcheck, "invalid-transaction", LogError("CTxMemPool::accept() : CheckTransaction failed"));
 
     // Coinbase is only valid in a block, not as a loose transaction
     if (tx.IsCoinBase())
-        return tx.DoS(100, LogError("CTxMemPool::accept() : coinbase as individual tx"));
+        return RejectTx(pcheck, "coinbase", tx.DoS(100, LogError("CTxMemPool::accept() : coinbase as individual tx")));
 
     // To help v0.1.5 clients who would see it as a negative number
     if (static_cast<int64>(tx.nLockTime) > std::numeric_limits<int>::max())
-        return LogError("CTxMemPool::accept() : not accepting nLockTime beyond 2038 yet");
+        return RejectTx(pcheck, "locktime-too-far", LogError("CTxMemPool::accept() : not accepting nLockTime beyond 2038 yet"));
 
     // Rather not work on nonstandard transactions (unless -testnet)
     if (!fTestNet && !tx.IsStandard())
-        return LogError("CTxMemPool::accept() : nonstandard transaction type");
+        return RejectTx(pcheck, "nonstandard", LogError("CTxMemPool::accept() : nonstandard transaction type"));
 
     // Do we already have it?
     uint256 hash = tx.GetHash();
     {
         LOCK(cs);
         if (mapTx.count(hash))
-            return false;
+            return RejectTx(pcheck, "txn-already-in-mempool");
     }
     if (fCheckInputs)
         if (txdb.ContainsTx(hash))
-            return false;
+            return RejectTx(pcheck, "txn-already-known");
 
     // Check for conflicts with in-memory transactions
     CTransaction* ptxOld = nullptr;
@@ -529,7 +538,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         if (mapNextTx.count(outpoint))
         {
             // Disable replacement feature for now
-            return false;
+            return RejectTx(pcheck, "txn-mempool-conflict");
 
             // Allow replacing with a newer version of the same transaction
             if (i != 0)
@@ -557,15 +566,15 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         if (!tx.FetchInputs(txdb, mapUnused, false, false, mapInputs, fInvalid))
         {
             if (fInvalid)
-                return LogError("CTxMemPool::accept() : FetchInputs found invalid tx %s", hash.ToString().substr(0,10).c_str());
+                return RejectTx(pcheck, "bad-txns-inputs", LogError("CTxMemPool::accept() : FetchInputs found invalid tx %s", hash.ToString().substr(0,10).c_str()));
             if (pfMissingInputs)
                 *pfMissingInputs = true;
-            return false;
+            return RejectTx(pcheck, "missing-inputs");
         }
 
         // Check for non-standard pay-to-script-hash in inputs
         if (!tx.AreInputsStandard(mapInputs) && !fTestNet)
-            return LogError("CTxMemPool::accept() : nonstandard transaction input");
+            return RejectTx(pcheck, "nonstandard-inputs", LogError("CTxMemPool::accept() : nonstandard transaction input"));
 
         // Note: if you modify this code to accept non-standard transactions, then
         // you should add code here to check that the transaction does a
@@ -573,15 +582,23 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
         int64 nFees = tx.GetValueIn(mapInputs)-tx.GetValueOut();
         unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+        if (pcheck)
+            pcheck->nFees = nFees;
+
+        // A prioritisetransaction fee delta counts as extra fee here and when the block is assembled
+        double dPriorityDelta = 0;
+        int64 nFeeDelta = 0;
+        ApplyDeltas(hash, dPriorityDelta, nFeeDelta);
+        const int64 nModifiedFees = nFees + nFeeDelta;
 
         // Don't accept it if it can't get into a block
-        if (nFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
-            return LogError("CTxMemPool::accept() : not enough fees");
+        if (nModifiedFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
+            return RejectTx(pcheck, "insufficient-fee", LogError("CTxMemPool::accept() : not enough fees"));
 
         // Continuously rate-limit free transactions
         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
         // be annoying or make other's transactions take longer to confirm.
-        if (nFees < MIN_RELAY_TX_FEE)
+        if (nModifiedFees < MIN_RELAY_TX_FEE)
         {
             static CCriticalSection cs;
             static double dFreeCount;
@@ -596,9 +613,10 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
                 // -limitfreerelay unit is thousand-bytes-per-minute
                 // At default rate it would take over a month to fill 1GB
                 if (dFreeCount > GetArg("-limitfreerelay", 15)*10*1000 && !IsFromMe(tx))
-                    return LogError("CTxMemPool::accept() : free transaction rejected by rate limiter");
+                    return RejectTx(pcheck, "rate-limited", LogError("CTxMemPool::accept() : free transaction rejected by rate limiter"));
                 LogDebug("Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount+nSize);
-                dFreeCount += nSize;
+                if (!(pcheck && pcheck->fTestOnly))
+                    dFreeCount += nSize;
             }
         }
 
@@ -606,9 +624,28 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         // This is done last to help prevent CPU exhaustion denial-of-service attacks.
         if (!tx.ConnectInputs(mapInputs, mapUnused, CDiskTxPos(1,1,1), pindexBest, false, false))
         {
-            return LogError("CTxMemPool::accept() : ConnectInputs failed %s", hash.ToString().substr(0,10).c_str());
+            return RejectTx(pcheck, "bad-txns-inputs", LogError("CTxMemPool::accept() : ConnectInputs failed %s", hash.ToString().substr(0,10).c_str()));
+        }
+
+        // Relay policy, not consensus: only strict-DER, low-S signatures. Off by default for now: wallets before v4.9
+        // emit a high S on about half of all inputs, so enforcing it before they have upgraded would strand their
+        // payments (Bitcoin Core likewise shipped low-S signing well before it enforced low-S relay). A third party can otherwise re-encode a
+        // valid signature and change the txid of a transaction in flight. (The checks above already verified the
+        // signatures, so this pass mostly hits the signature cache.)
+        if (GetBoolArg("-standardsigs", false))
+        {
+            for (unsigned int i = 0; i < tx.vin.size(); i++)
+            {
+                const CTransaction& txPrev = mapInputs[tx.vin[i].prevout.hash].second;
+                if (!VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
+                    return LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str());
+            }
         }
     }
+
+    // A dry run stops here: the transaction passed every check
+    if (pcheck && pcheck->fTestOnly)
+        return true;
 
     // Store transaction in memory
     {
@@ -629,12 +666,13 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     LogPrintf("CTxMemPool::accept() : accepted %s (poolsz %u)\n",
            hash.ToString().substr(0,10).c_str(),
            mapTx.size());
+    ZMQNotifyTransaction(tx);
     return true;
 }
 
-bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMissingInputs)
+bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck)
 {
-    return mempool.accept(txdb, *this, fCheckInputs, pfMissingInputs);
+    return mempool.accept(txdb, *this, fCheckInputs, pfMissingInputs, pcheck);
 }
 
 bool CTxMemPool::addUnchecked(const uint256& hash, CTransaction &tx)
@@ -662,10 +700,33 @@ bool CTxMemPool::remove(CTransaction &tx)
             for (const CTxIn& txin : tx.vin)
                 mapNextTx.erase(txin.prevout);
             mapTx.erase(hash);
+            mapDeltas.erase(hash);
             nTransactionsUpdated++;
         }
     }
     return true;
+}
+
+void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)
+{
+    LOCK(cs);
+    std::pair<double, int64>& deltas = mapDeltas[hash];
+    deltas.first += dPriorityDelta;
+    deltas.second += nFeeDelta;
+    if (deltas.first == 0 && deltas.second == 0)
+        mapDeltas.erase(hash);
+    nTransactionsUpdated++;     // a cached block template no longer reflects the order
+    LogPrintf("PrioritiseTransaction: %s priority += %f, fee += %" PRI64d "\n", hash.ToString().c_str(), dPriorityDelta, nFeeDelta);
+}
+
+void CTxMemPool::ApplyDeltas(const uint256& hash, double& dPriorityDelta, int64& nFeeDelta) const
+{
+    LOCK(cs);
+    auto it = mapDeltas.find(hash);
+    if (it == mapDeltas.end())
+        return;
+    dPriorityDelta += it->second.first;
+    nFeeDelta += it->second.second;
 }
 
 void CTxMemPool::queryHashes(std::vector<uint256>& vtxid)
@@ -1758,7 +1819,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
     // Watch for transactions paying to me
     for (CTransaction& tx : vtx)
+    {
         SyncWithWallets(tx, this, true);
+        ZMQNotifyTransaction(tx);
+    }
 
     return true;
 }
@@ -1986,6 +2050,10 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             // strMiscWarning is read by GetWarnings(), called by Qt and the JSON-RPC code to warn the user:
 	//            strMiscWarning = _("Warning: this version is obsolete, upgrade required");
     }
+
+    // the new tip is the block being added, so it is at hand for rawblock
+    if (!fIsInitialDownload)
+        ZMQNotifyBlock(*this, hashBestChain);
 
     std::string strCmd = GetArg("-blocknotify", "");
 
@@ -3988,6 +4056,12 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             // Priority is sum(valuein * age) / txsize
             dPriority /= ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
 
+            // plus whatever the operator added with prioritisetransaction
+            double dPriorityDelta = 0;
+            int64 nUnusedFeeDelta = 0;
+            mempool.ApplyDeltas(tx.GetHash(), dPriorityDelta, nUnusedFeeDelta);
+            dPriority += dPriorityDelta;
+
             if (porphan)
                 porphan->dPriority = dPriority;
             else
@@ -4038,7 +4112,10 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                 continue;
 
             int64 nTxFees = tx.GetValueIn(mapInputs)-tx.GetValueOut();
-            if (nTxFees < nMinFee)
+            double dUnusedPriorityDelta = 0;
+            int64 nFeeDelta = 0;
+            mempool.ApplyDeltas(tx.GetHash(), dUnusedPriorityDelta, nFeeDelta);
+            if (nTxFees + nFeeDelta < nMinFee)      // the delta steers inclusion; the block reward below counts the real fee
                 continue;
 
             nTxSigOps += tx.GetP2SHSigOpCount(mapInputs);

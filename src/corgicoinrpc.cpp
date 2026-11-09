@@ -67,8 +67,12 @@ extern Value disconnectnode(const Array& params, bool fHelp);
 extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
 extern Value getrawtransaction(const Array& params, bool fHelp); // in rcprawtransaction.cpp
+extern Value gettxout(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
+extern Value testmempoolaccept(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
+extern Value prioritisetransaction(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
 extern Value listunspent(const Array& params, bool fHelp);
 extern Value lockunspent(const Array& params, bool fHelp);
+extern Value abandontransaction(const Array& params, bool fHelp);
 extern Value listlockunspent(const Array& params, bool fHelp);
 extern Value dumpwallet(const Array& params, bool fHelp);
 extern Value importwallet(const Array& params, bool fHelp);
@@ -2523,6 +2527,38 @@ Value getblocktemplate(const Array& params, bool fHelp)
     throw JSONRPCError(-8, "Invalid mode");
 }
 
+Value submitblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "submitblock <hexdata> [optional-params-obj]\n"
+            "Attempts to submit a new block to the network. <hexdata> is the serialized block, hex-encoded\n"
+            "(with its AuxPoW proof after the header, for a merged-mined block). The second argument is\n"
+            "accepted and ignored, for compatibility with BIP 22 callers.\n"
+            "Returns null if the block was accepted, \"duplicate\" if it is already known, or \"rejected\".");
+
+    RPCTypeCheck(params, {str_type, obj_type});
+
+    const std::string strHex = params[0].get_str();
+    if (!IsHex(strHex))
+        throw JSONRPCError(-22, "Block decode failed");
+    CDataStream ssBlock(ParseHex(strHex), SER_NETWORK, PROTOCOL_VERSION);
+    CBlock block;
+    try {
+        ssBlock >> block;
+    } catch (const std::exception&) {
+        throw JSONRPCError(-22, "Block decode failed");
+    }
+    if (!ssBlock.empty())
+        throw JSONRPCError(-22, "Block decode failed: trailing data");
+
+    // ProcessBlock only says yes or no; tell a block we already hold apart from a bad one
+    if (mapBlockIndex.count(block.GetHash()))
+        return "duplicate";
+
+    return ProcessBlock(nullptr, &block) ? Value::null : Value("rejected");
+}
+
 // Pending aux blocks handed out by createauxblock/getauxblock, keyed by block
 // hash. Cleared whenever the chain tip moves. See doc/auxpow-spec.md.
 // (The RPC dispatcher holds cs_main and cs_wallet around every call.)
@@ -2692,6 +2728,31 @@ Value getauxblock(const Array& params, bool fHelp)
         return AuxMiningCreateBlock(scriptPubKey);
     }
     return AuxMiningSubmitBlock(params[0].get_str(), params[1].get_str(), reservekey);
+}
+
+Value abandontransaction(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "abandontransaction <txid>\n"
+            "Gives up on a wallet transaction that is not in a block, together with the wallet transactions that\n"
+            "spend from it: they are removed from this node's memory pool, the coins they spent become available\n"
+            "again, and the wallet stops tracking them (the record is kept so a copy relayed later is ignored).\n"
+            "Use it for a transaction that will never confirm. It cannot undo a broadcast: peers that still hold\n"
+            "the transaction can relay it back into the pool, and if it is mined after all the wallet picks it up\n"
+            "again.");
+
+    RPCTypeCheck(params, {str_type});
+    const std::string strHash = params[0].get_str();
+    if (!IsHex(strHash) || strHash.size() != 64)
+        throw JSONRPCError(-8, "txid must be 64 hex characters");
+    uint256 hash;
+    hash.SetHex(strHash);
+
+    std::string strError;
+    if (!pwalletMain->AbandonTransaction(hash, strError))
+        throw JSONRPCError(-5, strError);
+    return Value::null;
 }
 
 Value getrawmempool(const Array& params, bool fHelp)
@@ -3303,6 +3364,7 @@ static const CRPCCommand vRPCCommands[] =
     { "listaccounts",           &listaccounts,           false },
     { "settxfee",               &settxfee,               false },
     { "setmininput",            &setmininput,            false },
+    { "submitblock",            &submitblock,            true },
     { "getblocktemplate",       &getblocktemplate,       true },
     { "getblockheader",         &getblockheader,         false },
     { "getblockchaininfo",      &getblockchaininfo,      true },
@@ -3320,16 +3382,20 @@ static const CRPCCommand vRPCCommands[] =
     { "dumpprivkey",            &dumpprivkey,            false },
     { "importprivkey",          &importprivkey,          false },
     { "listunspent",            &listunspent,            false },
+    { "abandontransaction",     &abandontransaction,     false },
     { "lockunspent",            &lockunspent,            false },
     { "listlockunspent",        &listlockunspent,        false },
     { "dumpwallet",             &dumpwallet,             true },
     { "importwallet",           &importwallet,           false },
     { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
+    { "gettxout",               &gettxout,               false },
     { "createrawtransaction",   &createrawtransaction,   false },
     { "decoderawtransaction",   &decoderawtransaction,   false },
     { "signrawtransaction",     &signrawtransaction,     false },
     { "sendrawtransaction",     &sendrawtransaction,     false },
+    { "testmempoolaccept",      &testmempoolaccept,      false },
+    { "prioritisetransaction",  &prioritisetransaction,  false },
 };
 
 CRPCTable::CRPCTable()
@@ -3512,7 +3578,7 @@ bool HTTPAuthorized(map<string, string>& mapHeaders)
         return false;
     string strUserPass64 = TrimString(strAuth.substr(6));
     string strUserPass = DecodeBase64(strUserPass64);
-    return strUserPass == strRPCUserColonPass;
+    return TimingResistantEqual(strUserPass, strRPCUserColonPass);
 }
 
 //
@@ -4212,6 +4278,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "listaccounts"           && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
+    if (strMethod == "submitblock"            && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "getblockheader"         && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getchaintxstats"        && n > 0) ConvertTo<int>(params[0]);
     if (strMethod == "listsinceblock"         && n > 1) ConvertTo<int64_t>(params[1]);
@@ -4224,6 +4291,11 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "lockunspent"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "lockunspent"            && n > 1) ConvertTo<Array>(params[1]);
     if (strMethod == "getrawtransaction"      && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "gettxout"               && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "gettxout"               && n > 2) ConvertTo<bool>(params[2]);
+    if (strMethod == "testmempoolaccept"      && n > 0) ConvertTo<Array>(params[0]);
+    if (strMethod == "prioritisetransaction"  && n > 1) ConvertTo<double>(params[1]);
+    if (strMethod == "prioritisetransaction"  && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "createrawtransaction"   && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "createrawtransaction"   && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "signrawtransaction"     && n > 1) ConvertTo<Array>(params[1]);

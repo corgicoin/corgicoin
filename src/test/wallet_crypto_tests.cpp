@@ -42,6 +42,7 @@ string EncryptHex(const SecureString& passphrase, unsigned int nMethod)
 class TestCryptoWallet : public CWallet
 {
 public:
+    using CCryptoKeyStore::Lock;          // protected in the base; the tests lock again between unlocks
     CKey key;
     CKeyingMaterial vMasterKeyPlain;
 
@@ -165,6 +166,57 @@ BOOST_AUTO_TEST_CASE(leftover_plaintext_keys_load_and_are_encrypted_on_unlock)
     BOOST_REQUIRE(wallet.Lock());
     BOOST_CHECK(wallet.HaveKey(strayID));
     BOOST_CHECK(!wallet.GetKey(strayID, out));
+}
+
+BOOST_AUTO_TEST_CASE(passphrase_change_that_cannot_be_written_restores_the_old_key)
+{
+    // An in-memory wallet has no database file, so the new master key cannot be persisted (the database throws when
+    // it tries to open it). The change must not leave the unwritten key in memory: before, the old passphrase stopped
+    // working in this process while the file still held the old key.
+    struct CloseDbEnv { ~CloseDbEnv() { bitdb.Close(); } } closeDbEnv;   // the attempt opens the shared environment
+
+    TestCryptoWallet wallet("old passphrase", WALLET_DERIVATION_PBKDF2_SHA512_V4);
+    const CMasterKey before = wallet.mapMasterKeys[1];
+
+    bool fChanged = true;
+    try { fChanged = wallet.ChangeWalletPassphrase("old passphrase", "new passphrase"); } catch (const std::exception&) { fChanged = false; }
+    BOOST_CHECK(!fChanged);
+
+    const CMasterKey& after = wallet.mapMasterKeys[1];
+    BOOST_CHECK(after.vchCryptedKey == before.vchCryptedKey);
+    BOOST_CHECK(after.vchSalt == before.vchSalt);
+    BOOST_CHECK_EQUAL(after.nDeriveIterations, before.nDeriveIterations);
+    BOOST_CHECK_EQUAL(after.nDerivationMethod, before.nDerivationMethod);
+
+    BOOST_CHECK(wallet.IsLocked());
+    BOOST_CHECK(!wallet.Unlock("new passphrase"));
+    BOOST_CHECK(wallet.Unlock("old passphrase"));
+    BOOST_CHECK(wallet.CanSign());
+}
+
+BOOST_AUTO_TEST_CASE(passphrase_change_with_the_wrong_old_passphrase_fails)
+{
+    TestCryptoWallet wallet("old passphrase", WALLET_DERIVATION_BYTESTOKEY_SHA512);
+    BOOST_CHECK(!wallet.ChangeWalletPassphrase("not the passphrase", "new passphrase"));
+    BOOST_CHECK(wallet.Unlock("old passphrase"));
+}
+
+BOOST_AUTO_TEST_CASE(unlock_tries_every_master_key)
+{
+    // A wallet can hold several master keys. A passphrase that does not open the first one must still be tried
+    // against the rest (the loop used to give up at the first failure).
+    TestCryptoWallet wallet("first passphrase", WALLET_DERIVATION_BYTESTOKEY_SHA512);
+    CMasterKey other = wallet.mapMasterKeys[1];
+    CCrypter crypter;
+    BOOST_REQUIRE(crypter.SetKeyFromPassphrase("second passphrase", other.vchSalt, other.nDeriveIterations, WALLET_DERIVATION_PBKDF2_SHA512_V4));
+    BOOST_REQUIRE(crypter.Encrypt(wallet.vMasterKeyPlain, other.vchCryptedKey));
+    wallet.mapMasterKeys[2] = other;      // the same master key under a second passphrase, made the v4 way
+
+    BOOST_CHECK(!wallet.Unlock("neither"));
+    BOOST_CHECK(wallet.Unlock("second passphrase"));   // opens only the second entry
+    BOOST_CHECK(wallet.CanSign());
+    BOOST_CHECK(wallet.Lock());
+    BOOST_CHECK(wallet.Unlock("first passphrase"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
