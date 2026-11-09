@@ -5,12 +5,11 @@
 | Version | Supported          |
 | ------- | ------------------ |
 | 4.8.x   | :white_check_mark: |
-| 4.7.x   | :white_check_mark: |
-| 4.2.x – 4.6.x | :x:           |
-| < 4.2   | :x:                |
+| < 4.8   | :x:                |
 
-Only the two most recent releases receive security fixes. There is no
-long-term support branch.
+Only the latest release receives security fixes; there is no long-term support branch. Upgrade to it. In particular,
+v4.5–v4.7 have a wallet bug that leaves HD-wallet coins unspendable and, in encrypted HD wallets, private keys
+unencrypted on disk (fixed in v4.8.0.0).
 
 ## Reporting a Vulnerability
 
@@ -18,14 +17,10 @@ long-term support branch.
 vulnerability.** Discussing an exploitable bug in the open before a fix
 is released can put funds and running nodes at risk.
 
-Report privately instead, using one of:
-
-1. **GitHub Security Advisories (preferred):** use the "Report a
-   vulnerability" button under this repo's Security tab. This opens a
-   private advisory visible only to maintainers, where you can discuss
-   the issue and a fix before anything goes public.
-2. **Email:** `<maintainer email>` (fill in — or drop this line and rely
-   on GitHub Advisories alone).
+Report privately instead, through **GitHub Security Advisories**: use the
+"Report a vulnerability" button under this repo's Security tab. This opens a
+private advisory visible only to maintainers, where you can discuss the issue
+and a fix before anything goes public.
 
 Please include a description of the impact (crash, fund loss, consensus
 split, etc.), reproduction steps or a minimal test case, and a suggested
