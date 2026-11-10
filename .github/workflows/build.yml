@@ -9,13 +9,14 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             build-essential \
             cmake \
             libboost-all-dev \
@@ -51,13 +52,14 @@ jobs:
     # standard library's assertions (-D_GLIBCXX_ASSERTIONS), which stop on out-of-range vector access
     # that UBSan alone cannot see. UBSan is built with -fno-sanitize-recover so any report fails the job.
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y             build-essential             cmake             libboost-all-dev             libssl-dev             libdb++-dev             libminiupnpc-dev
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y             build-essential             cmake             libboost-all-dev             libssl-dev             libdb++-dev             libminiupnpc-dev
 
       - name: Build unit tests with sanitizers
         run: |
@@ -75,6 +77,7 @@ jobs:
 
   build-macos:
     runs-on: macos-15
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
@@ -109,13 +112,14 @@ jobs:
 
   build-windows:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
       - name: Install MinGW cross-compiler and dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
             g++-mingw-w64-x86-64-posix \
             gcc-mingw-w64-x86-64-posix \
             mingw-w64-x86-64-dev \
@@ -208,6 +212,7 @@ jobs:
 
   build-windows-qt:
     runs-on: windows-latest
+    timeout-minutes: 90
     defaults:
       run:
         shell: msys2 {0}
