@@ -138,7 +138,7 @@ jobs:
 
           # Boost
           cd /tmp/deps
-          curl -sL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 | tar xj
+          curl -fsSL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 | tar xj
           cd boost_1_84_0
           echo "using gcc : mingw : x86_64-w64-mingw32-g++ ;" > user-config.jam
           ./bootstrap.sh --without-icu
@@ -149,7 +149,7 @@ jobs:
 
           # OpenSSL
           cd /tmp/deps
-          curl -sL https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz | tar xz
+          curl -fsSL https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz | tar xz
           cd openssl-3.3.2
           ./Configure mingw64 no-shared --cross-compile-prefix=x86_64-w64-mingw32- --prefix=$PREFIX
           make -j$(nproc) 2>&1 | tail -3
@@ -157,7 +157,7 @@ jobs:
 
           # Berkeley DB 4.8 (cross-compiles cleanly with MinGW, unlike 5.3)
           cd /tmp/deps
-          curl -sL https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz | tar xz
+          curl -fsSL https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz | tar xz
           cd db-4.8.30/build_unix
           # Patch: fix WinIoCtl.h case sensitivity for MinGW
           sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h 2>/dev/null || true
@@ -175,20 +175,6 @@ jobs:
           echo "=== BDB installation ==="
           ls -la $PREFIX/include/db_cxx.h || (echo "FATAL: db_cxx.h not found!" && exit 1)
           ls -la $PREFIX/lib/libdb_cxx*.a || (echo "FATAL: libdb_cxx not found!" && exit 1)
-
-          # miniupnpc
-          cd /tmp/deps
-          curl -sL https://miniupnp.tuxfamily.org/files/miniupnpc-2.2.7.tar.gz | tar xz
-          cd miniupnpc-2.2.7
-          mkdir build && cd build
-          cmake .. -DCMAKE_SYSTEM_NAME=Windows \
-            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DCMAKE_INSTALL_PREFIX=$PREFIX \
-            -DUPNPC_BUILD_SHARED=OFF \
-            -DUPNPC_BUILD_TESTS=OFF \
-            -DUPNPC_BUILD_SAMPLE=OFF
-          make -j$(nproc) 2>&1 | tail -3
-          make install 2>&1 | tail -3
 
       - name: Build CorgiCoin for Windows
         run: |
