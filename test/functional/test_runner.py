@@ -24,6 +24,7 @@ TESTS = [
     "wallet_dump.py",
     "wallet_import_range.py",
     "wallet_encryption.py",
+    "wallet_upgrade_fixtures.py",
     "feature_block_sync.py",
     "p2p_network_rpcs.py",
     "p2p_ping_timeout.py",
