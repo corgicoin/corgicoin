@@ -84,6 +84,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |
 | `wallet_abandon.py` | `abandontransaction`: coins and balance restored, descendants abandoned with it, survives a restart, a mined copy is tracked again |
+| `wallet_upgrade_fixtures.py` | wallets made by the real v4.7.0.0 binary (`data/wallets/`: HD, HD encrypted, PBKDF2 encrypted) load, unlock, keep their addresses, export correct keys, restore from the phrase, and spend coins on an old address |
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
 | `rpc_http_auth.py` | malformed `Authorization` headers get 401 and leave the server running; a correct login still works |
