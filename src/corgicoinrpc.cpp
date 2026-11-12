@@ -3076,7 +3076,7 @@ Value sethdseed(const Array& params, bool fHelp)
     pwalletMain->NewKeyPool();
 
     Object r;
-    r.emplace_back("mnemonic", mnemonic);
+    r.emplace_back("mnemonic", bip39::NormaliseMnemonic(mnemonic)); // the phrase as stored, not as typed
     r.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
     r.emplace_back("warning", "Write this recovery phrase down and keep it safe — it backs up all HD keys.");
     return r;

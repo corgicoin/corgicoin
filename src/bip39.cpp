@@ -38,10 +38,53 @@ std::vector<std::string> Split(const std::string& s)
     return words;
 }
 
+// Length in bytes of the whitespace character at s[i], or 0 if it is not whitespace. Covers ASCII whitespace and the
+// UTF-8 encodings of the Unicode spaces whose NFKD form is U+0020.
+size_t SpaceLength(const std::string& s, size_t i)
+{
+    const unsigned char c = (unsigned char)s[i];
+    if (c == ' ' || (c >= '\t' && c <= '\r'))
+        return 1;
+    const size_t left = s.size() - i;
+    const unsigned char c1 = left > 1 ? (unsigned char)s[i + 1] : 0;
+    const unsigned char c2 = left > 2 ? (unsigned char)s[i + 2] : 0;
+    if (c == 0xC2 && c1 == 0xA0)                                  // U+00A0 no-break space
+        return 2;
+    if (c == 0xE2 && c1 == 0x80 && ((c2 >= 0x80 && c2 <= 0x8A) || c2 == 0xAF)) // U+2000-200A, U+202F
+        return 3;
+    if (c == 0xE2 && c1 == 0x81 && c2 == 0x9F)                    // U+205F
+        return 3;
+    if (c == 0xE3 && c1 == 0x80 && c2 == 0x80)                    // U+3000 ideographic space
+        return 3;
+    return 0;
+}
+
 } // namespace
 
 namespace bip39
 {
+
+std::string NormaliseMnemonic(const std::string& mnemonic)
+{
+    std::string out;
+    bool fPendingSpace = false;
+    for (size_t i = 0; i < mnemonic.size();)
+    {
+        if (size_t n = SpaceLength(mnemonic, i))
+        {
+            fPendingSpace = !out.empty();
+            i += n;
+            continue;
+        }
+        if (fPendingSpace)
+        {
+            out += ' ';
+            fPendingSpace = false;
+        }
+        out += mnemonic[i++];
+    }
+    return out;
+}
 
 std::string MnemonicFromEntropy(const std::vector<unsigned char>& entropy)
 {
@@ -93,7 +136,7 @@ std::string GenerateMnemonic(int nStrengthBits, bool (*rng)(unsigned char*, int)
 
 bool CheckMnemonic(const std::string& mnemonic)
 {
-    std::vector<std::string> words = Split(mnemonic);
+    std::vector<std::string> words = Split(NormaliseMnemonic(mnemonic));
     size_t n = words.size();
     if (n < 12 || n > 24 || n % 3 != 0)
         return false;

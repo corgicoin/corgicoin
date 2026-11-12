@@ -79,8 +79,10 @@ bool CWallet::DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn)
     return true;
 }
 
-bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError)
+bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& strError)
 {
+    // The seed hashes the exact string: restoring "a  b" instead of "a b" would give a different, empty wallet
+    const std::string mnemonic = bip39::NormaliseMnemonic(mnemonicIn);
     if (!bip39::CheckMnemonic(mnemonic))
     {
         strError = "Invalid BIP39 mnemonic (bad word or checksum)";
