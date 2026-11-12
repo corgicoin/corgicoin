@@ -37,6 +37,7 @@ TESTS = [
     "rpc_standard_signatures.py",
     "rpc_invalidateblock.py",
     "wallet_hd_encryption.py",
+    "rpc_multisig_limits.py",
     "rpc_http_auth.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
