@@ -104,11 +104,50 @@ jobs:
       - name: Run functional tests (regtest)
         run: python3 test/functional/test_runner.py --corgicoind build/corgicoind
 
+      - name: Bundle its libraries (runs on a Mac without Homebrew)
+        run: |
+          python3 contrib/macdeploy/bundle_macos.py daemon build/corgicoind dist
+          set -- dist/corgicoind
+          # Start it (-? prints help and exits) with dyld listing every image it loads: none may come from Homebrew,
+          # and its libraries must come from dist/lib
+          DYLD_PRINT_LIBRARIES=1 "$1" -datadir="$(mktemp -d)" -? 2> dyld.log >/dev/null || true
+          if grep -E "/opt/homebrew|/usr/local" dyld.log; then echo "loads libraries from outside the bundle"; exit 1; fi
+          grep -q "dist/lib/libssl.3.dylib" dyld.log || { echo "bundled libssl not loaded:"; cat dyld.log; exit 1; }
+          echo "loaded $(grep -c 'dist/lib/' dyld.log) bundled libraries"
+
       - name: Upload macOS daemon
         uses: actions/upload-artifact@v4
         with:
           name: corgicoind-macos-arm64
           path: build/corgicoind
+
+  build-macos-qt:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          brew install boost openssl@3 berkeley-db miniupnpc cmake qt
+
+      - name: Build Qt wallet
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_QT_GUI=ON \
+            -DBUILD_TESTS=OFF \
+            -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+            -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
+          make -j$(sysctl -n hw.logicalcpu) corgicoin-qt
+
+      - name: Bundle Qt and every library into the app
+        run: |
+          mkdir -p dist
+          mv build/corgicoin-qt.app dist/CorgiCoin-Qt.app
+          $(brew --prefix qt)/bin/macdeployqt dist/CorgiCoin-Qt.app -always-overwrite || true
+          python3 contrib/macdeploy/bundle_macos.py app dist/CorgiCoin-Qt.app
 
   build-windows:
     runs-on: ubuntu-24.04
