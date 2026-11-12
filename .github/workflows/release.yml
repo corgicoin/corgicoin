@@ -73,11 +73,65 @@ jobs:
           cd build
           ./test_corgicoin
 
+      - name: Bundle its libraries (runs on a Mac without Homebrew)
+        run: |
+          python3 contrib/macdeploy/bundle_macos.py daemon build/corgicoind dist
+          set -- dist/corgicoind
+          # Start it (-? prints help and exits) with dyld listing every image it loads: none may come from Homebrew,
+          # and its libraries must come from dist/lib
+          DYLD_PRINT_LIBRARIES=1 "$1" -datadir="$(mktemp -d)" -? 2> dyld.log >/dev/null || true
+          if grep -E "/opt/homebrew|/usr/local" dyld.log; then echo "loads libraries from outside the bundle"; exit 1; fi
+          grep -q "dist/lib/libssl.3.dylib" dyld.log || { echo "bundled libssl not loaded:"; cat dyld.log; exit 1; }
+          echo "loaded $(grep -c 'dist/lib/' dyld.log) bundled libraries"
+
       - name: Upload macOS daemon
         uses: actions/upload-artifact@v4
         with:
           name: corgicoind-macos-arm64
-          path: build/corgicoind
+          path: dist/
+
+  build-macos-qt:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          brew install boost openssl@3 berkeley-db miniupnpc cmake qt
+
+      - name: Build Qt wallet
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_QT_GUI=ON \
+            -DBUILD_TESTS=OFF \
+            -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+            -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
+          make -j$(sysctl -n hw.logicalcpu) corgicoin-qt
+
+      - name: Bundle Qt and every library into the app
+        run: |
+          mkdir -p dist
+          mv build/corgicoin-qt.app dist/CorgiCoin-Qt.app
+          $(brew --prefix qt)/bin/macdeployqt dist/CorgiCoin-Qt.app -always-overwrite || true
+          python3 contrib/macdeploy/bundle_macos.py app dist/CorgiCoin-Qt.app
+
+      - name: Zip it (ditto keeps the bundle's symlinks and signature)
+        run: |
+          NAME="corgicoin-qt-${GITHUB_REF_NAME}-macos-arm64"
+          mkdir -p "stage/$NAME"
+          mv dist/CorgiCoin-Qt.app "stage/$NAME/"
+          cp contrib/corgicoin.conf.example doc/macos-first-launch.md "stage/$NAME/"
+          ditto -c -k --keepParent "stage/$NAME" "$NAME.zip"
+          ls -la "$NAME.zip"
+
+      - name: Upload macOS Qt wallet
+        uses: actions/upload-artifact@v4
+        with:
+          name: corgicoin-qt-macos-arm64
+          path: corgicoin-qt-*-macos-arm64.zip
 
   build-windows:
     runs-on: ubuntu-24.04
@@ -227,7 +281,7 @@ jobs:
           path: dist/
 
   release:
-    needs: [build-linux, build-macos, build-windows, build-windows-qt]
+    needs: [build-linux, build-macos, build-macos-qt, build-windows, build-windows-qt]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -260,7 +314,7 @@ jobs:
           chmod +x artifacts/corgicoind-linux-x64/corgicoind artifacts/corgicoind-macos-arm64/corgicoind
 
           package corgicoind-linux-x64   "corgicoin-$VERSION-linux-x64"   tar corgicoind
-          package corgicoind-macos-arm64 "corgicoin-$VERSION-macos-arm64" tar corgicoind
+          package corgicoind-macos-arm64 "corgicoin-$VERSION-macos-arm64" tar corgicoind lib
           package corgicoind-windows-x64 "corgicoin-$VERSION-windows-x64" zip corgicoind.exe
 
           # Qt wallet bundle is a directory tree (exe + DLLs + Qt plugins)
@@ -268,6 +322,9 @@ jobs:
           cp -r artifacts/corgicoin-qt-windows-x64/. "stage/corgicoin-qt-$VERSION-windows-x64/"
           cp contrib/corgicoin.conf.example "stage/corgicoin-qt-$VERSION-windows-x64/"
           (cd stage && zip -rq "../out/corgicoin-qt-$VERSION-windows-x64.zip" "corgicoin-qt-$VERSION-windows-x64")
+
+          # The macOS Qt wallet is already zipped on the Mac (an app bundle needs its symlinks intact)
+          cp artifacts/corgicoin-qt-macos-arm64/*.zip out/
 
           (cd out && sha256sum * > SHA256SUMS)
           ls -la out/
@@ -279,4 +336,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" out/* \
             --title "CorgiCoin $GITHUB_REF_NAME" \
             --generate-notes \
-            --notes "Binaries for Linux (x64), macOS (arm64), and Windows (x64 daemon + Qt wallet). Verify downloads against SHA256SUMS. See MINING.md inside each archive (or doc/mining.md) to get started."
+            --notes "Binaries for Linux (x64), macOS (arm64 daemon + Qt wallet), and Windows (x64 daemon + Qt wallet). Verify downloads against SHA256SUMS. See MINING.md inside each archive (or doc/mining.md) to get started."

@@ -119,6 +119,7 @@ rpcport=62555
 ## Version History
 
 ### Unreleased
+- **macOS Qt wallet**: releases now include `corgicoin-qt-<version>-macos-arm64.zip`, a self-contained `CorgiCoin-Qt.app`. The macOS daemon download also bundles its libraries in `lib/`; until now it only ran on Macs with the same Homebrew packages installed. Both are signed ad hoc, not notarized, so the first launch needs **Open Anyway** (see `doc/macos-first-launch.md`)
 - **Pool and integration RPCs** (thanks @colneech-dev):
   - `submitblock` (BIP 22, #90)
   - `gettxout` (#89)
