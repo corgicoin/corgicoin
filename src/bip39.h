@@ -30,8 +30,14 @@ bool CheckMnemonic(const std::string& mnemonic);
 
 // Mnemonic -> 64-byte seed via PBKDF2-HMAC-SHA512, 2048 iterations,
 // salt = "mnemonic" + passphrase (BIP39). Does not validate the mnemonic.
+// Returns an EMPTY vector if the key derivation fails: an all-zero seed would be a valid-looking, publicly known
+// wallet, so callers must check for empty. pbkdf2 is the primitive (true on success); it defaults to OpenSSL's
+// PKCS5_PBKDF2_HMAC and is a parameter so tests can inject a failing one.
+typedef bool (*Pbkdf2Fn)(const unsigned char* pass, int passlen, const unsigned char* salt, int saltlen,
+                         unsigned char out[64]);
 std::vector<unsigned char> MnemonicToSeed(const std::string& mnemonic,
-                                          const std::string& passphrase = "");
+                                          const std::string& passphrase = "",
+                                          Pbkdf2Fn pbkdf2 = nullptr);
 
 } // namespace bip39
 

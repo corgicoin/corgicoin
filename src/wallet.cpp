@@ -57,8 +57,13 @@ static uint256 HDSeedIV(const CKeyID& id)
 
 bool CWallet::LoadHDMnemonic(const std::string& mnemonic)
 {
+    // If either step fails the wallet is left as it was: a master key made from a failed derivation would be a
+    // valid-looking key nobody can recover (or, for an all-zero seed, everybody can)
     std::vector<unsigned char> seed = bip39::MnemonicToSeed(mnemonic);
-    hdMasterKey.SetSeed(&seed[0], (unsigned int)seed.size());
+    CExtKey master;
+    if (seed.empty() || !master.SetSeed(&seed[0], (unsigned int)seed.size()))
+        return false;
+    hdMasterKey = master;
     strHDMnemonic = mnemonic;
     hdSeedId = hdMasterKey.key.GetPubKey().GetID();
     fHDEnabled = true;
@@ -75,8 +80,7 @@ bool CWallet::DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn)
     std::string mnemonic(sec.begin(), sec.end());
     if (!bip39::CheckMnemonic(mnemonic))
         return false;
-    LoadHDMnemonic(mnemonic); // sets hdMasterKey, strHDMnemonic, recomputes hdSeedId
-    return true;
+    return LoadHDMnemonic(mnemonic); // sets hdMasterKey, strHDMnemonic, recomputes hdSeedId
 }
 
 bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError)
@@ -92,7 +96,11 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& st
         return false;
     }
 
-    LoadHDMnemonic(mnemonic);
+    if (!LoadHDMnemonic(mnemonic))
+    {
+        strError = "Could not derive the seed from the recovery phrase (key derivation failed)";
+        return false;
+    }
     nHDExternalIndex = 0;
     SetMinVersion(WalletFeature::FEATURE_HD);
 

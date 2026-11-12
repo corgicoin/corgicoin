@@ -102,4 +102,31 @@ BOOST_AUTO_TEST_CASE(bip32_hardened_bit)
     BOOST_CHECK_EQUAL(hardened.nChild, 0x80000000u);
 }
 
+static bool FailingHmac(const unsigned char*, int, const unsigned char*, int, unsigned char out[64])
+{
+    memset(out, 0xAA, 64);   // like a failed HMAC: whatever was in the buffer, not a hash
+    return false;
+}
+
+BOOST_AUTO_TEST_CASE(bip32_fails_closed_when_hmac_fails)
+{
+    vector<unsigned char> seed = ParseHex("000102030405060708090a0b0c0d0e0f");
+    CExtKey m;
+    BOOST_CHECK(m.SetSeed(&seed[0], (unsigned int)seed.size()));
+    const string before = m.ToBase58(XPRV_VERSION);
+
+    // a master key must never be built from a failed HMAC, and the existing key is left alone
+    vector<unsigned char> other = ParseHex("fffcf9f6f3f0edeae7e4e1dedbd8d5d2");
+    BOOST_CHECK(!m.SetSeed(&other[0], (unsigned int)other.size(), FailingHmac));
+    BOOST_CHECK_EQUAL(m.ToBase58(XPRV_VERSION), before);
+
+    // nor a child
+    CExtKey child;
+    BOOST_CHECK(!m.Derive(child, 0, FailingHmac));
+    BOOST_CHECK(!m.Derive(child, 0x80000000, FailingHmac));
+
+    // the real primitive still works through the same calls
+    BOOST_CHECK(m.Derive(child, 0));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
