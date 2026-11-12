@@ -93,6 +93,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |
 | `feature_auxpow.py` | merged mining as pools do it: multi-chain proofs, legacy commitment, one rejection per AuxPoW rule (checked against its exact error), stale work, pre-fork guard, `getauxblock`. Proofs come from `auxpow_builder.py` |
 | `rpc_gettxout.py` | `gettxout`: confirmed, unconfirmed and spent outputs, with and without the memory pool |
+| `rpc_getblock_verbose.py` | `getblock <hash> [verbose]`: JSON by default; hex (false or 0) is the network serialization, with the AuxPoW proof of a merged-mined block |
 | `rpc_submitblock.py` | `submitblock`: accepted, duplicate, orphan, rejected and undecodable blocks |
 | `rpc_testmempoolaccept.py` | `testmempoolaccept`: dry-run acceptance and reject reasons, with no change to the pool or wallet |
 | `rpc_prioritisetransaction.py` | `prioritisetransaction`: holding a transaction out of blocks, releasing it, and admitting one below the relay fee |
