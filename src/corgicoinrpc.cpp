@@ -1896,7 +1896,19 @@ void ThreadTopUpKeyPool(void* parg)
     // Make this thread recognisable as the key-topping-up thread
     RenameThread("corgicoin-key-top");
 
-    pwalletMain->TopUpKeyPool();
+    // An exception that leaves a thread function ends the whole process, so nothing is allowed to escape
+    try
+    {
+        pwalletMain->TopUpKeyPool();
+    }
+    catch (const std::exception& e)
+    {
+        LogPrintf("ThreadTopUpKeyPool() : %s\n", e.what());
+    }
+    catch (...)
+    {
+        LogPrintf("ThreadTopUpKeyPool() : unknown exception\n");
+    }
 }
 
 void ThreadCleanWalletPassphrase(void* parg)
@@ -1904,7 +1916,10 @@ void ThreadCleanWalletPassphrase(void* parg)
     // Make this thread recognisable as the wallet relocking thread
     RenameThread("corgicoin-lock-wa");
 
-    int64 nMyWakeTime = GetTimeMillis() + *static_cast<int64*>(parg) * 1000;
+    std::unique_ptr<int64> pnSleepTime(static_cast<int64*>(parg));
+    // Large timeouts must not overflow the millisecond arithmetic (walletpassphrase also clamps them)
+    int64 nMyWakeTime = GetTimeMillis() + *pnSleepTime * 1000;
+    bool fLockWallet = false;
 
     ENTER_CRITICAL_SECTION(cs_nWalletUnlockTime);
 
@@ -1929,7 +1944,7 @@ void ThreadCleanWalletPassphrase(void* parg)
         if (nWalletUnlockTime)
         {
             nWalletUnlockTime = 0;
-            pwalletMain->Lock();
+            fLockWallet = true;
         }
     }
     else
@@ -1940,7 +1955,19 @@ void ThreadCleanWalletPassphrase(void* parg)
 
     LEAVE_CRITICAL_SECTION(cs_nWalletUnlockTime);
 
-    delete static_cast<int64*>(parg);
+    // Lock outside cs_nWalletUnlockTime: Lock() waits for cs_wallet, and the RPC dispatcher takes cs_wallet before it
+    // takes cs_nWalletUnlockTime (walletlock, walletpassphrase), so the other order could deadlock
+    if (fLockWallet)
+    {
+        try
+        {
+            pwalletMain->Lock();
+        }
+        catch (const std::exception& e)
+        {
+            LogPrintf("ThreadCleanWalletPassphrase() : %s\n", e.what());
+        }
+    }
 }
 
 Value walletpassphrase(const Array& params, bool fHelp)

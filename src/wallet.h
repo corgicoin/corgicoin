@@ -189,6 +189,9 @@ public:
     bool LoadCScript(const CScript& redeemScript) { return CCryptoKeyStore::AddCScript(redeemScript); }
 
     bool Unlock(const SecureString& strWalletPassphrase);
+    /** Lock the wallet. Waits for cs_wallet, so key generation, signing and dumps that are under way finish first
+     *  (a relock in the middle of them used to make them throw). */
+    bool Lock();
     // Derive the key for one master key from the passphrase, decrypt the master key and unlock the keystore with it
     bool UnlockWithMasterKey(const SecureString& strWalletPassphrase, const CMasterKey& kMasterKey, CKeyingMaterial& vMasterKeyOut);
     bool ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase);

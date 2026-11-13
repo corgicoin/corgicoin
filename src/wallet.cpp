@@ -1889,6 +1889,12 @@ bool CWallet::NewKeyPool()
     return true;
 }
 
+bool CWallet::Lock()
+{
+    LOCK(cs_wallet);
+    return CCryptoKeyStore::Lock();
+}
+
 bool CWallet::TopUpKeyPool()
 {
     {

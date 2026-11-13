@@ -358,12 +358,30 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
     return DB_LOAD_OK;
 }
 
+static void FlushWalletDBLoop(const string& strFile);
+
 void ThreadFlushWalletDB(void* parg)
 {
     // Make this thread recognisable as the wallet flushing thread
     RenameThread("corgicoin-wallet");
 
-    const string& strFile = ((const string*)parg)[0];
+    // an exception that leaves a thread function ends the whole process
+    try
+    {
+        FlushWalletDBLoop(((const string*)parg)[0]);
+    }
+    catch (const std::exception& e)
+    {
+        LogPrintf("ThreadFlushWalletDB() : %s\n", e.what());
+    }
+    catch (...)
+    {
+        LogPrintf("ThreadFlushWalletDB() : unknown exception\n");
+    }
+}
+
+static void FlushWalletDBLoop(const string& strFile)
+{
     static bool fOneThread;
     if (fOneThread)
         return;
