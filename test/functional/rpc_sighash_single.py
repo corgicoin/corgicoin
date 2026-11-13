@@ -21,7 +21,7 @@ class SighashSingleTest(CorgiTestFramework):
             [{"txid": a["txid"], "vout": a["vout"]}, {"txid": b["txid"], "vout": b["vout"]}], {dest: Decimal(10)})
 
         self.log("SINGLE: input 0 has output 0 and is signed, input 1 has none and is not")
-        keys = [node.dumpprivkey(u["address"]) for u in (a, b)]
+        keys = [node.dumpprivkey(node.getrawtransaction(u["txid"], 1)["vout"][u["vout"]]["scriptPubKey"]["addresses"][0]) for u in (a, b)]
         res = node.signrawtransaction(raw, [], keys, "SINGLE")
         tx = node.decoderawtransaction(res["hex"])
         assert tx["vin"][0]["scriptSig"]["hex"] != "", "input 0 should be signed"
