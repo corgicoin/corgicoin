@@ -440,15 +440,154 @@ bool CKey::SetCompactSignature(uint256 hash, const std::vector<unsigned char>& v
     return fRecovered;
 }
 
-bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
+// Read the r and s of a DER signature, accepting what OpenSSL 1.0.0 to 1.0.1j accepted and nothing about the
+// encoding beyond it: lengths in long form or too long, bytes after the sequence, leading zeros, a first byte with
+// the high bit set (read as unsigned). Bitcoin Core's ecdsa_signature_parse_der_lax, kept to the same rules so that the
+// two agree. Returns false if r or s cannot be read or is more than 32 bytes once leading zeros are gone.
+static bool ParseDERLax(const unsigned char* input, size_t inputlen, BIGNUM** pr, BIGNUM** ps)
 {
-    // -1 = error, 0 = bad sig, 1 = good
-    if (vchSig.empty())
+    size_t rpos, rlen, spos, slen;
+    size_t pos = 0;
+    size_t lenbyte;
+
+    // Sequence tag byte
+    if (pos == inputlen || input[pos] != 0x30)
         return false;
-    if (ECDSA_verify(0, (unsigned char*)&hash, sizeof(hash), &vchSig[0], vchSig.size(), pkey) != 1)
+    pos++;
+
+    // Sequence length bytes (read and ignored)
+    if (pos == inputlen)
+        return false;
+    lenbyte = input[pos++];
+    if (lenbyte & 0x80)
+    {
+        lenbyte -= 0x80;
+        if (lenbyte > inputlen - pos)
+            return false;
+        pos += lenbyte;
+    }
+
+    // Integer tag byte for R
+    if (pos == inputlen || input[pos] != 0x02)
+        return false;
+    pos++;
+
+    // Integer length for R
+    if (pos == inputlen)
+        return false;
+    lenbyte = input[pos++];
+    if (lenbyte & 0x80)
+    {
+        lenbyte -= 0x80;
+        if (lenbyte > inputlen - pos)
+            return false;
+        while (lenbyte > 0 && input[pos] == 0)
+        {
+            pos++;
+            lenbyte--;
+        }
+        if (lenbyte >= sizeof(size_t))
+            return false;
+        rlen = 0;
+        while (lenbyte > 0)
+        {
+            rlen = (rlen << 8) + input[pos];
+            pos++;
+            lenbyte--;
+        }
+    }
+    else
+        rlen = lenbyte;
+    if (rlen > inputlen - pos)
+        return false;
+    rpos = pos;
+    pos += rlen;
+
+    // Integer tag byte for S
+    if (pos == inputlen || input[pos] != 0x02)
+        return false;
+    pos++;
+
+    // Integer length for S
+    if (pos == inputlen)
+        return false;
+    lenbyte = input[pos++];
+    if (lenbyte & 0x80)
+    {
+        lenbyte -= 0x80;
+        if (lenbyte > inputlen - pos)
+            return false;
+        while (lenbyte > 0 && input[pos] == 0)
+        {
+            pos++;
+            lenbyte--;
+        }
+        if (lenbyte >= sizeof(size_t))
+            return false;
+        slen = 0;
+        while (lenbyte > 0)
+        {
+            slen = (slen << 8) + input[pos];
+            pos++;
+            lenbyte--;
+        }
+    }
+    else
+        slen = lenbyte;
+    if (slen > inputlen - pos)
+        return false;
+    spos = pos;
+
+    // Leading zeros of R and S carry no value
+    while (rlen > 0 && input[rpos] == 0)
+    {
+        rlen--;
+        rpos++;
+    }
+    while (slen > 0 && input[spos] == 0)
+    {
+        slen--;
+        spos++;
+    }
+    if (rlen > 32 || slen > 32)
         return false;
 
+    *pr = BN_bin2bn(input + rpos, static_cast<int>(rlen), nullptr);
+    *ps = BN_bin2bn(input + spos, static_cast<int>(slen), nullptr);
+    if (*pr == nullptr || *ps == nullptr)
+    {
+        BN_free(*pr);
+        BN_free(*ps);
+        *pr = *ps = nullptr;
+        return false;
+    }
     return true;
+}
+
+bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
+{
+    // Whether a signature is valid is consensus, so it must not depend on how strict the linked OpenSSL is about the
+    // encoding: OpenSSL 1.0.0p/1.0.1k and later re-encode what they parse and refuse a signature that does not match
+    // byte for byte, older ones did not, so a block holding such a signature split the network by library version.
+    // The signature is read leniently here and handed to OpenSSL as numbers (r, s), so every build accepts the same set.
+    if (vchSig.empty())
+        return false;
+    BIGNUM* r = nullptr;
+    BIGNUM* s = nullptr;
+    if (!ParseDERLax(&vchSig[0], vchSig.size(), &r, &s))
+        return false;
+    ECDSA_SIG* sig = ECDSA_SIG_new();
+    if (sig == nullptr || !ECDSA_SIG_set0(sig, r, s))
+    {
+        // set0 takes ownership of r and s only when it succeeds
+        ECDSA_SIG_free(sig);
+        BN_free(r);
+        BN_free(s);
+        return false;
+    }
+    const int nResult = ECDSA_do_verify((unsigned char*)&hash, sizeof(hash), sig, pkey);
+    ECDSA_SIG_free(sig);
+    return nResult == 1;
 }
 
 bool CKey::VerifyCompact(uint256 hash, const std::vector<unsigned char>& vchSig)
