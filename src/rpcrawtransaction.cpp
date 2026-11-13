@@ -485,8 +485,11 @@ Value signrawtransaction(const Array& params, bool fHelp)
         for (const CTxIn& txin : mergedTx.vin)
         {
             const uint256& prevHash = txin.prevout.hash;
-            if (mapPrevTx.count(prevHash))
-                mapPrevOut[txin.prevout] = mapPrevTx[prevHash].second.vout[txin.prevout.n].scriptPubKey;
+            // FetchInputs adds an entry before it knows whether the previous transaction exists, and leaves it
+            // there when it fails, so the entry can be empty or the output number out of range
+            auto itPrev = mapPrevTx.find(prevHash);
+            if (itPrev != mapPrevTx.end() && txin.prevout.n < itPrev->second.second.vout.size())
+                mapPrevOut[txin.prevout] = itPrev->second.second.vout[txin.prevout.n].scriptPubKey;
         }
     }
 
@@ -592,6 +595,8 @@ Value signrawtransaction(const Array& params, bool fHelp)
         // ... and merge in other signatures:
         for (const CTransaction& txv : txVariants)
         {
+            if (i >= txv.vin.size())
+                continue;   // a variant with fewer inputs has nothing to add for this one
             txin.scriptSig = CombineSignatures(prevPubKey, mergedTx, i, txin.scriptSig, txv.vin[i].scriptSig);
         }
         if (!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, true, 0))
