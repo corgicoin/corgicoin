@@ -21,12 +21,12 @@ namespace {
 const char* SECP256K1_ORDER_HEX =
     "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141";
 
-void HmacSha512(const unsigned char* key, int keylen,
+bool HmacSha512(const unsigned char* key, int keylen,
                 const unsigned char* data, int datalen,
                 unsigned char out[64])
 {
     unsigned int len = 64;
-    HMAC(EVP_sha512(), key, keylen, data, datalen, out, &len);
+    return HMAC(EVP_sha512(), key, keylen, data, datalen, out, &len) != nullptr && len == 64;
 }
 
 // Big-endian 32-byte serialization of a BIGNUM, left-padded with zeros.
@@ -54,11 +54,17 @@ uint32_t ReadBE32(const unsigned char* p)
 
 } // namespace
 
-void CExtKey::SetSeed(const unsigned char* seed, unsigned int nSeedLen)
+bool CExtKey::SetSeed(const unsigned char* seed, unsigned int nSeedLen, HmacSha512Fn hmac)
 {
+    if (hmac == nullptr)
+        hmac = HmacSha512;
     static const unsigned char hashkey[] = {'B','i','t','c','o','i','n',' ','s','e','e','d'};
     unsigned char I[64];
-    HmacSha512(hashkey, sizeof(hashkey), seed, (int)nSeedLen, I);
+    if (!hmac(hashkey, sizeof(hashkey), seed, (int)nSeedLen, I))
+    {
+        OPENSSL_cleanse(I, sizeof(I));
+        return false;
+    }
 
     CSecret secret(I, I + 32);
     key.SetSecret(secret, true); // HD keys are always compressed
@@ -67,10 +73,13 @@ void CExtKey::SetSeed(const unsigned char* seed, unsigned int nSeedLen)
     nChild = 0;
     memset(vchFingerprint, 0, 4);
     OPENSSL_cleanse(I, sizeof(I));
+    return true;
 }
 
-bool CExtKey::Derive(CExtKey& out, uint32_t nChildIn) const
+bool CExtKey::Derive(CExtKey& out, uint32_t nChildIn, HmacSha512Fn hmac) const
 {
+    if (hmac == nullptr)
+        hmac = HmacSha512;
     out.nDepth = nDepth + 1;
 
     // Parent fingerprint = first 4 bytes of Hash160(parent compressed pubkey)
@@ -100,7 +109,12 @@ bool CExtKey::Derive(CExtKey& out, uint32_t nChildIn) const
     WriteBE32(data + 33, nChildIn);
 
     unsigned char I[64];
-    HmacSha512(vchChainCode, 32, data, 37, I);
+    if (!hmac(vchChainCode, 32, data, 37, I))
+    {
+        OPENSSL_cleanse(I, sizeof(I));
+        OPENSSL_cleanse(data, sizeof(data));
+        return false;
+    }
 
     // child key = (IL + parent key) mod n
     BN_CTX* ctx = BN_CTX_new();

@@ -100,4 +100,19 @@ BOOST_AUTO_TEST_CASE(bip39_generate_fails_closed_when_rng_fails)
     BOOST_CHECK(bip39::GenerateMnemonic(128) != bip39::GenerateMnemonic(128));
 }
 
+static bool FailingPbkdf2(const unsigned char*, int, const unsigned char*, int, unsigned char*) { return false; }
+
+BOOST_AUTO_TEST_CASE(bip39_seed_fails_closed_when_pbkdf2_fails)
+{
+    const char* phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    // A failed derivation must not return the zero-filled buffer: that looks like a seed and is a public one
+    BOOST_CHECK(bip39::MnemonicToSeed(phrase, "", FailingPbkdf2).empty());
+    BOOST_CHECK(bip39::MnemonicToSeed(phrase, "TREZOR", FailingPbkdf2).empty());
+
+    // the default primitive still gives the 64-byte seed
+    BOOST_CHECK_EQUAL(bip39::MnemonicToSeed(phrase).size(), 64u);
+    BOOST_CHECK(bip39::MnemonicToSeed(phrase) != vector<unsigned char>(64, 0));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
