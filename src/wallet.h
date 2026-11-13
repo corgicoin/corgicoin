@@ -136,6 +136,11 @@ public:
     // Set the HD seed from a BIP39 mnemonic, persist it (encrypted if the
     // wallet is encrypted and unlocked), and reset the keypool to HD keys.
     bool SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError);
+    // After a seed was restored from a phrase: derive keys ahead of the last one the chain shows in use (nGap past it, at
+    // least 1), rescan the block chain for what they received, and move the next-address counter past the last used key.
+    // Without it a restored wallet knows only the first -keypool keys, shows no balance until -rescan, and misses coins
+    // on later keys. nUsedRet is the number of keys up to and including the last used one.
+    bool RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strError);
     // Decrypt the stored HD mnemonic using the master key (called from Unlock).
     bool DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn);
     // Load-time setup (no persistence, no counter reset) — used by CWalletDB.

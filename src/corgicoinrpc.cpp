@@ -3123,15 +3123,23 @@ Value getwalletinfo(const Array& params, bool fHelp)
 
 Value sethdseed(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() > 1)
+    if (fHelp || params.size() > 2)
         throw runtime_error(
-            "sethdseed [mnemonic]\n"
+            "sethdseed [mnemonic] [rescan=true]\n"
             "Set the wallet's HD (BIP39) seed from a recovery phrase, or\n"
             "generate a fresh 12-word phrase if none is given. Future\n"
             "addresses are derived from this seed; WRITE THE PHRASE DOWN.\n"
-            "Not supported on encrypted wallets yet.");
+            "Restoring a phrase also derives keys ahead (-hdrestoregap, default 1000), rescans the block chain for\n"
+            "what they received (this can take a long time on a long chain; pass false to skip it, and run with\n"
+            "-rescan later), and carries on after the last address that was used.\n"
+            "An encrypted wallet has to be unlocked."
+            + HelpRequiringPassphrase());
 
-    std::string mnemonic = (params.size() == 1)
+    if (params.size() >= 2)
+        RPCTypeCheck(params, {str_type, bool_type});
+    const bool fRescan = params.size() >= 2 ? params[1].get_bool() : true;
+
+    std::string mnemonic = (params.size() >= 1)
         ? params[0].get_str()
         : bip39::GenerateMnemonic(128);
     if (params.size() == 0 && mnemonic.empty())
@@ -3141,10 +3149,22 @@ Value sethdseed(const Array& params, bool fHelp)
     if (!pwalletMain->SetHDSeedFromMnemonic(mnemonic, strError))
         throw JSONRPCError(-4, strError);
 
+    // A phrase that was given is a restore: look for what the chain holds for its keys, and carry on after the last used one.
+    // (A fresh phrase has nothing on the chain.)
+    int nUsed = 0;
+    if (params.size() >= 1 && fRescan)
+    {
+        const unsigned int nGap = static_cast<unsigned int>(std::max<int64_t>(1, std::min<int64_t>(GetArg("-hdrestoregap", 1000), 100000)));
+        if (!pwalletMain->RestoreHDKeys(nGap, nUsed, strError))
+            throw JSONRPCError(-4, strError);
+    }
+
     // Rebuild the keypool so new addresses come from the HD seed.
     pwalletMain->NewKeyPool();
 
     Object r;
+    if (params.size() >= 1 && fRescan)
+        r.emplace_back("keys_in_use", nUsed);      // keys up to and including the last one the chain shows paid
     r.emplace_back("mnemonic", bip39::NormaliseMnemonic(mnemonic)); // the phrase as stored, not as typed
     r.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
     r.emplace_back("warning", "Write this recovery phrase down and keep it safe — it backs up all HD keys.");
@@ -4346,6 +4366,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "listtransactions"       && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "listaccounts"           && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "sethdseed"              && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
     if (strMethod == "submitblock"            && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "getblockheader"         && n > 1) ConvertTo<bool>(params[1]);

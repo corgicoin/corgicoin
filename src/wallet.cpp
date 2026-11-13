@@ -1873,6 +1873,71 @@ bool GetWalletFile(CWallet* pwallet, string &strWalletFileOut)
 // Mark old keypool keys as used,
 // and generate all new keys
 //
+bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strError)
+{
+    LOCK2(cs_main, cs_wallet);
+    if (!IsHDSeedAvailable() || IsLocked())
+    {
+        strError = "The HD seed is not available (unlock the wallet first)";
+        return false;
+    }
+    nGap = std::max(1u, nGap);
+
+    // keys 0 .. nDerived-1 are in the key store; mapIndex says which index each one is
+    unsigned int nDerived = 0;
+    std::map<CKeyID, unsigned int> mapIndex;
+    auto DeriveTo = [&](unsigned int nTo) {
+        for (; nDerived < nTo; nDerived++)
+        {
+            CKey key;
+            if (!DeriveHDChild(hdMasterKey, nDerived, key) || !AddKey(key))
+                return false;
+            mapIndex[key.GetPubKey().GetID()] = nDerived;
+        }
+        return true;
+    };
+
+    // Look for the last key that has been paid. Each round derives nGap keys past the last one found and rescans; it ends
+    // when a round finds nothing further.
+    int nHighest = -1;
+    while (true)
+    {
+        if (!DeriveTo(static_cast<unsigned int>(nHighest + 1) + nGap))
+        {
+            strError = "Could not derive the HD keys";
+            return false;
+        }
+        ScanForWalletTransactions(pindexGenesisBlock, true);
+
+        int nFound = nHighest;
+        for (const auto& item : mapWallet)
+            for (const CTxOut& txout : item.second.vout)
+            {
+                CTxDestination dest;
+                if (!ExtractDestination(txout.scriptPubKey, dest))
+                    continue;
+                const CKeyID* pkeyid = boost::get<CKeyID>(&dest);
+                auto it = pkeyid ? mapIndex.find(*pkeyid) : mapIndex.end();
+                if (it != mapIndex.end())
+                    nFound = std::max(nFound, static_cast<int>(it->second));
+            }
+        if (nFound == nHighest)
+            break;
+        nHighest = nFound;
+        if (nDerived > 1000000)       // a runaway guard: a million keys is not a wallet
+            break;
+    }
+
+    // The next address is the first one never used. (The keys before it stay in the key store: coins sent to any of them
+    // are the wallet's.)
+    nHDExternalIndex = static_cast<uint32_t>(nHighest + 1);
+    if (fFileBacked)
+        CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
+    nUsedRet = nHighest + 1;
+    ReacceptWalletTransactions();
+    return true;
+}
+
 bool CWallet::NewKeyPool()
 {
     {
