@@ -174,6 +174,11 @@ bool CCryptoKeyStore::GetKey(const CKeyID &address, CKey& keyOut) const
                 return false;
             keyOut.SetPubKey(vchPubKey);
             keyOut.SetSecret(vchSecret);
+            // The secret that decrypted must be the one for this public key. A wallet that is partly damaged, or
+            // whose records were mixed up, otherwise signs with a key that does not match the address, and the
+            // error only appears when the transaction is refused.
+            if (!(keyOut.GetPubKey() == vchPubKey))
+                return false;
             return true;
         }
     }

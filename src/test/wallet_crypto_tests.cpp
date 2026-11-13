@@ -219,4 +219,40 @@ BOOST_AUTO_TEST_CASE(unlock_tries_every_master_key)
     BOOST_CHECK(wallet.Unlock("first passphrase"));
 }
 
+// Unlocking checks only the first key against its public key. A key whose record holds some other key's secret
+// (a damaged or mixed-up wallet) must still not come out of GetKey: signing with it would use a key that does not
+// match the address, and the failure would only show when the transaction was refused.
+BOOST_AUTO_TEST_CASE(a_secret_that_does_not_match_its_public_key_is_not_returned)
+{
+    TestCryptoWallet source("passphrase", WALLET_DERIVATION_BYTESTOKEY_SHA512);
+    CKey good1, good2, impostor, wrongSecret;
+    // the unlock check looks at the first key in key id order, so make sure a good key comes before the bad one
+    do {
+        good1.MakeNewKey(true);
+        good2.MakeNewKey(true);
+        impostor.MakeNewKey(true);
+    } while (!(std::min(good1.GetPubKey().GetID(), good2.GetPubKey().GetID()) < impostor.GetPubKey().GetID()));
+    wrongSecret.MakeNewKey(true);
+
+    auto Crypted = [&](const CKey& keyWhosePublicKeyItIsStoredUnder, const CKey& keyWhoseSecretItHolds) {
+        bool fCompressed = false;
+        CSecret secret = keyWhoseSecretItHolds.GetSecret(fCompressed);
+        vector<unsigned char> vchCrypted;
+        BOOST_REQUIRE(EncryptSecret(source.vMasterKeyPlain, secret, keyWhosePublicKeyItIsStoredUnder.GetPubKey().GetHash(), vchCrypted));
+        return vchCrypted;
+    };
+
+    CWallet wallet;
+    BOOST_REQUIRE(wallet.LoadCryptedKey(good1.GetPubKey(), Crypted(good1, good1)));
+    BOOST_REQUIRE(wallet.LoadCryptedKey(good2.GetPubKey(), Crypted(good2, good2)));
+    BOOST_REQUIRE(wallet.LoadCryptedKey(impostor.GetPubKey(), Crypted(impostor, wrongSecret)));
+    wallet.mapMasterKeys = source.mapMasterKeys;
+    BOOST_REQUIRE(wallet.Unlock("passphrase"));
+
+    CKey out;
+    BOOST_CHECK(wallet.GetKey(good1.GetPubKey().GetID(), out) && out.GetPubKey() == good1.GetPubKey());
+    BOOST_CHECK(wallet.GetKey(good2.GetPubKey().GetID(), out) && out.GetPubKey() == good2.GetPubKey());
+    BOOST_CHECK(!wallet.GetKey(impostor.GetPubKey().GetID(), out));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
