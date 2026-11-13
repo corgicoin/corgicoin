@@ -87,6 +87,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_upgrade_fixtures.py` | wallets made by the real v4.7.0.0 binary (`data/wallets/`: HD, HD encrypted, PBKDF2 encrypted) load, unlock, keep their addresses, export correct keys, restore from the phrase, and spend coins on an old address |
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
+| `rpc_shutdown_keepalive.py` | a node stops promptly while pool-style idle keep-alive RPC clients stay connected |
 | `rpc_http_auth.py` | malformed `Authorization` headers get 401 and leave the server running; a correct login still works |
 | `feature_cross_binary.py` | two different builds (e.g. against different OpenSSL versions) interoperate: blocks and signatures accepted both ways, `wallet.dat` and encrypted wallets open in either. Needs `--alt-corgicoind` or `$CORGICOIND_ALT`, otherwise it is shown as SKIP. Against a v4.2–v4.7 build the "encrypted by the main build, unlocked by the alternate one" check fails by design (v4.7 cannot unlock a v4.8-encrypted wallet) |
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `getnodeaddresses`, `disconnectnode` |
