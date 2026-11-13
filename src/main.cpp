@@ -638,7 +638,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             {
                 const CTransaction& txPrev = mapInputs[tx.vin[i].prevout.hash].second;
                 if (!VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
-                    return LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str());
+                    return RejectTx(pcheck, "non-canonical-signature", LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str()));
             }
         }
     }
