@@ -280,6 +280,12 @@ bool CTransaction::IsStandard() const
     if (nVersion > CTransaction::CURRENT_VERSION)
         return false;
 
+    // The relay limit is far under the 1 MB block limit: legacy signature hashing re-serialises the whole transaction
+    // for every input, so verifying a transaction of thousands of inputs costs seconds of CPU (and a bad signature on
+    // the last input makes all of it wasted)
+    if (::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) >= MAX_STANDARD_TX_SIZE)
+        return false;
+
     for (const CTxIn& txin : vin)
     {
         // Biggest 'standard' txin is a 3-signature 3-of-3 CHECKMULTISIG
@@ -515,9 +521,15 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     if (static_cast<int64>(tx.nLockTime) > std::numeric_limits<int>::max())
         return RejectTx(pcheck, "locktime-too-far", LogError("CTxMemPool::accept() : not accepting nLockTime beyond 2038 yet"));
 
-    // Rather not work on nonstandard transactions (unless -testnet)
-    if (!fTestNet && !tx.IsStandard())
+    // Rather not work on nonstandard transactions (unless -testnet; -acceptnonstdtxn=0 asks for the policy there too)
+    const bool fRequireStandard = !GetBoolArg("-acceptnonstdtxn", fTestNet);
+    if (fRequireStandard && !tx.IsStandard())
         return RejectTx(pcheck, "nonstandard", LogError("CTxMemPool::accept() : nonstandard transaction type"));
+
+    // A transaction that cannot be in the next block yet (its lock time is ahead) would sit in the pool, and be
+    // relayed, until it can
+    if (fRequireStandard && !tx.IsFinal(nBestHeight + 1, GetAdjustedTime()))
+        return RejectTx(pcheck, "non-final", LogError("CTxMemPool::accept() : non-final transaction"));
 
     // Do we already have it?
     uint256 hash = tx.GetHash();
@@ -573,8 +585,18 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         }
 
         // Check for non-standard pay-to-script-hash in inputs
-        if (!tx.AreInputsStandard(mapInputs) && !fTestNet)
+        if (fRequireStandard && !tx.AreInputsStandard(mapInputs))
             return RejectTx(pcheck, "nonstandard-inputs", LogError("CTxMemPool::accept() : nonstandard transaction input"));
+
+        // Signature operations: a block takes 20000 in all, so one transaction with more than a fifth of that is not
+        // worth carrying. Each is a signature check, and a transaction made of them costs the node most when it is
+        // refused at the end (the signature checks are the last thing done).
+        if (fRequireStandard)
+        {
+            const unsigned int nSigOps = tx.GetLegacySigOpCount() + tx.GetP2SHSigOpCount(mapInputs);
+            if (nSigOps > MAX_STANDARD_TX_SIGOPS)
+                return RejectTx(pcheck, "too-many-sigops", LogError("CTxMemPool::accept() : too many signature operations (%u)", nSigOps));
+        }
 
         // Note: if you modify this code to accept non-standard transactions, then
         // you should add code here to check that the transaction does a

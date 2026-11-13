@@ -36,6 +36,7 @@ TESTS = [
     "rpc_submitblock.py",
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",
+    "rpc_mempool_policy.py",
     "rpc_standard_signatures.py",
     "rpc_invalidateblock.py",
     "wallet_hd_encryption.py",

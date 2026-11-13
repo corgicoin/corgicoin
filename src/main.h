@@ -35,6 +35,9 @@ class CNode;
 constexpr unsigned int MAX_BLOCK_SIZE = 1000000;
 constexpr unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
 constexpr unsigned int MAX_BLOCK_SIGOPS = MAX_BLOCK_SIZE/50;
+/** Relay policy, not consensus: the largest transaction and the most signature operations one transaction may have. */
+constexpr unsigned int MAX_STANDARD_TX_SIZE = 100000;
+constexpr unsigned int MAX_STANDARD_TX_SIGOPS = MAX_BLOCK_SIGOPS/5;
 constexpr unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
 // Orphan blocks (parent not yet known) are held in memory. Cap how many, and how many bytes in total.
 constexpr unsigned int MAX_ORPHAN_BLOCKS = 750;

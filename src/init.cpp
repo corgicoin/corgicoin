@@ -280,6 +280,7 @@ std::string HelpMessage()
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
+        "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
         "  -zmqpubhashblock=<address> " + _("Publish the hash of each new best block on a ZeroMQ socket, e.g. tcp://127.0.0.1:28332") + "\n" +
         "  -zmqpubrawblock=<address>  " + _("Publish each new best block, serialized") + "\n" +
         "  -zmqpubhashtx=<address>    " + _("Publish the txid of each transaction entering the memory pool or a block") + "\n" +
