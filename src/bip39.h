@@ -25,11 +25,21 @@ std::string MnemonicFromEntropy(const std::vector<unsigned char>& entropy);
 // it is a parameter so tests can inject a failing one.
 std::string GenerateMnemonic(int nStrengthBits = 128, bool (*rng)(unsigned char*, int) = nullptr);
 
-// Validate a mnemonic: every word in the list and the checksum matches.
+// The canonical form of a typed or pasted phrase: words separated by exactly one ASCII space, no leading or
+// trailing whitespace. Whitespace is ASCII space/tab/newline/etc. plus the Unicode spaces that NFKD maps to U+0020
+// (U+00A0, U+2000-200A, U+202F, U+205F, U+3000). The seed is a hash of the exact string, so "a  b" and "a b" are
+// different wallets; any phrase entered by a user must go through this before MnemonicToSeed.
+// Not a full NFKD: the wordlist is ASCII, so other compatibility characters (full-width letters, ...) are left alone
+// and the phrase then fails CheckMnemonic instead of silently producing another wallet.
+std::string NormaliseMnemonic(const std::string& mnemonic);
+
+// Validate a mnemonic: every word in the list and the checksum matches. Whitespace is normalised first, so a
+// phrase with extra or unusual spacing is accepted; derive its seed from NormaliseMnemonic(mnemonic).
 bool CheckMnemonic(const std::string& mnemonic);
 
 // Mnemonic -> 64-byte seed via PBKDF2-HMAC-SHA512, 2048 iterations,
-// salt = "mnemonic" + passphrase (BIP39). Does not validate the mnemonic.
+// salt = "mnemonic" + passphrase (BIP39). Does not validate or normalise: it hashes the exact bytes it is given,
+// because wallets already on disk hold their phrase as stored and must keep deriving the same keys.
 std::vector<unsigned char> MnemonicToSeed(const std::string& mnemonic,
                                           const std::string& passphrase = "");
 

@@ -101,3 +101,4 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_mempool_verify.py` | `getmempoolinfo`; `verifychain` on a healthy chain and over a deliberately corrupted block |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |
+| `wallet_hd_phrase.py` | `sethdseed` with a recovery phrase typed with extra spaces, tabs or no-break spaces restores the same wallet as the canonical phrase; a bad phrase is still refused |

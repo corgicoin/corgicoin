@@ -100,4 +100,58 @@ BOOST_AUTO_TEST_CASE(bip39_generate_fails_closed_when_rng_fails)
     BOOST_CHECK(bip39::GenerateMnemonic(128) != bip39::GenerateMnemonic(128));
 }
 
+BOOST_AUTO_TEST_CASE(bip39_normalise_whitespace)
+{
+    const string canon = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    // already canonical: unchanged
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic(canon), canon);
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic(""), "");
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic(" \t\n "), "");
+
+    // runs of spaces, tabs, newlines, leading and trailing whitespace
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a  b"), "a b");
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("  a\tb\r\nc \v\f d\n"), "a b c d");
+
+    // Unicode spaces that NFKD turns into U+0020 (no-break, en/em/thin..., narrow no-break, medium math, ideographic)
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a\xC2\xA0" "b"), "a b");
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a\xE2\x80\x80" "b\xE2\x80\x8A" "c"), "a b c");
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a\xE2\x80\xAF" "b\xE2\x81\x9F" "c\xE3\x80\x80" "d"), "a b c d");
+
+    // neighbouring code points are not whitespace: U+200B zero-width space, U+2010 hyphen, U+3001 ideographic comma
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a\xE2\x80\x8B" "b"), "a\xE2\x80\x8B" "b");
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a\xE2\x80\x90" "b"), "a\xE2\x80\x90" "b");
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a\xE3\x80\x81" "b"), "a\xE3\x80\x81" "b");
+
+    // a truncated multi-byte sequence at the end of the string is left alone (no read past the end)
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a \xE2\x80"), "a \xE2\x80");
+    BOOST_CHECK_EQUAL(bip39::NormaliseMnemonic("a \xC2"), "a \xC2");
+}
+
+BOOST_AUTO_TEST_CASE(bip39_check_accepts_any_spacing_and_seed_matches_canonical)
+{
+    for (const Bip39Vec& v : VECTORS)
+    {
+        string canon = v.mnemonic;
+        string messy = "  ";
+        for (char c : canon)
+            messy += (c == ' ') ? string("  \t") : string(1, c);
+        messy += " \n";
+        string nbsp = canon;
+        for (size_t p; (p = nbsp.find(' ')) != string::npos;)
+            nbsp.replace(p, 1, "\xC2\xA0");
+
+        BOOST_CHECK(bip39::CheckMnemonic(messy));
+        BOOST_CHECK(bip39::CheckMnemonic(nbsp));
+        // the seed for the typed phrase is only right after normalising it; the raw string is another wallet
+        BOOST_CHECK_EQUAL(HexStr(bip39::MnemonicToSeed(bip39::NormaliseMnemonic(messy), "TREZOR")), string(v.seed));
+        BOOST_CHECK_EQUAL(HexStr(bip39::MnemonicToSeed(bip39::NormaliseMnemonic(nbsp), "TREZOR")), string(v.seed));
+        BOOST_CHECK(HexStr(bip39::MnemonicToSeed(messy, "TREZOR")) != string(v.seed));
+    }
+
+    // normalising does not make a bad phrase valid
+    BOOST_CHECK(!bip39::CheckMnemonic("abandon  abandon abandon"));
+    BOOST_CHECK(!bip39::CheckMnemonic("abandon\xE2\x80\x8B" "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
