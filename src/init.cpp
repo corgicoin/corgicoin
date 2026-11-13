@@ -277,6 +277,9 @@ std::string HelpMessage()
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
         "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 62555)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
+        "  -rpcservertimeout=<n>  " + _("Close a JSON-RPC connection that makes no progress for <n> seconds (default: 30)") + "\n" +
+        "  -rpcmaxbody=<n>        " + _("Largest JSON-RPC request body accepted, in bytes (default: 8388608)") + "\n" +
+        "  -rpcmaxconnections=<n> " + _("Most JSON-RPC connections served at once; more get HTTP 503 (default: 64)") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +

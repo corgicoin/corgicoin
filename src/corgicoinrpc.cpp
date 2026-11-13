@@ -3518,6 +3518,9 @@ static string HTTPReply(int nStatus, const string& strMsg, bool keepalive)
     else if (nStatus == 400) cStatus = "Bad Request";
     else if (nStatus == 403) cStatus = "Forbidden";
     else if (nStatus == 404) cStatus = "Not Found";
+    else if (nStatus == 413) cStatus = "Request Entity Too Large";
+    else if (nStatus == 431) cStatus = "Request Header Fields Too Large";
+    else if (nStatus == 503) cStatus = "Service Unavailable";
     else if (nStatus == 500) cStatus = "Internal Server Error";
     else cStatus = "";
     return strprintf(
@@ -3608,6 +3611,78 @@ int ReadHTTP(std::basic_istream<char>& stream, map<string, string>& mapHeadersRe
     }
 
     return nStatus;
+}
+
+// ---- Reading a request on the server side -----------------------------------------------------------------
+// A request is read before the caller has proved who it is, so every part of it is bounded: the length of a line,
+// the number of header lines, the size of the body (checked only after the login, and only then allocated) and,
+// with the socket timeout set in ThreadRPCServer3, the time any of it may take.
+static const size_t MAX_HTTP_LINE = 8192;
+static const int MAX_HTTP_HEADERS = 100;
+
+// Next line without its newline (and a trailing carriage return). false: end of stream, or longer than nMax
+// (str.size() == nMax then).
+static bool GetLineLimited(std::istream& stream, string& str, size_t nMax)
+{
+    str.clear();
+    char c;
+    while (stream.get(c))
+    {
+        if (c == '\n')
+        {
+            if (!str.empty() && str.back() == '\r')
+                str.pop_back();
+            return true;
+        }
+        if (str.size() >= nMax)
+            return false;
+        str += c;
+    }
+    return false;
+}
+
+// Reads the request line and the headers. Returns 200 when they were read, 400 for something that is not a request,
+// 431 for lines or a header count over the limit, 0 when the peer went away (nothing to answer).
+// nLenRet is the Content-Length, 0 if none; a value that is not a plain non-negative number is a 400.
+static int ReadHTTPRequestHead(std::istream& stream, map<string, string>& mapHeadersRet, int& nProtoRet, int64_t& nLenRet)
+{
+    mapHeadersRet.clear();
+    nProtoRet = 0;
+    nLenRet = 0;
+
+    string strRequestLine;
+    if (!GetLineLimited(stream, strRequestLine, MAX_HTTP_LINE))
+        return strRequestLine.size() >= MAX_HTTP_LINE ? 431 : 0;
+    vector<string> vWords;
+    ParseString(strRequestLine, ' ', vWords);
+    if (vWords.size() < 2)
+        return 400;
+    const char* ver = strstr(strRequestLine.c_str(), "HTTP/1.");
+    if (ver != nullptr)
+        nProtoRet = atoi(ver + 7);
+
+    for (int nHeaders = 0;; nHeaders++)
+    {
+        string str;
+        if (!GetLineLimited(stream, str, MAX_HTTP_LINE))
+            return str.size() >= MAX_HTTP_LINE ? 431 : 0;
+        if (str.empty())
+            return 200;
+        if (nHeaders >= MAX_HTTP_HEADERS)
+            return 431;
+        string::size_type nColon = str.find(":");
+        if (nColon == string::npos)
+            continue;
+        string strHeader = ToLower(TrimString(str.substr(0, nColon)));
+        string strValue = TrimString(str.substr(nColon + 1));
+        mapHeadersRet[strHeader] = strValue;
+        if (strHeader == "content-length")
+        {
+            if (strValue.empty() || strValue.size() > 18 || strValue.find_first_not_of("0123456789") != string::npos)
+                return 400;
+            nLenRet = strtoll(strValue.c_str(), nullptr, 10);
+        }
+    }
 }
 
 bool HTTPAuthorized(map<string, string>& mapHeaders)
@@ -3753,6 +3828,8 @@ public:
     virtual std::iostream& stream() = 0;
     virtual std::string peer_address_to_string() const = 0;
     virtual void close() = 0;
+    /** Give up on a read or write that makes no progress for this many seconds (0: wait forever). */
+    virtual void set_timeout(int nSeconds) = 0;
     /** Make a read blocked on this connection in another thread return. Safe to call from any thread. */
     virtual void abort() = 0;
 };
@@ -3784,6 +3861,24 @@ public:
     virtual void close() override
     {
         _stream.close();
+    }
+
+    virtual void set_timeout(int nSeconds) override
+    {
+        if (nSeconds <= 0)
+            return;
+        auto fd = sslStream.lowest_layer().native_handle();
+#ifdef WIN32
+        DWORD nMillis = nSeconds * 1000;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&nMillis, sizeof(nMillis));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&nMillis, sizeof(nMillis));
+#else
+        struct timeval tv;
+        tv.tv_sec = nSeconds;
+        tv.tv_usec = 0;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
     }
 
     virtual void abort() override
@@ -3886,6 +3981,15 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > 
         // Only send a 403 if we're not using SSL to prevent a DoS during the SSL handshake.
         if (!fUseSSL)
             conn->stream() << HTTPReply(403, "", false) << std::flush;
+        delete conn;
+    }
+
+    // Each connection has a thread of its own, so the number of them is limited: past it the caller is told to come
+    // back later instead of the process running out of threads and memory
+    else if (vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] >= GetArg("-rpcmaxconnections", 64))
+    {
+        if (!fUseSSL)
+            conn->stream() << HTTPReply(503, "", false) << std::flush;
         delete conn;
     }
 
@@ -4125,6 +4229,12 @@ void ThreadRPCServer3(void* parg)
         setRPCConnections.insert(conn);
     }
 
+    // A read or write that makes no progress for this long ends the connection. This covers a client that sends
+    // half a request and stops, and one that holds an idle keep-alive connection for ever. (A pool's HTTP client
+    // reconnects when the server closes an idle connection, as it must for any server.)
+    conn->set_timeout(static_cast<int>(GetArg("-rpcservertimeout", 30)));
+    const int64_t nMaxBody = GetArg("-rpcmaxbody", 8 * 1024 * 1024);
+
     bool fRun = true;
     while(true) {
         if (fShutdown || !fRun)
@@ -4141,7 +4251,21 @@ void ThreadRPCServer3(void* parg)
         map<string, string> mapHeaders;
         string strRequest;
 
-        ReadHTTP(conn->stream(), mapHeaders, strRequest);
+        // The head first, bounded; the body only after the caller has logged in
+        int nProto = 0;
+        int64_t nLen = 0;
+        const int nHeadStatus = ReadHTTPRequestHead(conn->stream(), mapHeaders, nProto, nLen);
+        if (nHeadStatus != 200)
+        {
+            if (nHeadStatus != 0)
+                conn->stream() << HTTPReply(nHeadStatus, "", false) << std::flush;
+            break;
+        }
+        {
+            const string& sConHdr = mapHeaders["connection"];
+            if (sConHdr != "close" && sConHdr != "keep-alive")
+                mapHeaders["connection"] = nProto >= 1 ? "keep-alive" : "close";
+        }
 
         // Check authorization
         if (mapHeaders.count("authorization") == 0)
@@ -4163,6 +4287,21 @@ void ThreadRPCServer3(void* parg)
         }
         if (mapHeaders["connection"] == "close")
             fRun = false;
+
+        // Logged in: now the body, if it is not too big to take
+        if (nLen > nMaxBody)
+        {
+            conn->stream() << HTTPReply(413, "", false) << std::flush;
+            break;
+        }
+        if (nLen > 0)
+        {
+            vector<char> vch(static_cast<size_t>(nLen));
+            conn->stream().read(&vch[0], nLen);
+            if (conn->stream().gcount() != nLen)
+                break;      // the client went away or stopped sending before the body was complete
+            strRequest = string(vch.begin(), vch.end());
+        }
 
         JSONRequest jreq;
         try
