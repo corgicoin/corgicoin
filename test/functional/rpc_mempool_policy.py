@@ -24,17 +24,17 @@ class MempoolPolicyTest(CorgiTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        node.generate(800)
+        node.generate(1000)
         utxos = node.listunspent()
-        assert len(utxos) >= 740, len(utxos)
+        assert len(utxos) >= 950, len(utxos)
         dest = node.getnewaddress()
 
         self.log("a small transaction is accepted as before")
         small = self.spend(node, utxos[:3], dest)
         assert_equal(node.testmempoolaccept([small])[0]["allowed"], True)
 
-        self.log("a transaction of 700 inputs is over 100 kB and is refused as nonstandard")
-        big = self.spend(node, utxos[3:703], dest)
+        self.log("a transaction of 940 inputs is over 100 kB and is refused as nonstandard")
+        big = self.spend(node, utxos[3:943], dest)
         assert len(big) // 2 > 100000, len(big) // 2
         res = node.testmempoolaccept([big])[0]
         assert_equal(res["allowed"], False)
