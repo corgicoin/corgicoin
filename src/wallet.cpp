@@ -1916,7 +1916,7 @@ bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strEr
                 CTxDestination dest;
                 if (!ExtractDestination(txout.scriptPubKey, dest))
                     continue;
-                const CKeyID* pkeyid = boost::get<CKeyID>(&dest);
+                const CKeyID* pkeyid = std::get_if<CKeyID>(&dest);
                 auto it = pkeyid ? mapIndex.find(*pkeyid) : mapIndex.end();
                 if (it != mapIndex.end())
                     nFound = std::max(nFound, static_cast<int>(it->second));
