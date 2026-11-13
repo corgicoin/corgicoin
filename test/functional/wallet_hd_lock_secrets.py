@@ -41,6 +41,7 @@ class HDLockSecretsTest(CorgiTestFramework):
         assert node.getnewaddress() != addr
 
         self.log("a timeout relock wipes it too")
+        node.walletlock()      # an unlock that is still running would only be extended by a shorter one
         node.walletpassphrase(PASSPHRASE, 1)
         self.wait_for_wipe(node)
 
