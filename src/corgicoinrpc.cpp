@@ -30,6 +30,9 @@
 #include <memory>
 #include <list>
 #include <set>
+#ifndef WIN32
+#include <poll.h>
+#endif
 
 using namespace std;
 using namespace boost;
@@ -3783,9 +3786,26 @@ public:
         fNeedHandshake = false;
         stream.handshake(role);
     }
+    // Give up on a read that gets nothing for this long (0: wait for ever). SO_RCVTIMEO does not do it: asio turns a
+    // synchronous read that would block into poll() with no time limit, so the wait is made here, before the read.
+    void set_timeout(int nSecondsIn) { nTimeoutSeconds = nSecondsIn; }
+
     std::streamsize read(char* s, std::streamsize n)
     {
         handshake(ssl::stream_base::server); // HTTPS servers read first
+        if (nTimeoutSeconds > 0 && !fUseSSL)
+        {
+            // (With TLS the decrypted bytes may already be waiting inside the TLS layer, where poll() cannot see them.)
+#ifdef WIN32
+            WSAPOLLFD pfd = { stream.next_layer().native_handle(), POLLRDNORM, 0 };
+            const int nReady = WSAPoll(&pfd, 1, nTimeoutSeconds * 1000);
+#else
+            struct pollfd pfd = { stream.next_layer().native_handle(), POLLIN, 0 };
+            const int nReady = poll(&pfd, 1, nTimeoutSeconds * 1000);
+#endif
+            if (nReady == 0)
+                return -1;           // end of stream: the caller treats the connection as finished
+        }
         if (fUseSSL) return stream.read_some(asio::buffer(s, n));
         return stream.next_layer().read_some(asio::buffer(s, n));
     }
@@ -3817,6 +3837,7 @@ public:
 private:
     bool fNeedHandshake;
     bool fUseSSL;
+    int nTimeoutSeconds = 0;
     asio::ssl::stream<typename Protocol::socket>& stream;
 };
 
@@ -3865,20 +3886,8 @@ public:
 
     virtual void set_timeout(int nSeconds) override
     {
-        if (nSeconds <= 0)
-            return;
-        auto fd = sslStream.lowest_layer().native_handle();
-#ifdef WIN32
-        DWORD nMillis = nSeconds * 1000;
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&nMillis, sizeof(nMillis));
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&nMillis, sizeof(nMillis));
-#else
-        struct timeval tv;
-        tv.tv_sec = nSeconds;
-        tv.tv_usec = 0;
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-#endif
+        // the stream holds its own copy of the device: set it there
+        _stream->set_timeout(nSeconds);
     }
 
     virtual void abort() override
