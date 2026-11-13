@@ -24,7 +24,7 @@ class MempoolPolicyTest(CorgiTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        node.generate(780)
+        node.generate(800)
         utxos = node.listunspent()
         assert len(utxos) >= 740, len(utxos)
         dest = node.getnewaddress()
