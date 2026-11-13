@@ -4003,9 +4003,14 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > 
     }
 
     // start HTTP client thread
-    else if (!CreateThread(ThreadRPCServer3, conn)) {
-        LogPrintf("Failed to create RPC server client thread\n");
-        delete conn;
+    else
+    {
+        nRPCConnectionsOpen++;
+        if (!CreateThread(ThreadRPCServer3, conn)) {
+            LogPrintf("Failed to create RPC server client thread\n");
+            delete conn;
+            nRPCConnectionsOpen--;
+        }
     }
 
     vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
@@ -4123,6 +4128,18 @@ void ThreadRPCServer2(void* parg)
         io_service.run_one();
     vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]++;
     StopRequests();
+
+    // io_service goes out of scope when this returns, and every open connection has a socket registered with it. A handler
+    // that destroys its connection after that touches freed memory (a crash at shutdown, a double free or a segfault, about one
+    // run in three with idle clients connected now that shutdown wakes them all at once). Wake them and wait for the last.
+    const int64 nWaitStart = GetTime();
+    while (nRPCConnectionsOpen > 0 && GetTime() - nWaitStart < 30)
+    {
+        RPCAbortConnections();
+        Sleep(10);
+    }
+    if (nRPCConnectionsOpen > 0)
+        LogPrintf("ThreadRPCServer: %d RPC connection(s) still open after 30 seconds\n", nRPCConnectionsOpen.load());
 }
 
 class JSONRequest
@@ -4205,6 +4222,9 @@ static CCriticalSection cs_THREAD_RPCHANDLER;
 // it sits in a blocking read, so without this a "stop" waits for the client to hang up.
 static CCriticalSection cs_rpcConnections;
 static std::set<AcceptedConnection*> setRPCConnections;
+// Connections that exist from the moment they are accepted until their handler thread has destroyed them. A connection's
+// socket is registered with the io_context of ThreadRPCServer2, which must not be destroyed before the last of them is.
+static std::atomic<int> nRPCConnectionsOpen(0);
 
 void RPCAbortConnections()
 {
@@ -4255,6 +4275,7 @@ void ThreadRPCServer3(void* parg)
                 LOCK(cs_THREAD_RPCHANDLER);
                 --vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)];
             }
+            nRPCConnectionsOpen--;
             return;
         }
         map<string, string> mapHeaders;
@@ -4357,6 +4378,7 @@ void ThreadRPCServer3(void* parg)
         LOCK(cs_THREAD_RPCHANDLER);
         vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]--;
     }
+    nRPCConnectionsOpen--;
 }
 
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
