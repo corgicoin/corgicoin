@@ -33,6 +33,9 @@ extern int nBestHeight;
 
 
 inline unsigned int ReceiveBufferSize() { return 1000*GetArg("-maxreceivebuffer", 5*1000); }
+/** The most peers this node keeps (-maxconnections), less than select() can hold. */
+int GetMaxConnections();
+
 inline unsigned int SendBufferSize() { return 1000*GetArg("-maxsendbuffer", 1*1000); }
 
 void AddOneShot(std::string strDest);

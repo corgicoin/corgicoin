@@ -32,6 +32,19 @@ using namespace boost;
 
 static constexpr int MAX_OUTBOUND_CONNECTIONS = 8;
 
+// select() holds descriptor numbers below FD_SETSIZE (1024 on Linux and macOS): FD_SET with a larger one writes past the
+// fd_set on the stack. Leave room for the descriptors that are not peers (listening sockets, RPC connections, database and
+// log files, blk files) and cap the number of peers accordingly.
+int GetMaxConnections()
+{
+#ifdef WIN32
+    return static_cast<int>(GetArg("-maxconnections", 125));
+#else
+    static const int nCeiling = FD_SETSIZE - 1 - 150;
+    return static_cast<int>(std::min<int64>(GetArg("-maxconnections", 125), nCeiling));
+#endif
+}
+
 void ThreadMessageHandler2(void* parg);
 void ThreadSocketHandler2(void* parg);
 void ThreadOpenConnections2(void* parg);
@@ -881,6 +894,17 @@ void ThreadSocketHandler2(void* parg)
 #endif
             socklen_t len = sizeof(sockaddr);
             SOCKET hSocket = accept(hListenSocket, (struct sockaddr*)&sockaddr, &len);
+#ifndef WIN32
+            if (hSocket != INVALID_SOCKET && hSocket >= FD_SETSIZE)
+            {
+                // the socket handler could not wait on it without writing outside its fd_set
+                LogPrintf("socket error: connection refused, descriptor %d is beyond what select() can hold\n", static_cast<int>(hSocket));
+                closesocket(hSocket);
+                hSocket = INVALID_SOCKET;
+                Sleep(10);
+                continue;
+            }
+#endif
             CAddress addr;
             int nInbound = 0;
 
@@ -900,7 +924,7 @@ void ThreadSocketHandler2(void* parg)
                 if (WSAGetLastError() != WSAEWOULDBLOCK)
                     LogPrintf("socket error accept failed: %d\n", WSAGetLastError());
             }
-            else if (nInbound >= GetArg("-maxconnections", 125) - MAX_OUTBOUND_CONNECTIONS)
+            else if (nInbound >= GetMaxConnections() - MAX_OUTBOUND_CONNECTIONS)
             {
                 {
                     LOCK(cs_setservAddNodeAddresses);
@@ -1937,7 +1961,7 @@ void StartNode(void* parg)
 
     if (!semOutbound) {
         // initialize semaphore
-        int nMaxOutbound = min(MAX_OUTBOUND_CONNECTIONS, static_cast<int>(GetArg("-maxconnections", 125)));
+        int nMaxOutbound = min(MAX_OUTBOUND_CONNECTIONS, GetMaxConnections());
         semOutbound = std::make_unique<CSemaphore>(nMaxOutbound);
     }
 
