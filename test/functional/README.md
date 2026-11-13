@@ -81,6 +81,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
+| `wallet_unlock_timeout.py` | walletpassphrase: negative and huge timeouts, and unlocking an unlocked wallet extends the unlock |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |
 | `wallet_abandon.py` | `abandontransaction`: coins and balance restored, descendants abandoned with it, survives a restart, a mined copy is tracked again |
