@@ -22,9 +22,11 @@ def sha256d(b):
 
 
 def ser_varstr(s):
-    b = s.encode()
-    assert len(b) < 0xfd
-    return bytes([len(b)]) + b
+    b = s if isinstance(s, bytes) else s.encode()
+    if len(b) < 0xfd:
+        return bytes([len(b)]) + b
+    assert len(b) <= 0xffff
+    return bytes([0xfd]) + struct.pack("<H", len(b)) + b
 
 
 def ser_addr(host="127.0.0.1", port=0):
@@ -40,7 +42,7 @@ class P2PConnection:
     wedged peer looks like to the node.
     """
 
-    def __init__(self, port, answer_pings=True, start_height=0):
+    def __init__(self, port, answer_pings=True, start_height=0, subver=b"/corgi-mininode:0.1/"):
         self.answer_pings = answer_pings
         self.got_verack = False
         self.pings_received = 0
@@ -53,7 +55,7 @@ class P2PConnection:
         payload = (struct.pack("<iQq", PROTOCOL_VERSION, NODE_NETWORK, int(time.time()))
                    + ser_addr(port=port) + ser_addr()
                    + struct.pack("<Q", random.getrandbits(64))
-                   + ser_varstr("/corgi-mininode:0.1/")
+                   + ser_varstr(subver)
                    + struct.pack("<i", start_height))
         self.send("version", payload)
 

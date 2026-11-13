@@ -144,6 +144,8 @@ void ParseString(const std::string& str, char c, std::vector<std::string>& v);
 // Small string helpers (replace the boost::algorithm::string uses).
 std::string ToLower(const std::string& str);
 std::string TrimString(const std::string& str);
+/** Text that came from a peer, made safe to print, log or put in a JSON reply: printable ASCII only, at most nMaxLength bytes. */
+std::string SanitizeString(const std::string& str, std::size_t nMaxLength = 256);
 
 /** Compare two secrets without stopping at the first difference, so the time taken does not tell a caller how many
  *  leading characters it guessed right. Only the lengths can leak. */
