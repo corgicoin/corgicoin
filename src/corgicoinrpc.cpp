@@ -2886,13 +2886,28 @@ Value getblockhash(const Array& params, bool fHelp)
 
 Value getblock(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "getblock <hash>\n"
-            "Returns details of a block with given block-hash.");
+            "getblock <hash> [verbose=true]\n"
+            "If verbose is true (or 1, or 2), returns an object with details of the block.\n"
+            "If verbose is false (or 0), returns the block as one serialized hex string,\n"
+            "exactly as sent over the network: header, the AuxPoW proof of a merged-mined\n"
+            "block, then the transactions.");
 
     std::string strHash = params[0].get_str();
     uint256 hash(strHash);
+
+    // Accept a boolean, or an integer verbosity as bitcoind does (0 = hex, 1 and up = JSON).
+    bool fVerbose = true;
+    if (params.size() > 1)
+    {
+        if (params[1].type() == bool_type)
+            fVerbose = params[1].get_bool();
+        else if (params[1].type() == int_type)
+            fVerbose = params[1].get_int() != 0;
+        else
+            throw JSONRPCError(-8, "verbose must be a boolean or an integer");
+    }
 
     if (mapBlockIndex.count(hash) == 0)
         throw JSONRPCError(-5, "Block not found");
@@ -2900,6 +2915,13 @@ Value getblock(const Array& params, bool fHelp)
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
     block.ReadFromDisk(pblockindex, true);
+
+    if (!fVerbose)
+    {
+        CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
+        ssBlock << block;
+        return HexStr(ssBlock.begin(), ssBlock.end());
+    }
 
     return blockToJSON(block, pblockindex);
 }
@@ -4280,6 +4302,14 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
     if (strMethod == "submitblock"            && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "getblockheader"         && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "getblock"               && n > 1)
+    {
+        // true/false or an integer verbosity: keep whichever JSON type was given
+        Value v;
+        if (!read_string(params[1].get_str(), v))
+            throw runtime_error("Error parsing JSON:" + params[1].get_str());
+        params[1] = v;
+    }
     if (strMethod == "getchaintxstats"        && n > 0) ConvertTo<int>(params[0]);
     if (strMethod == "listsinceblock"         && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "sendmany"               && n > 1) ConvertTo<Object>(params[1]);
