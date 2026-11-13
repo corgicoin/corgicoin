@@ -119,6 +119,9 @@ protected:
             ssValue >> value;
         }
         catch (std::exception &e) {
+            // the buffer was allocated for us (DB_DBT_MALLOC): free it on this path too
+            memset(datValue.get_data(), 0, datValue.get_size());
+            free(datValue.get_data());
             return false;
         }
 
