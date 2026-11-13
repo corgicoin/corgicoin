@@ -275,4 +275,80 @@ BOOST_AUTO_TEST_CASE(key_secret_must_be_in_range)
     BOOST_CHECK(low.GetPubKey() != high.GetPubKey());
 }
 
+// Signature validity must not depend on the strictness of the linked OpenSSL: Verify reads the encoding leniently, as
+// the first OpenSSL releases did and as Bitcoin Core does, and hands OpenSSL the numbers.
+BOOST_AUTO_TEST_CASE(verify_accepts_lax_der_encodings_alike_on_every_build)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const uint256 hash = GetRandHash();
+    vector<unsigned char> sig;
+    BOOST_REQUIRE(key.Sign(hash, sig));
+    BOOST_CHECK(key.Verify(hash, sig));
+
+    // take the signature apart: 30 len 02 rlen R 02 slen S
+    BOOST_REQUIRE(sig.size() > 8 && sig[0] == 0x30 && sig[2] == 0x02);
+    const size_t rlen = sig[3];
+    const vector<unsigned char> R(sig.begin() + 4, sig.begin() + 4 + rlen);
+    BOOST_REQUIRE(sig[4 + rlen] == 0x02);
+    const size_t slen = sig[5 + rlen];
+    const vector<unsigned char> S(sig.begin() + 6 + rlen, sig.begin() + 6 + rlen + slen);
+
+    auto Build = [](const vector<unsigned char>& seqLen, const vector<unsigned char>& rLen, const vector<unsigned char>& r,
+                    const vector<unsigned char>& sLen, const vector<unsigned char>& s, const vector<unsigned char>& tail) {
+        vector<unsigned char> out;
+        out.push_back(0x30);
+        out.insert(out.end(), seqLen.begin(), seqLen.end());
+        out.push_back(0x02);
+        out.insert(out.end(), rLen.begin(), rLen.end());
+        out.insert(out.end(), r.begin(), r.end());
+        out.push_back(0x02);
+        out.insert(out.end(), sLen.begin(), sLen.end());
+        out.insert(out.end(), s.begin(), s.end());
+        out.insert(out.end(), tail.begin(), tail.end());
+        return out;
+    };
+    auto L = [](size_t n) { return vector<unsigned char>(1, static_cast<unsigned char>(n)); };
+    const vector<unsigned char> none;
+    const size_t body = 2 + rlen + 2 + slen;
+
+    // the plain encoding, rebuilt, still verifies
+    BOOST_CHECK(key.Verify(hash, Build(L(body), L(rlen), R, L(slen), S, none)));
+    // sequence length in long form, and wrong
+    BOOST_CHECK(key.Verify(hash, Build(vector<unsigned char>{0x81, static_cast<unsigned char>(body)}, L(rlen), R, L(slen), S, none)));
+    BOOST_CHECK(key.Verify(hash, Build(L(0x7f), L(rlen), R, L(slen), S, none)));
+    // integer lengths in long form
+    BOOST_CHECK(key.Verify(hash, Build(L(body), vector<unsigned char>{0x81, static_cast<unsigned char>(rlen)}, R, L(slen), S, none)));
+    BOOST_CHECK(key.Verify(hash, Build(L(body), L(rlen), R, vector<unsigned char>{0x82, 0x00, static_cast<unsigned char>(slen)}, S, none)));
+    // leading zeros in R and S (not minimal)
+    vector<unsigned char> Rz(R), Sz(S);
+    Rz.insert(Rz.begin(), 2, 0x00);
+    Sz.insert(Sz.begin(), 1, 0x00);
+    BOOST_CHECK(key.Verify(hash, Build(L(body + 3), L(Rz.size()), Rz, L(Sz.size()), Sz, none)));
+    // bytes after the signature
+    BOOST_CHECK(key.Verify(hash, Build(L(body), L(rlen), R, L(slen), S, vector<unsigned char>{0x00, 0x01, 0x02})));
+    // a value with its first bit set where the encoding needed a zero byte in front: read as unsigned
+    vector<unsigned char> Rhigh(R);
+    if (Rhigh[0] == 0x00 && Rhigh.size() > 1)
+    {
+        Rhigh.erase(Rhigh.begin());
+        BOOST_CHECK(key.Verify(hash, Build(L(body - 1), L(Rhigh.size()), Rhigh, L(slen), S, none)));
+    }
+
+    // and what is not a signature is refused
+    BOOST_CHECK(!key.Verify(hash, vector<unsigned char>()));
+    BOOST_CHECK(!key.Verify(hash, vector<unsigned char>{0x30}));
+    BOOST_CHECK(!key.Verify(hash, vector<unsigned char>{0x30, 0x00}));
+    BOOST_CHECK(!key.Verify(hash, vector<unsigned char>{0x31, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01}));
+    BOOST_CHECK(!key.Verify(hash, Build(L(6), L(1), vector<unsigned char>{0}, L(1), vector<unsigned char>{0}, none)));     // r = s = 0
+    BOOST_CHECK(!key.Verify(hash, Build(L(body), L(rlen), R, L(slen + 5), S, none)));                                    // s runs past the end
+    vector<unsigned char> Rbig(33, 0x7f);                                                                                // 33 bytes: more than 256 bits
+    BOOST_CHECK(!key.Verify(hash, Build(L(2 + 33 + 2 + slen), L(33), Rbig, L(slen), S, none)));
+    // another message or another key
+    BOOST_CHECK(!key.Verify(GetRandHash(), sig));
+    CKey other;
+    other.MakeNewKey(true);
+    BOOST_CHECK(!other.Verify(hash, sig));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
