@@ -99,4 +99,21 @@ BOOST_AUTO_TEST_CASE(block_header_serialize_roundtrip)
     BOOST_CHECK_EQUAL(block.nNonce, block2.nNonce);
 }
 
+// The unsigned-char constructor used to take &v.begin()[0] and &v.end()[0]: undefined behaviour for any input, and a
+// null pointer for an empty one (what the RPCs get from hex that decodes to nothing). Caught by UBSan.
+BOOST_AUTO_TEST_CASE(cdatastream_from_byte_vector)
+{
+    const std::vector<unsigned char> empty;
+    CDataStream ssEmpty(empty, SER_NETWORK, PROTOCOL_VERSION);
+    BOOST_CHECK(ssEmpty.empty());
+    BOOST_CHECK_EQUAL(ssEmpty.size(), 0u);
+
+    const unsigned char bytes[] = {0x00, 0x7f, 0x80, 0xff};
+    const std::vector<unsigned char> full(bytes, bytes + sizeof(bytes));
+    CDataStream ss(full, SER_NETWORK, PROTOCOL_VERSION);
+    BOOST_REQUIRE_EQUAL(ss.size(), sizeof(bytes));
+    for (size_t i = 0; i < sizeof(bytes); i++)
+        BOOST_CHECK_EQUAL(static_cast<unsigned char>(ss[i]), bytes[i]);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
