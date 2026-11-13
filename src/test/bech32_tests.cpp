@@ -168,4 +168,77 @@ BOOST_AUTO_TEST_CASE(address_rejects_tampering)
     BOOST_CHECK(CBitcoinAddress(upper).Get() == addr.Get());
 }
 
+// What a BIP350 segwit decoder would accept: bech32m, a witness version 1 to 16 and a program of 2 to 40 bytes (version 0
+// must be plain bech32, and nothing above 16 is a version). If it accepts an address of ours, a wallet using it pays to
+// OP_n <program>, which on this chain anyone can spend.
+static bool SegwitDecoderWouldAccept(const std::string& s)
+{
+    bech32::DecodeResult dec = bech32::Decode(s);
+    if (dec.encoding == bech32::Encoding::INVALID || dec.data.empty())
+        return false;
+    const uint8_t version = dec.data[0];
+    if (version > 16)
+        return false;
+    if ((version == 0) != (dec.encoding == bech32::Encoding::BECH32))
+        return false;
+    std::vector<uint8_t> program;
+    if (!bech32::ConvertBits(5, 8, false, program, std::vector<uint8_t>(dec.data.begin() + 1, dec.data.end())))
+        return false;
+    return program.size() >= 2 && program.size() <= 40;
+}
+
+BOOST_AUTO_TEST_CASE(our_addresses_are_not_segwit_addresses_to_other_software)
+{
+    for (int n = 0; n < 20; n++)
+    {
+        uint160 h = 0;
+        for (int i = 0; i < 5; i++)
+            h = (h << 32) | (uint32_t)(n * 2654435761u + i * 40503u + 777u);
+        for (bool fScript : {false, true})
+        {
+            CBitcoinAddress addr;
+            if (fScript)
+                addr.Set(CScriptID(h));
+            else
+                addr.Set(CKeyID(h));
+            const std::string b32 = addr.ToBech32();
+            BOOST_CHECK_MESSAGE(!SegwitDecoderWouldAccept(b32), b32 + " would be read as a segwit address");
+            // and still means the same destination
+            CBitcoinAddress back(b32);
+            BOOST_CHECK(back.IsValid());
+            BOOST_CHECK_EQUAL(back.IsScript(), fScript);
+            BOOST_CHECK(back.Get() == addr.Get());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(p2sh_addresses_written_with_the_old_type_are_still_read)
+{
+    std::vector<uint8_t> hash(20);
+    for (int i = 0; i < 20; i++)
+        hash[i] = (uint8_t)(0x30 + i * 7);
+    // the old form: type 1
+    std::vector<uint8_t> data{1};
+    bech32::ConvertBits(8, 5, true, data, hash);
+    const std::string legacy = bech32::Encode(bech32::Encoding::BECH32M, "corg", data);
+    BOOST_CHECK(SegwitDecoderWouldAccept(legacy));          // the reason it is no longer written
+    CBitcoinAddress old(legacy);
+    BOOST_CHECK(old.IsValid());
+    BOOST_CHECK(old.IsScript());
+    // it is the same destination as the new form, which differs only in its type value
+    const std::string current = old.ToBech32();
+    BOOST_CHECK(current != legacy);
+    BOOST_CHECK(!SegwitDecoderWouldAccept(current));
+    CBitcoinAddress again(current);
+    BOOST_CHECK(again.Get() == old.Get());
+    // other type values are refused
+    for (uint8_t t : {2, 3, 16, 17, 30})
+    {
+        std::vector<uint8_t> d{t};
+        bech32::ConvertBits(8, 5, true, d, hash);
+        CBitcoinAddress bad(bech32::Encode(bech32::Encoding::BECH32M, "corg", d));
+        BOOST_CHECK_MESSAGE(!bad.IsValid(), "type " << (int)t << " was accepted");
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

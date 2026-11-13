@@ -329,11 +329,21 @@ public:
         return fExpectTestNet == fTestNet && vchData.size() == nExpectedSize;
     }
 
-    // --- Bech32m address encoding (doc: src/bech32.h) ---------------------
+    // --- Bech32m address encoding (doc: src/bech32.h, doc/bech32-address-spec.md) -----------------
     // HRP "corg" mainnet / "tcorg" testnet; data part is one 5-bit type
-    // value (0 = P2PKH key hash, 1 = P2SH script hash) followed by the
-    // 20-byte hash repacked to 5-bit groups. An alternative *encoding* of
-    // the same destinations — base58 remains the default everywhere.
+    // value followed by the 20-byte hash repacked to 5-bit groups. An
+    // alternative *encoding* of the same destinations — base58 remains the
+    // default everywhere.
+    //
+    // The type value is the first value a segwit library would read as the witness version, and a segwit address with
+    // version 1 to 16 and a 20-byte program is valid in BIP350: it would be paid with the output OP_n <20 bytes>, which
+    // anyone can spend (this chain has no segwit). So the type of a P2SH address is 31, which no witness version
+    // may be (the limit is 16): a segwit library refuses it. P2PKH is type 0, which a segwit library refuses too, as
+    // version 0 must use plain bech32 and this is bech32m. P2SH addresses written before this with type 1 are still read
+    // (as P2SH), and never written again.
+    static const uint8_t BECH32_TYPE_P2PKH = 0;
+    static const uint8_t BECH32_TYPE_P2SH = 31;
+    static const uint8_t BECH32_TYPE_P2SH_LEGACY = 1;
 
     static const char* Bech32HRP() { return fTestNet ? "tcorg" : "corg"; }
 
@@ -343,9 +353,9 @@ public:
             return "";
         uint8_t type;
         if (nVersion == PUBKEY_ADDRESS || nVersion == PUBKEY_ADDRESS_TEST)
-            type = 0;
+            type = BECH32_TYPE_P2PKH;
         else
-            type = 1;
+            type = BECH32_TYPE_P2SH;
         std::vector<uint8_t> data{type};
         bech32::ConvertBits(8, 5, true, data, vchData);
         return bech32::Encode(bech32::Encoding::BECH32M, Bech32HRP(), data);
@@ -357,7 +367,7 @@ public:
         if (dec.encoding != bech32::Encoding::BECH32M || dec.hrp != Bech32HRP() || dec.data.empty())
             return false;
         uint8_t type = dec.data[0];
-        if (type > 1)
+        if (type != BECH32_TYPE_P2PKH && type != BECH32_TYPE_P2SH && type != BECH32_TYPE_P2SH_LEGACY)
             return false;
         std::vector<uint8_t> hash;
         if (!bech32::ConvertBits(5, 8, false, hash,
@@ -365,7 +375,7 @@ public:
             return false;
         if (hash.size() != 20)
             return false;
-        if (type == 0)
+        if (type == BECH32_TYPE_P2PKH)
             SetData(fTestNet ? PUBKEY_ADDRESS_TEST : PUBKEY_ADDRESS, hash.data(), 20);
         else
             SetData(fTestNet ? SCRIPT_ADDRESS_TEST : SCRIPT_ADDRESS, hash.data(), 20);
