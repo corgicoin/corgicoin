@@ -68,7 +68,7 @@ CCriticalSection cs_vNodes;
 map<CInv, CDataStream> mapRelay;
 deque<pair<int64, CInv> > vRelayExpiration;
 CCriticalSection cs_mapRelay;
-map<CInv, int64> mapAlreadyAskedFor;
+CAskedForMap mapAlreadyAskedFor;
 
 static deque<string> vOneShots;
 CCriticalSection cs_vOneShots;
@@ -690,6 +690,8 @@ void CNode::copyStats(CNodeStats &stats)
     X(nMisbehavior);
     X(nSendBytes);
     X(nRecvBytes);
+    stats.nAddrKnown = setAddrKnown.size();
+    stats.nGetDataQueued = vRecvGetData.size();
 
     // Ping times are written by the message-handler thread; a torn read here
     // only affects a diagnostic RPC, matching upstream Bitcoin's tolerance.

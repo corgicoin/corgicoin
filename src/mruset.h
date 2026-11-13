@@ -51,6 +51,11 @@ public:
         }
         return ret;
     }
+    void clear()
+    {
+        set.clear();
+        queue.clear();
+    }
     size_type max_size() const { return nMaxSize; }
     size_type max_size(size_type s)
     {

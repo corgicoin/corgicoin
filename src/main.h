@@ -1052,7 +1052,7 @@ public:
         return true;
     }
 
-    bool ReadFromDisk(unsigned int nFile, unsigned int nBlockPos, bool fReadTransactions=true)
+    bool ReadFromDisk(unsigned int nFile, unsigned int nBlockPos, bool fReadTransactions=true, bool fCheckPoW=true)
     {
         SetNull();
 
@@ -1071,8 +1071,9 @@ public:
             return LogError("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
         }
 
-        // Check the header (AuxPoW-aware)
-        if (!CheckAuxProofOfWork(*this, nBits))
+        // Check the header (AuxPoW-aware). A caller that is serving a block this node already accepted may skip it:
+        // the check is a scrypt hash and, for merged mining, the AuxPoW proof, which a getdata for thousands of blocks paid each time
+        if (fCheckPoW && !CheckAuxProofOfWork(*this, nBits))
             return LogError("CBlock::ReadFromDisk() : errors in block header");
 
         return true;
@@ -1104,7 +1105,7 @@ public:
 
     bool DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex);
     bool ConnectBlock(CTxDB& txdb, CBlockIndex* pindex);
-    bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true);
+    bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true, bool fCheckPoW=true);
     bool SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew);
     bool AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos);
     bool CheckBlock() const;
