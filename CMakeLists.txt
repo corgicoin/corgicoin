@@ -532,6 +532,7 @@ if(BUILD_TESTS)
         src/test/mruset_tests.cpp
         src/test/multisig_tests.cpp
         src/test/netbase_tests.cpp
+        src/test/json_compat_tests.cpp
         src/test/rpc_tests.cpp
         src/test/script_P2SH_tests.cpp
         src/test/script_tests.cpp
