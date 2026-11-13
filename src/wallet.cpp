@@ -14,6 +14,7 @@
 #include "base58.h"
 #include "logging.h"
 #include "bip39.h"
+#include <openssl/crypto.h>
 #include <random>
 
 using namespace std;
@@ -61,12 +62,15 @@ bool CWallet::LoadHDMnemonic(const std::string& mnemonic)
     // valid-looking key nobody can recover (or, for an all-zero seed, everybody can)
     std::vector<unsigned char> seed = bip39::MnemonicToSeed(mnemonic);
     CExtKey master;
-    if (seed.empty() || !master.SetSeed(&seed[0], (unsigned int)seed.size()))
+    const bool fDerived = !seed.empty() && master.SetSeed(&seed[0], (unsigned int)seed.size());
+    OPENSSL_cleanse(seed.data(), seed.size());
+    if (!fDerived)
         return false;
     hdMasterKey = master;
     strHDMnemonic = mnemonic;
     hdSeedId = hdMasterKey.key.GetPubKey().GetID();
     fHDEnabled = true;
+    fHDMasterLoaded = true;
     return true;
 }
 
@@ -150,6 +154,8 @@ CPubKey CWallet::GenerateNewKey()
     // unencrypted wallets and unlocked encrypted ones (doc/hd-wallet-spec.md).
     if (fHDEnabled && !IsLocked())
     {
+        if (!fHDMasterLoaded)
+            throw std::runtime_error("CWallet::GenerateNewKey() : the HD seed is not available (it could not be decrypted when the wallet was unlocked), so no new keys can be made");
         if (!DeriveHDChild(hdMasterKey, nHDExternalIndex, key))
             throw std::runtime_error("CWallet::GenerateNewKey() : HD derivation failed");
         if (!AddKey(key))
@@ -361,8 +367,10 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase)
         {
             if (UnlockWithMasterKey(strWalletPassphrase, pMasterKey.second, vMasterKey))
             {
-                // Make the HD seed usable for this unlocked session.
-                DecryptHDSeed(vMasterKey);
+                // Make the HD seed usable for this unlocked session. If it cannot be decrypted the wallet still
+                // unlocks (its existing keys work), but it cannot make new keys: say so, and getwalletinfo reports it
+                if (!DecryptHDSeed(vMasterKey))
+                    LogPrintf("Unlock: the HD seed could not be decrypted; existing keys work but no new keys can be derived (hdseed_available is false)\n");
                 return true;
             }
         }
@@ -1892,7 +1900,24 @@ bool CWallet::NewKeyPool()
 bool CWallet::Lock()
 {
     LOCK(cs_wallet);
-    return CCryptoKeyStore::Lock();
+    if (!CCryptoKeyStore::Lock())
+        return false;
+    WipeHDSecrets();
+    return true;
+}
+
+void CWallet::WipeHDSecrets()
+{
+    LOCK(cs_wallet);
+    // Only when the encrypted copy of the phrase exists to bring it back at the next unlock
+    if (vchCryptedHDMnemonic.empty())
+        return;
+    if (!strHDMnemonic.empty())
+        OPENSSL_cleanse(&strHDMnemonic[0], strHDMnemonic.size());
+    strHDMnemonic.clear();
+    strHDMnemonic.shrink_to_fit();
+    hdMasterKey = CExtKey();
+    fHDMasterLoaded = false;
 }
 
 bool CWallet::TopUpKeyPool()

@@ -3113,7 +3113,11 @@ Value getwalletinfo(const Array& params, bool fHelp)
     obj.emplace_back("paytxfee", ValueFromAmount(nTransactionFee));
     obj.emplace_back("hdenabled", pwalletMain->IsHDEnabled());
     if (pwalletMain->IsHDEnabled())
+    {
         obj.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
+        // false while an encrypted wallet is locked (the phrase is wiped from memory), or if it did not decrypt
+        obj.emplace_back("hdseed_available", pwalletMain->IsHDSeedAvailable());
+    }
     return obj;
 }
 
