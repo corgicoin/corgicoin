@@ -29,6 +29,7 @@
 #include <boost/asio/ssl.hpp>
 #include <memory>
 #include <list>
+#include <set>
 
 using namespace std;
 using namespace boost;
@@ -3752,6 +3753,8 @@ public:
     virtual std::iostream& stream() = 0;
     virtual std::string peer_address_to_string() const = 0;
     virtual void close() = 0;
+    /** Make a read blocked on this connection in another thread return. Safe to call from any thread. */
+    virtual void abort() = 0;
 };
 
 template <typename Protocol>
@@ -3781,6 +3784,14 @@ public:
     virtual void close() override
     {
         _stream.close();
+    }
+
+    virtual void abort() override
+    {
+        // shutdown(2) on the descriptor wakes a blocked read_some with end-of-stream; the socket object itself
+        // is not touched, so the handler thread that owns it can go on using it
+        boost::system::error_code ec;
+        sslStream.lowest_layer().shutdown(asio::socket_base::shutdown_both, ec);
     }
 
     typename Protocol::endpoint peer;
@@ -4077,6 +4088,24 @@ static string JSONRPCExecBatch(const Array& vReq)
 
 static CCriticalSection cs_THREAD_RPCHANDLER;
 
+// Live RPC connections. A pool's HTTP client keeps its connection open between calls, and the handler thread for
+// it sits in a blocking read, so without this a "stop" waits for the client to hang up.
+static CCriticalSection cs_rpcConnections;
+static std::set<AcceptedConnection*> setRPCConnections;
+
+void RPCAbortConnections()
+{
+    LOCK(cs_rpcConnections);
+    for (AcceptedConnection* conn : setRPCConnections)
+        conn->abort();
+}
+
+static void ForgetRPCConnection(AcceptedConnection* conn)
+{
+    LOCK(cs_rpcConnections);
+    setRPCConnections.erase(conn);
+}
+
 void ThreadRPCServer3(void* parg)
 {
     IMPLEMENT_RANDOMIZE_STACK(ThreadRPCServer3(parg));
@@ -4089,11 +4118,18 @@ void ThreadRPCServer3(void* parg)
         vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]++;
     }
     AcceptedConnection *conn = static_cast<AcceptedConnection*>(parg);
+    {
+        // fShutdown is set before RPCAbortConnections() runs, and it is checked below after this registration,
+        // so a connection that arrives during shutdown is either aborted there or sees the flag here
+        LOCK(cs_rpcConnections);
+        setRPCConnections.insert(conn);
+    }
 
     bool fRun = true;
     while(true) {
         if (fShutdown || !fRun)
         {
+            ForgetRPCConnection(conn);
             conn->close();
             delete conn;
             {
@@ -4167,6 +4203,7 @@ void ThreadRPCServer3(void* parg)
         }
     }
 
+    ForgetRPCConnection(conn);
     delete conn;
     {
         LOCK(cs_THREAD_RPCHANDLER);

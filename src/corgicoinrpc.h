@@ -18,6 +18,8 @@
 json_spirit::Object JSONRPCError(int code, const std::string& message);
 
 void ThreadRPCServer(void* parg);
+/** Wake RPC handler threads that are blocked reading an idle connection, so they notice the shutdown. */
+void RPCAbortConnections();
 int CommandLineRPC(int argc, char *argv[]);
 
 /** Convert parameter values for RPC call from strings to command-specific JSON objects. */
