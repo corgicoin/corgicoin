@@ -158,7 +158,9 @@ CPubKey CWallet::GenerateNewKey()
             throw std::runtime_error("CWallet::GenerateNewKey() : the HD seed is not available (it could not be decrypted when the wallet was unlocked), so no new keys can be made");
         if (!DeriveHDChild(hdMasterKey, nHDExternalIndex, key))
             throw std::runtime_error("CWallet::GenerateNewKey() : HD derivation failed");
-        if (!AddKey(key))
+        // The same index can come up twice: restoring a phrase derives keys ahead, and restoring one that is already
+        // in the wallet derives the same keys again. A key that is already there is the one asked for, not a failure.
+        if (!HaveKey(key.GetPubKey().GetID()) && !AddKey(key))
             throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
         nHDExternalIndex++;
         if (fFileBacked)
@@ -1890,9 +1892,13 @@ bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strEr
         for (; nDerived < nTo; nDerived++)
         {
             CKey key;
-            if (!DeriveHDChild(hdMasterKey, nDerived, key) || !AddKey(key))
+            if (!DeriveHDChild(hdMasterKey, nDerived, key))
                 return false;
-            mapIndex[key.GetPubKey().GetID()] = nDerived;
+            const CKeyID keyid = key.GetPubKey().GetID();
+            // a key that is already here (an earlier restore of the same phrase, or the key pool) is not an error
+            if (!HaveKey(keyid) && !AddKey(key))
+                return false;
+            mapIndex[keyid] = nDerived;
         }
         return true;
     };
