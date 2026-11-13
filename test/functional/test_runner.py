@@ -19,6 +19,8 @@ TESTS = [
     "feature_regtest_basics.py",
     "feature_zmq.py",
     "wallet_send.py",
+    "wallet_change_position.py",
+    "rpc_sighash_single.py",
     "wallet_lockunspent.py",
     "wallet_abandon.py",
     "wallet_dump.py",

@@ -80,6 +80,8 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `feature_zmq.py` | `-zmqpub*` notifications: block and transaction topics, byte order and sequence numbers (needs `pyzmq`; skipped without it or without libzmq) |
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
+| `wallet_change_position.py` | the change output lands in every position, the last included |
+| `rpc_sighash_single.py` | signrawtransaction will not sign SIGHASH_SINGLE for an input with no output at its index |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |

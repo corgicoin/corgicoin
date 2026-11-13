@@ -1697,6 +1697,11 @@ bool SignSignature(const CKeyStore &keystore, const CScript& fromPubKey, CTransa
     assert(nIn < txTo.vin.size());
     CTxIn& txin = txTo.vin[nIn];
 
+    // SIGHASH_SINGLE with no output at this input's index signs the constant 1 (a quirk the consensus rules keep),
+    // and that signature is then valid for any input of the same key in any transaction. Never produce one.
+    if ((nHashType & 0x1f) == SIGHASH_SINGLE && nIn >= txTo.vout.size())
+        return false;
+
     // Leave out the signature from the hash, since a signature can't sign itself.
     // The checksig op will also drop the signatures from its hash.
     uint256 hash = SignatureHash(fromPubKey, txTo, nIn, nHashType);
