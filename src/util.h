@@ -184,7 +184,8 @@ void ReadConfigFile(std::map<std::string, std::string>& mapSettingsRet, std::map
 #ifdef WIN32
 std::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
 #endif
-void ShrinkDebugFile();
+/** Cut debug.log down to its last 200 kB if it is over nMaxBytes. */
+void ShrinkDebugFile(uint64_t nMaxBytes = 10 * 1000000);
 int GetRandInt(int nMax);
 uint64 GetRand(uint64 nMax);
 // Fill buf with num cryptographically strong random bytes. RAND_bytes can fail (OS entropy unavailable,

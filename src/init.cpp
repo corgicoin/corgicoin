@@ -388,13 +388,13 @@ bool AppInit2()
     // Initialize logging subsystem
     InitLogging(GetArg("-debug", ""), GetBoolArg("-printtoconsole"), GetBoolArg("-logtimestamps"));
 
-    fDebug = GetBoolArg("-debug");
-
-    // -debug implies fDebug*
-    if (fDebug)
+    // InitLogging has set fDebug and fDebugNet from the -debug categories ("-debug=net" is a list of categories, not a
+    // boolean: reading it as one switched everything off again). A plain -debug (or -debug=1) turns on all of it, and
+    // -debugnet adds the network output.
+    const bool fDebugAll = GetBoolArg("-debug");
+    fDebug = fDebug || fDebugAll;
+    if (fDebugAll || GetBoolArg("-debugnet"))
         fDebugNet = true;
-    else
-        fDebugNet = GetBoolArg("-debugnet");
 
     bitdb.SetDetach(GetBoolArg("-detachdb", false));
 
@@ -477,8 +477,8 @@ bool AppInit2()
     }
 #endif
 
-    if (!fDebug)
-        ShrinkDebugFile();
+    // With -debug the log is kept for looking through, so it is cut only when it is huge
+    ShrinkDebugFile(fDebug ? 1000ULL * 1000000 : 10 * 1000000);
     LogPrintf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
     LogPrintf("CorgiCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
 
