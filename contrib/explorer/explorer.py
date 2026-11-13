@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sqlite3
 import threading
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import requests
@@ -32,6 +34,42 @@ log = logging.getLogger("explorer")
 
 COIN = 100_000_000
 POLL_SECONDS = 10
+
+# What one client address may ask of the public API in a minute. The explorer fronts a node that a pool may share, so a
+# request must not be able to cost the node much, and none of these is free: /api/address/<a>/utxos reads the database,
+# /api/rawtx makes one node call, /api/broadcast hands a transaction to the node's signature checks.
+RATE_LIMITS = {"broadcast": 10, "rawtx": 120, "api": 240}
+MAX_BODY = 250_000                 # bytes: a 100 kB standard transaction is 200 kB as hex, in JSON
+MAX_ADDRESS_ROWS = 500             # outputs listed for one address (the totals cover all of them)
+
+HEX_TXID = re.compile(r"^[0-9a-fA-F]{64}$")
+HEX_TX = re.compile(r"^(?:[0-9a-fA-F]{2})+$")
+
+_B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def script_for_address(addr: str):
+    """scriptPubKey (hex) of a base58check P2PKH or P2SH address, or None. A wallet needs only this, so the utxo list does
+    not have to ask the node for each coin's script."""
+    n = 0
+    for c in addr:
+        i = _B58.find(c)
+        if i < 0:
+            return None
+        n = n * 58 + i
+    raw = n.to_bytes(25, "big") if n < (1 << 200) else b""
+    pad = len(addr) - len(addr.lstrip("1"))
+    if len(raw) != 25 or pad:                      # 1 version byte + 20 hash bytes + 4 checksum bytes, no leading zeros here
+        return None
+    import hashlib
+    if hashlib.sha256(hashlib.sha256(raw[:21]).digest()).digest()[:4] != raw[21:]:
+        return None
+    version, h = raw[0], raw[1:21].hex()
+    if version in (28, 113):                       # mainnet and testnet pubkey-hash prefixes
+        return "76a914" + h + "88ac"
+    if version in (22, 196):                       # script-hash prefixes
+        return "a914" + h + "87"
+    return None
 
 
 # ----------------------------------------------------------------------------
@@ -503,6 +541,42 @@ def svg_line_chart(values, color="#4caf50", w=920, h=220, pad=34, fmt="{:.4g}"):
 def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
     app = Flask(__name__)
     app.jinja_loader = None  # templates are inline
+    app.config["MAX_CONTENT_LENGTH"] = MAX_BODY
+
+    # A fixed window per client address and kind of request. (Behind a reverse proxy every client has the proxy's address:
+    # then the proxy should do this, and these limits are a floor.)
+    hits = defaultdict(int)
+    window = {"start": 0}
+
+    def rate_limited(kind):
+        now = int(time.time() // 60)
+        if now != window["start"]:
+            hits.clear()
+            window["start"] = now
+        key = (request.remote_addr, kind)
+        hits[key] += 1
+        return hits[key] > RATE_LIMITS[kind]
+
+    @app.before_request
+    def limit_api():
+        if request.path.startswith("/api/"):
+            kind = "broadcast" if request.path == "/api/broadcast" else "rawtx" if request.path.startswith("/api/rawtx/") else "api"
+            if rate_limited(kind):
+                return jsonify({"error": "too many requests, slow down"}), 429
+
+    @app.after_request
+    def secure_headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        if request.path.startswith("/wallet"):
+            # The wallet page takes a recovery phrase: no inline script, nothing loaded from elsewhere (but the fonts), not
+            # framed, never cached
+            resp.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     from jinja2 import DictLoader
 
@@ -733,18 +807,23 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
     @app.route("/api/address/<addr>")
     def api_address(addr):
         d = db()
+        # The totals come from the database over every output; only the list is capped (a pool's payout address has
+        # a history of millions)
+        tot = d.execute(
+            "SELECT COUNT(*) n, COALESCE(SUM(value),0) received, "
+            "COALESCE(SUM(CASE WHEN spent_txid IS NULL THEN value ELSE 0 END),0) balance FROM outputs WHERE address=?",
+            (addr,)).fetchone()
+        if not tot["n"]:
+            return jsonify({"error": "address not found"}), 404
         outs = d.execute(
             "SELECT o.*, t.height FROM outputs o JOIN txs t ON t.txid=o.txid "
-            "WHERE o.address=? ORDER BY t.height DESC", (addr,)).fetchall()
-        if not outs:
-            return jsonify({"error": "address not found"}), 404
-        received = sum(o["value"] for o in outs)
-        balance = sum(o["value"] for o in outs if not o["spent_txid"])
+            "WHERE o.address=? ORDER BY t.height DESC LIMIT ?", (addr, MAX_ADDRESS_ROWS)).fetchall()
         return jsonify({
             "address": addr,
-            "balance": balance,
-            "received": received,
+            "balance": tot["balance"],
+            "received": tot["received"],
             "outputs": rows_to_dicts(outs),
+            "truncated": tot["n"] > len(outs),
         })
 
     @app.route("/api/burns")
@@ -771,13 +850,8 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
         except Exception:
             tip = None
         utxos = []
+        script_hex = script_for_address(addr)     # the same for every coin of an address: no node call per coin
         for r in rows:
-            script_hex = None
-            try:
-                tx = rpc.call("getrawtransaction", r["txid"], 1)
-                script_hex = tx["vout"][r["n"]]["scriptPubKey"]["hex"]
-            except Exception:
-                pass  # output still spendable; client can derive the P2PKH script from the address
             utxos.append({
                 "txid": r["txid"], "vout": r["n"], "value": r["value"],
                 "height": r["height"],
@@ -785,6 +859,17 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
                 "scriptPubKey": script_hex,
             })
         return jsonify({"address": addr, "count": len(utxos), "utxos": utxos})
+
+    @app.route("/api/rawtx/<txid>")
+    def api_rawtx(txid):
+        """The serialized transaction, so a wallet can check the value of a coin from the transaction that made it rather
+        than trusting this server's number (a legacy signature does not commit to the value being spent)."""
+        if not HEX_TXID.match(txid):
+            return jsonify({"error": "bad transaction id"}), 400
+        try:
+            return jsonify({"txid": txid.lower(), "hex": rpc.call("getrawtransaction", txid.lower())})
+        except Exception:
+            return jsonify({"error": "transaction not found"}), 404
 
     @app.route("/api/broadcast", methods=["POST"])
     def api_broadcast():
@@ -798,6 +883,8 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
             hexstr = (request.get_data(as_text=True) or "").strip()
         if not hexstr:
             return jsonify({"error": "no transaction hex provided"}), 400
+        if not HEX_TX.match(hexstr) or len(hexstr) > 2 * 100_000:
+            return jsonify({"error": "not a transaction (hex of at most 100 kB expected)"}), 400
         try:
             txid = rpc.call("sendrawtransaction", hexstr)
             return jsonify({"txid": txid})
@@ -851,6 +938,9 @@ def main():
     db_path = Path(args.db)
     open_db(db_path).close()  # create schema before threads race
     Indexer(rpc, db_path).start()
+    if args.bind not in ("127.0.0.1", "::1", "localhost"):
+        log.warning("Binding to %s: this is Flask's development server and the wallet page takes recovery phrases. Put it "
+                    "behind a reverse proxy over HTTPS and keep --bind 127.0.0.1.", args.bind)
     create_app(rpc, db_path).run(host=args.bind, port=args.port)
 
 
