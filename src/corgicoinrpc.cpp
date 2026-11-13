@@ -352,14 +352,25 @@ Value GetNetworkHashPS(int lookup) {
     if (lookup > pindexBest->nHeight)
         lookup = pindexBest->nHeight;
 
+    // No blocks to measure over (the genesis block alone)
+    if (lookup <= 0)
+        return 0;
+
     CBlockIndex* pindexPrev = pindexBest;
     for (int i = 0; i < lookup; i++)
         pindexPrev = pindexPrev->pprev;
 
+    // Blocks that share a timestamp (regtest, or fast blocks) or run backwards give no usable time span: dividing
+    // by it would give infinity or a negative rate, and converting that to an integer is undefined
     double timeDiff = pindexBest->GetBlockTime() - pindexPrev->GetBlockTime();
+    if (timeDiff <= 0)
+        return 0;
     double timePerBlock = timeDiff / lookup;
 
-    return static_cast<int64_t>((static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock);
+    double hashps = (static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock;
+    if (!(hashps >= 0) || hashps > 9.0e18)   // NaN, negative, or beyond int64
+        return 0;
+    return static_cast<int64_t>(hashps);
 }
 
 Value getnetworkhashps(const Array& params, bool fHelp)
@@ -3063,7 +3074,7 @@ Value getnetworkinfo(const Array& params, bool fHelp)
     CService addrProxy;
     GetProxy(NET_IPV4, addrProxy);
     obj.emplace_back("proxy", addrProxy.IsValid() ? addrProxy.ToStringIPPort() : string());
-    obj.emplace_back("relayfee", ValueFromAmount(nMinimumInputValue));
+    obj.emplace_back("relayfee", ValueFromAmount(MIN_RELAY_TX_FEE));   // what a transaction must pay per kB to be relayed (this used to report the minimum input value)
     obj.emplace_back("testnet", fTestNet);
     return obj;
 }
