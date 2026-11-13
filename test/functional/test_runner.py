@@ -19,6 +19,7 @@ TESTS = [
     "feature_regtest_basics.py",
     "feature_zmq.py",
     "wallet_send.py",
+    "wallet_listtransactions.py",
     "wallet_lockunspent.py",
     "wallet_abandon.py",
     "wallet_dump.py",
