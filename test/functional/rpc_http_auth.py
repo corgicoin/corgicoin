@@ -55,7 +55,8 @@ class RPCHTTPAuthTest(CorgiTestFramework):
         for label, value in refused.items():
             self.log("refuses: %s" % label)
             status, _ = self.post(node, value)
-            assert_equal(status, 401, "for %s" % label)
+            # a header line over 8 KiB is refused outright (431) now; everything else is a 401
+            assert_equal(status, 431 if label == "very long value" else 401, "for %s" % label)
             # the server must still be alive and serving authenticated requests
             assert_equal(node.getblockcount(), 3)
 
