@@ -89,6 +89,10 @@ const Object emptyobj;
 
 void ThreadRPCServer3(void* parg);
 
+// Connections that exist from the moment they are accepted until their handler thread has destroyed them. A connection's
+// socket is registered with the io_context of ThreadRPCServer2, which must not be destroyed before the last of them is.
+static std::atomic<int> nRPCConnectionsOpen(0);
+
 Object JSONRPCError(int code, const string& message)
 {
     Object error;
@@ -4222,9 +4226,6 @@ static CCriticalSection cs_THREAD_RPCHANDLER;
 // it sits in a blocking read, so without this a "stop" waits for the client to hang up.
 static CCriticalSection cs_rpcConnections;
 static std::set<AcceptedConnection*> setRPCConnections;
-// Connections that exist from the moment they are accepted until their handler thread has destroyed them. A connection's
-// socket is registered with the io_context of ThreadRPCServer2, which must not be destroyed before the last of them is.
-static std::atomic<int> nRPCConnectionsOpen(0);
 
 void RPCAbortConnections()
 {
