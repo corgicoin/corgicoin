@@ -65,6 +65,8 @@ extern uint256 hashGenesisBlock;
 extern CBlockIndex* pindexGenesisBlock;
 extern int nBestHeight;
 extern CBigNum bnBestChainWork;
+/** -minimumchainwork: a chain with less total work than this is never taken for the real, finished one (0: no floor). */
+extern CBigNum bnMinimumChainWork;
 extern CBigNum bnBestInvalidWork;
 extern std::set<uint256> setInvalidatedBlocks;
 extern uint256 hashBestChain;

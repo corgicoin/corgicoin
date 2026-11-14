@@ -302,6 +302,7 @@ std::string HelpMessage()
         "  -blockmaxsize=<n>      " + _("Largest block, in bytes, this node makes (default: the most it may, 500000)") + "\n" +
         "  -blockprioritysize=<n> " + _("Bytes of each block it fills with the highest-priority (old, large-valued) transactions before it goes by fee per byte (default: 27000)") + "\n" +
         "  -maxinboundpergroup=<n> " + _("Accept at most n inbound connections from one network group (the /16 of an IPv4 address); 0: no limit (default: 0)") + "\n" +
+        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
@@ -488,6 +489,14 @@ bool AppInit2()
         nMaxTxFee = nMax;
         if (nTransactionFee > nMaxTxFee)
             return InitError(_("-paytxfee is more than -maxtxfee. Lower one of them."));
+    }
+
+    if (mapArgs.count("-minimumchainwork"))
+    {
+        const std::string strWork = mapArgs["-minimumchainwork"];
+        if (strWork.empty() || strWork.size() > 64 || strWork.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+            return InitError(strprintf(_("Invalid -minimumchainwork=<hex>: '%s'"), strWork.c_str()));
+        bnMinimumChainWork.SetHex(strWork);
     }
 
     if (mapArgs.count("-mininput"))
