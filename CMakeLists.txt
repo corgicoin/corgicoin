@@ -47,6 +47,7 @@ option(USE_ZMQ "Enable ZeroMQ notifications (-zmqpub*); needs libzmq. Off by def
 option(USE_DBUS "Enable D-Bus support for desktop notifications" OFF)
 option(BUILD_TESTS "Build test suite" OFF)
 option(ENABLE_HARDENING "Enable security hardening flags" ON)
+option(ENABLE_WERROR_FORMAT "Make a printf format that does not match its arguments a build error (the logging functions are checked)" OFF)
 
 # Platform detection
 if(WIN32)
@@ -125,6 +126,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wno-deprecated
         -Wno-deprecated-declarations
     )
+
+    if(ENABLE_WERROR_FORMAT)
+        add_compile_options(-Werror=format)
+    endif()
 
     # GCC-specific warning suppressions (C++ only — avoid passing to C compiler)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

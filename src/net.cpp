@@ -983,7 +983,7 @@ void ThreadSocketHandler2(void* parg)
 
                     if (nPos > ReceiveBufferSize()) {
                         if (!pnode->fDisconnect)
-                            LogPrintf("socket recv flood control disconnect (%d bytes)\n", vRecv.size());
+                            LogPrintf("socket recv flood control disconnect (%d bytes)\n", (int)vRecv.size());
                         pnode->CloseSocketDisconnect();
                     }
                     else {
