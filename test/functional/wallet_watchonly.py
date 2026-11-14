@@ -12,11 +12,21 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 class WatchOnlyTest(CorgiTestFramework):
     num_nodes = 2
 
+    def pay(self, keys, dest, amount):
+        """Pay dest from a coin the test has not itself paid to a watched address.
         """Pay dest from a coin that is not at one of the addresses in avoid (the wallet's own choice could spend a watched one).
 
-        Coins are told apart by their script: listunspent does not give an address here."""
-        scripts = [keys.validateaddress(a)["scriptPubKey"] for a in avoid]
-        coin = [u for u in keys.listunspent() if u["scriptPubKey"] not in scripts and u["amount"] > amount + 1][0]
+        The wallet's own choice could spend a watched coin. listunspent gives no address on this node, so the outputs the
+        test made are remembered and left alone."""
+        if not hasattr(self, "watched_coins"):
+            self.watched_coins = set()
+        coin = [u for u in keys.listunspent() if (u["txid"], u["vout"]) not in self.watched_coins and u["amount"] > amount + 1][0]
+        txid = keys.sendrawtransaction(keys.signrawtransaction(raw)["hex"])
+        dest_form = keys.validateaddress(dest)["address"]
+        for v in keys.getrawtransaction(txid, 1)["vout"]:
+            if dest_form in (v["scriptPubKey"].get("addresses") or []):
+                self.watched_coins.add((txid, v["n"]))
+        return txid
     def run_test(self):
         keys, watcher = self.nodes
         keys.generate(101)
@@ -24,6 +34,7 @@ class WatchOnlyTest(CorgiTestFramework):
         self.sync_blocks()
 
         cold = keys.getnewaddress()
+        paid = self.pay(keys, cold, 5)       # before the import: history that a rescan must find
         paid = keys.sendtoaddress(cold, 5)           # before the import: history that a rescan must find
         keys.generate(1)
         self.sync_blocks()
@@ -46,6 +57,7 @@ class WatchOnlyTest(CorgiTestFramework):
         assert_raises_rpc_error(-6, None, watcher.sendtoaddress, keys.getnewaddress(), 1)
 
         self.log("a payment after the import is followed live")
+        self.pay(keys, cold, 2)
         keys.sendtoaddress(cold, 2)
         keys.generate(1)
         self.sync_blocks()
@@ -69,6 +81,7 @@ class WatchOnlyTest(CorgiTestFramework):
         self.log("a public key is imported as both of its forms")
         addr2 = keys.getnewaddress()
         pub = keys.validateaddress(addr2)["pubkey"]
+        self.pay(keys, addr2, 3)
         keys.sendtoaddress(addr2, 3)
         keys.generate(1)
         self.sync_blocks()
