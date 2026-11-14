@@ -41,7 +41,7 @@ def test_a_funded_treasury_pays_and_an_unknown_balance_does_not_stop_it(tmp_path
         assert state.processed[burn.key]["status"] == "dispatched"
 
 
-def test_treasury_low_can_be_reset_and_paid_after_funding(tmp_path):
+def test_treasury_low_shows_in_the_operators_list(tmp_path, capsys):
     partner = _make_partner()
     burn = _make_burn(amount="50")
     dispatcher = Mock()
@@ -49,7 +49,9 @@ def test_treasury_low_can_be_reset_and_paid_after_funding(tmp_path):
     state = bridge.State(tmp_path / "state.json")
     bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
     assert state.processed[burn.key]["status"] == "treasury_low"
-    assert bridge.reconcile_list_pending(state) == 1            # it shows in the operator's list of what needs attention
+
+    bridge.reconcile_list_pending(state)
+    assert "TREASURY_LOW" in capsys.readouterr().out       # with the others that need the operator
 
 
 def test_a_problem_runs_the_alert_command_with_the_message(tmp_path, monkeypatch):
