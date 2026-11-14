@@ -4341,6 +4341,13 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         LOCK2(cs_main, mempool.cs);
         CTxDB txdb("r");
 
+        // -blockmaxsize: how big a block this node makes (never more than it may, MAX_BLOCK_SIZE_GEN). -blockprioritysize: how much of
+        // it goes to the oldest, biggest-valued coins (priority), whatever they pay; the rest goes to whoever pays the most per byte.
+        const uint64 nBlockMaxSize = (uint64)std::min<int64>(MAX_BLOCK_SIZE_GEN, std::max<int64>(1000, GetArg("-blockmaxsize", MAX_BLOCK_SIZE_GEN)));
+        const uint64 nBlockPrioritySize = (uint64)std::min<int64>((int64)nBlockMaxSize, std::max<int64>(0, GetArg("-blockprioritysize", 27000)));
+        bool fByFee = (nBlockPrioritySize == 0);
+        map<const CTransaction*, double> mapPrioOf;     // the priority of each queued transaction
+
         // Priority order to process transactions
         list<COrphan> vOrphan; // list memory doesn't move
         map<uint256, vector<COrphan*> > mapDependers;
@@ -4391,6 +4398,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             mempool.ApplyDeltas(tx.GetHash(), dPriorityDelta, nUnusedFeeDelta);
             dPriority += dPriorityDelta;
 
+            mapPrioOf[&entry.second] = dPriority;
             if (porphan)
                 porphan->dPriority = dPriority;
             else
@@ -4410,16 +4418,41 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         uint64 nBlockSize = 1000;
         uint64 nBlockTx = 0;
         int nBlockSigOps = 100;
+
+        // The fee per byte a queued transaction would pay now (what it spends is found in the chain or in what is already in the block)
+        auto FeeRateOf = [&](CTransaction& t) -> double {
+            map<uint256, CTxIndex> mapCopy(mapTestPool);
+            MapPrevTx mapIn;
+            bool fBad = false;
+            if (!t.FetchInputs(txdb, mapCopy, false, true, mapIn, fBad))
+                return 0;
+            double dUnused = 0;
+            int64 nDelta = 0;
+            mempool.ApplyDeltas(t.GetHash(), dUnused, nDelta);
+            const int64 nFee = t.GetValueIn(mapIn) - t.GetValueOut() + nDelta;
+            return (double)nFee / std::max<unsigned int>(1, ::GetSerializeSize(t, SER_NETWORK, PROTOCOL_VERSION));
+        };
+
         while (!mapPriority.empty())
         {
-            // Take highest priority transaction off priority queue
-            double dPriority = -(*mapPriority.begin()).first;
+            // The priority area is full (or what is left is too low to be free): from here on the highest fee per byte goes first
+            if (!fByFee && (nBlockSize >= nBlockPrioritySize || !CTransaction::AllowFree(-(*mapPriority.begin()).first)))
+            {
+                fByFee = true;
+                multimap<double, CTransaction*> mapByFee;
+                for (const auto& item : mapPriority)
+                    mapByFee.insert(std::make_pair(-FeeRateOf(*item.second), item.second));
+                mapPriority.swap(mapByFee);
+            }
+
+            // Take the first transaction off the queue (by priority, then by fee per byte)
             CTransaction& tx = *(*mapPriority.begin()).second;
+            const double dPriority = mapPrioOf[&tx];
             mapPriority.erase(mapPriority.begin());
 
             // Size limits
             unsigned int nTxSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
-            if (nBlockSize + nTxSize >= MAX_BLOCK_SIZE_GEN)
+            if (nBlockSize + nTxSize >= nBlockMaxSize)
                 continue;
 
             // Legacy limits on sigOps:
@@ -4473,7 +4506,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                     {
                         porphan->setDependsOn.erase(hash);
                         if (porphan->setDependsOn.empty())
-                            mapPriority.insert({-porphan->dPriority, porphan->ptx});
+                            mapPriority.insert({fByFee ? -FeeRateOf(*porphan->ptx) : -porphan->dPriority, porphan->ptx});
                     }
                 }
             }
