@@ -129,7 +129,11 @@ extern bool fReopenDebugLog;
 
 void RandAddSeed();
 void RandAddSeedPerfmon();
-int OutputDebugStringF(const char* pszFormat, ...);
+int OutputDebugStringF(const char* pszFormat, ...)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 1, 2)))
+#endif
+    ;
 int my_snprintf(char* buffer, size_t limit, const char* format, ...);
 
 /* It is not allowed to use va_start with a pass-by-reference argument.
