@@ -82,6 +82,7 @@ TESTS = [
     "wallet_maxtxfee.py",
     "wallet_notify.py",
     "tool_makeseeds.py",
+    "feature_init_error.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 

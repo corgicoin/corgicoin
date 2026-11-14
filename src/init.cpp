@@ -671,6 +671,10 @@ bool AppInit2()
             strErrors << _("Error rolling back an invalidated block (see debug.log)") << "\n";
     }
 
+    // a block index that did not load is fatal: stop here, before the wallet, the network and RPC are started on top of it
+    if (!strErrors.str().empty())
+        return InitError(strErrors.str());
+
     // as LoadBlockIndex can take several minutes, it's possible the user
     // requested to kill corgicoin-qt during the last operation. If so, exit.
     // As the program has not fully started yet, Shutdown() is possibly overkill.
@@ -782,6 +786,9 @@ bool AppInit2()
 
     LogPrintf("%s", strErrors.str().c_str());
     LogPrintf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
+    // likewise a wallet that did not load properly: do not go on to start the node and RPC server with it
+    if (!strErrors.str().empty())
+        return InitError(strErrors.str());
 
     RegisterWallet(pwalletMain.get());
 
@@ -864,10 +871,7 @@ bool AppInit2()
     uiInterface.InitMessage(_("Done loading"));
     LogPrintf("Done loading\n");
 
-    if (!strErrors.str().empty())
-        return InitError(strErrors.str());
-
-     // Add wallet transactions that aren't already in a block to mapTransactions
+    // Add wallet transactions that aren't already in a block to mapTransactions
     pwalletMain->ReacceptWalletTransactions();
 
 #if !defined(QT_GUI)
