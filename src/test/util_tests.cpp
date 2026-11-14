@@ -344,4 +344,35 @@ BOOST_AUTO_TEST_CASE(timing_resistant_equal)
     BOOST_CHECK(TimingResistantEqual(std::string("\xff\x80", 2), std::string("\xff\x80", 2)));
 }
 
+// -logips: public IPv4 addresses are masked, nothing else is touched
+BOOST_AUTO_TEST_CASE(log_ip_masking)
+{
+    // a public address, with and without a port, anywhere in a line
+    BOOST_CHECK_EQUAL(MaskLogIPs("accepted connection 8.8.8.8"), "accepted connection [ip]");
+    BOOST_CHECK_EQUAL(MaskLogIPs("accepted connection 203.0.113.9:62556 ok"), "accepted connection [ip] ok");
+    BOOST_CHECK_EQUAL(MaskLogIPs("a 1.2.3.4, b 5.6.7.8."), "a [ip], b [ip].");
+    // private and loopback ranges stay: they say nothing about a person
+    BOOST_CHECK_EQUAL(MaskLogIPs("peer 127.0.0.1:62556"), "peer 127.0.0.1:62556");
+    BOOST_CHECK_EQUAL(MaskLogIPs("peer 10.1.2.3 192.168.0.7 172.16.5.5 172.31.1.1 169.254.9.9"),
+                      "peer 10.1.2.3 192.168.0.7 172.16.5.5 172.31.1.1 169.254.9.9");
+    BOOST_CHECK_EQUAL(MaskLogIPs("peer 172.32.0.1"), "peer [ip]");
+    // version numbers, hashes and other dotted numbers are not addresses
+    BOOST_CHECK_EQUAL(MaskLogIPs("CorgiCoin version v4.8.0.0-180-g94d88f7"), "CorgiCoin version v4.8.0.0-180-g94d88f7");
+    BOOST_CHECK_EQUAL(MaskLogIPs("OpenSSL 3.5.9 and Berkeley DB 5.3.28"), "OpenSSL 3.5.9 and Berkeley DB 5.3.28");
+    BOOST_CHECK_EQUAL(MaskLogIPs("number 1.2.3.4.5 here"), "number 1.2.3.4.5 here");
+    BOOST_CHECK_EQUAL(MaskLogIPs("300.1.2.3 and 1.2.3.999"), "300.1.2.3 and 1.2.3.999");
+    BOOST_CHECK_EQUAL(MaskLogIPs("hash 12345678.9.9.9"), "hash 12345678.9.9.9");
+    BOOST_CHECK_EQUAL(MaskLogIPs("no address here, 12:34:56"), "no address here, 12:34:56");
+    BOOST_CHECK_EQUAL(MaskLogIPs(""), "");
+}
+
+// -logformat=json: a line becomes one valid JSON object, whatever is in it
+BOOST_AUTO_TEST_CASE(log_json_line)
+{
+    BOOST_CHECK_EQUAL(LogLineToJson("hello", 0), "{\"time\":\"1970-01-01T00:00:00Z\",\"msg\":\"hello\"}");
+    BOOST_CHECK_EQUAL(LogLineToJson("say \"hi\" \\ tab\there", 0),
+                      "{\"time\":\"1970-01-01T00:00:00Z\",\"msg\":\"say \\\"hi\\\" \\\\ tab\\there\"}");
+    BOOST_CHECK_EQUAL(LogLineToJson(std::string("a\x01" "b", 3), 0), "{\"time\":\"1970-01-01T00:00:00Z\",\"msg\":\"a\\u0001b\"}");
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -269,6 +269,8 @@ std::string HelpMessage()
         "  -debug                 " + _("Output extra debugging information. Implies all other -debug* options") + "\n" +
         "  -debugnet              " + _("Output extra network debugging information") + "\n" +
         "  -logtimestamps         " + _("Prepend debug output with timestamp") + "\n" +
+        "  -logformat=<fmt>       " + _("debug.log line format: text (default) or json (one object per line, with time and msg)") + "\n" +
+        "  -logips                " + _("Write peers' public IPv4 addresses to the log (default: they are replaced by [ip]; private and loopback ones are kept)") + "\n" +
         "  -printtoconsole        " + _("Send trace/debug info to console instead of debug.log file") + "\n" +
 #ifdef WIN32
         "  -printtodebugger       " + _("Send trace/debug info to debugger") + "\n" +
@@ -416,6 +418,11 @@ bool AppInit2()
     fPrintToConsole = GetBoolArg("-printtoconsole");
     fPrintToDebugger = GetBoolArg("-printtodebugger");
     fLogTimestamps = GetBoolArg("-logtimestamps");
+    fLogIPs = GetBoolArg("-logips", false);
+    if (GetArg("-logformat", "text") == "json")
+        fLogJson = true;
+    else if (GetArg("-logformat", "text") != "text")
+        return InitError(_("-logformat must be text or json"));
 
     if (mapArgs.count("-timeout"))
     {
