@@ -38,7 +38,6 @@ static void FuzzBlock(const std::vector<unsigned char>& v)
     block.CheckBlock();
     if (block.auxpow)
         block.auxpow->Check(block.GetHash(), block.GetChainId());
-    block.ToString();
 }
 
 static void FuzzTx(const std::vector<unsigned char>& v)
@@ -143,9 +142,9 @@ static void FuzzBurn(const std::vector<unsigned char>& v)
 {
     std::string partner;
     std::vector<unsigned char> dest;
-    burn::DecodePayload(v, partner, dest);
+    burnpayload::DecodePayload(v, partner, dest);
     CScript script(v.begin(), v.end());
-    burn::DecodeScript(script, partner, dest);
+    burnpayload::DecodeScript(script, partner, dest);
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
