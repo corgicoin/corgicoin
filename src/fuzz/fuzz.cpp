@@ -23,6 +23,10 @@
 
 using namespace json_spirit;
 
+#include "ui_interface.h"
+
+CClientUIInterface uiInterface;     // defined in init.cpp, which is left out
+
 // what the node's own code expects of the program it is linked into (init.cpp is left out, as it is for the unit tests)
 void Shutdown(void* parg) { exit(0); }
 void StartShutdown() { exit(0); }
