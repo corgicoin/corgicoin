@@ -35,6 +35,12 @@ enum class WalletFeature
     FEATURE_COMPRPUBKEY = 60000, // compressed public keys
     FEATURE_HD = 130000,         // BIP32/39 hierarchical deterministic keys
 
+    // A wallet whose passphrase is derived with scrypt (-walletkdf=scrypt). Older releases cannot derive that key: they would say
+    // "incorrect passphrase" for the right one, so the wallet is marked as needing this version and they say what is wrong.
+    // THE RELEASE THAT HAS THIS MUST BE NUMBERED 4.9.0.0 OR HIGHER, or it cannot open such a wallet itself (the minimum version
+    // is compared with CLIENT_VERSION).
+    FEATURE_SCRYPT_KDF = 4090000,
+
     FEATURE_LATEST = 130000
 };
 

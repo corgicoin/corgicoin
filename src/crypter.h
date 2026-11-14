@@ -21,6 +21,13 @@ constexpr unsigned int WALLET_DERIVATION_BYTESTOKEY_SHA512 = 0;
 // Never stored. CorgiCoin v4.2 to v4.7 built against OpenSSL 3 derived the key with PBKDF2-HMAC-SHA512 instead but
 // still recorded method 0, so a method-0 master key may have been made with either; CWallet tries both on unlock.
 constexpr unsigned int WALLET_DERIVATION_PBKDF2_SHA512_V4 = 0x80000000;
+// Method 2: scrypt (r = 8, p = 1), written only when the wallet is encrypted or its passphrase changed with -walletkdf=scrypt.
+// nDeriveIterations is then the cost N, a power of two. It needs about 128 * N * 8 bytes of memory while it runs, which is what
+// makes guessing passphrases on a graphics card or a rented farm much more expensive than with the iterated hash of method 0.
+constexpr unsigned int WALLET_DERIVATION_SCRYPT = 2;
+constexpr unsigned int WALLET_SCRYPT_N = 1u << 15;       // 32 MiB, about a tenth of a second on a current machine
+constexpr unsigned int WALLET_SCRYPT_N_MIN = 1u << 14;
+constexpr unsigned int WALLET_SCRYPT_N_MAX = 1u << 20;   // a wallet file cannot make the node ask for more than 1 GiB
 
 /*
 Private key encryption is done based on a CMasterKey,

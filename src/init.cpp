@@ -278,6 +278,7 @@ std::string HelpMessage()
         "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 62555)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
+        "  -walletkdf=scrypt      " + _("Derive the wallet passphrase key with scrypt (memory hard) when encrypting or changing the passphrase. Releases before 4.9 cannot open such a wallet; a wallet that has it keeps it (default: the older iterated hash)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -zmqpubhashblock=<address> " + _("Publish the hash of each new best block on a ZeroMQ socket, e.g. tcp://127.0.0.1:28332") + "\n" +

@@ -63,11 +63,31 @@ static bool DeriveKeyPBKDF2SHA512(const SecureString& strKeyData, const std::vec
     return fOk;
 }
 
+// scrypt: key = out[0..32), IV = out[32..64), like the PBKDF2 method. nCost is N and has to be a power of two in range.
+static bool DeriveKeyScrypt(const SecureString& strKeyData, const std::vector<unsigned char>& chSalt,
+                            unsigned int nCost, unsigned char* chKey, unsigned char* chIV)
+{
+    if (nCost < WALLET_SCRYPT_N_MIN || nCost > WALLET_SCRYPT_N_MAX || (nCost & (nCost - 1)) != 0)
+        return false;
+    unsigned char derived[WALLET_CRYPTO_KEY_SIZE + WALLET_CRYPTO_KEY_SIZE];
+    const uint64_t nMaxMem = (uint64_t)128 * nCost * 8 + (16u << 20);
+    bool fOk = EVP_PBE_scrypt(strKeyData.data(), strKeyData.size(), chSalt.data(), chSalt.size(),
+                              nCost, 8, 1, nMaxMem, derived, sizeof(derived)) == 1;
+    if (fOk)
+    {
+        memcpy(chKey, derived, WALLET_CRYPTO_KEY_SIZE);
+        memcpy(chIV, derived + WALLET_CRYPTO_KEY_SIZE, WALLET_CRYPTO_KEY_SIZE);
+    }
+    OPENSSL_cleanse(derived, sizeof(derived));
+    return fOk;
+}
+
 bool CCrypter::SetKeyFromPassphrase(const SecureString& strKeyData, const std::vector<unsigned char>& chSalt, const unsigned int nRounds, const unsigned int nDerivationMethod)
 {
     if (nRounds < 1 || chSalt.size() != WALLET_CRYPTO_SALT_SIZE)
         return false;
-    if (nDerivationMethod != WALLET_DERIVATION_BYTESTOKEY_SHA512 && nDerivationMethod != WALLET_DERIVATION_PBKDF2_SHA512_V4)
+    if (nDerivationMethod != WALLET_DERIVATION_BYTESTOKEY_SHA512 && nDerivationMethod != WALLET_DERIVATION_PBKDF2_SHA512_V4 &&
+        nDerivationMethod != WALLET_DERIVATION_SCRYPT)
         return false;
 
     // Try to keep the keydata out of swap (and be a bit over-careful to keep the IV that we don't even use out of swap)
@@ -77,9 +97,9 @@ bool CCrypter::SetKeyFromPassphrase(const SecureString& strKeyData, const std::v
     mlock(&chIV[0], sizeof chIV);
     memset(&chIV, 0, sizeof chIV);
 
-    bool fOk = (nDerivationMethod == WALLET_DERIVATION_BYTESTOKEY_SHA512)
-        ? DeriveKeyBytesToKeySHA512(strKeyData, chSalt, nRounds, chKey, chIV)
-        : DeriveKeyPBKDF2SHA512(strKeyData, chSalt, nRounds, chKey, chIV);
+    bool fOk = (nDerivationMethod == WALLET_DERIVATION_BYTESTOKEY_SHA512) ? DeriveKeyBytesToKeySHA512(strKeyData, chSalt, nRounds, chKey, chIV)
+             : (nDerivationMethod == WALLET_DERIVATION_SCRYPT)             ? DeriveKeyScrypt(strKeyData, chSalt, nRounds, chKey, chIV)
+                                                                           : DeriveKeyPBKDF2SHA512(strKeyData, chSalt, nRounds, chKey, chIV);
     if (!fOk)
     {
         memset(&chKey, 0, sizeof chKey);
