@@ -102,6 +102,7 @@ TESTS = [
     "rpc_observability.py",
 
     "rpc_metrics.py",
+    "wallet_watchonly.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 

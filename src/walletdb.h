@@ -173,6 +173,12 @@ public:
         return Read(std::make_pair(std::string("cscript"), hash), redeemScript);
     }
 
+    bool WriteWatchOnly(const CScript& script)
+    {
+        nWalletDBUpdated++;
+        return Write(std::make_pair(std::string("watchs"), script), (char)1);
+    }
+
     bool WriteCScript(const uint160& hash, const CScript& redeemScript)
     {
         nWalletDBUpdated++;

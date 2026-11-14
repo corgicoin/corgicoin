@@ -321,6 +321,15 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 if (nFileVersion == 10300)
                     nFileVersion = 300;
             }
+            else if (strType == "watchs")
+            {
+                CScript script;
+                ssKey >> script;
+                char fYes;
+                ssValue >> fYes;
+                if (fYes == '\x01')
+                    pwallet->LoadWatchOnly(script);
+            }
             else if (strType == "cscript")
             {
                 uint160 hash;
