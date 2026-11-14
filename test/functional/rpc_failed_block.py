@@ -49,7 +49,7 @@ class FailedBlockTest(CorgiTestFramework):
             struct.pack_into("<I", header, 76, nonce)
             digest = hashlib.scrypt(bytes(header), salt=bytes(header), n=1024, r=1, p=1, dklen=32)
             if int.from_bytes(digest, "little") <= target:
-                return (bytes(header) + b"\x01" + bytes(cb)).hex(), digest
+                return (bytes(header) + b"\x01" + bytes(cb)).hex(), dsha256(bytes(header))   # the block hash is not the PoW hash
         raise AssertionError("no nonce found")
 
     def count(self, node):
