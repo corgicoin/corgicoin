@@ -52,6 +52,7 @@ static int DefaultRPCPort()
 extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.cpp
 extern Value getpeerinfo(const Array& params, bool fHelp);
 extern Value ping(const Array& params, bool fHelp);
+Value bumpfee(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -3420,6 +3421,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },
     { "uptime",                 &uptime,                 true },
+    { "bumpfee",                &bumpfee,                false },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -4179,6 +4181,123 @@ void ThreadRPCServer3(void* parg)
         LOCK(cs_THREAD_RPCHANDLER);
         vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]--;
     }
+}
+
+Value bumpfee(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "bumpfee <txid> [fee]\n"
+            "Replaces an unconfirmed wallet transaction with one that pays a higher fee and spends the same coins, taking the extra\n"
+            "from its change output (it never adds inputs, so there must be change enough). The transaction must have been sent\n"
+            "replaceable (-walletrbf, which sets a sequence number below 0xfffffffe on its inputs), be in this node's pool, and\n"
+            "have nothing of the wallet's built on it. fee, if given, is the new total fee in coins; by default it is the old one\n"
+            "plus what the pool requires of a replacement (the relay fee for its size, and a tenth more). The old transaction is\n"
+            "abandoned. Returns {txid, origfee, fee}.");
+    RPCTypeCheck(params, {str_type});
+    EnsureWalletIsUnlocked();
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+    auto mi = pwalletMain->mapWallet.find(hash);
+    if (mi == pwalletMain->mapWallet.end())
+        throw JSONRPCError(-5, "Invalid or non-wallet transaction id");
+    const CWalletTx& wtx = mi->second;
+    if (wtx.GetDepthInMainChain() > 0)
+        throw JSONRPCError(-8, "Transaction has been mined, cannot bump its fee");
+    {
+        LOCK(mempool.cs);
+        if (!mempool.exists(hash))
+            throw JSONRPCError(-8, "Transaction is not in this node's memory pool");
+        for (unsigned int n = 0; n < wtx.vout.size(); n++)
+            if (mempool.mapNextTx.count(COutPoint(hash, n)))
+                throw JSONRPCError(-8, "Transaction has descendants in the memory pool: bump or abandon those first");
+    }
+    bool fSignals = false;
+    for (const CTxIn& txin : wtx.vin)
+        fSignals |= txin.nSequence < 0xfffffffe;
+    if (!fSignals)
+        throw JSONRPCError(-8, "Transaction does not signal that it can be replaced (it was not sent with -walletrbf)");
+
+    // what it paid, and every input must be one this wallet can sign for
+    int64 nValueIn = 0;
+    for (const CTxIn& txin : wtx.vin)
+    {
+        auto mp = pwalletMain->mapWallet.find(txin.prevout.hash);
+        if (mp == pwalletMain->mapWallet.end() || txin.prevout.n >= mp->second.vout.size() || !pwalletMain->IsMine(mp->second.vout[txin.prevout.n]))
+            throw JSONRPCError(-8, "An input of the transaction is not spendable by this wallet");
+        nValueIn += mp->second.vout[txin.prevout.n].nValue;
+    }
+    const int64 nOldFee = nValueIn - wtx.GetValueOut();
+
+    // the one change output that gives the extra
+    int nChange = -1;
+    for (unsigned int n = 0; n < wtx.vout.size(); n++)
+        if (pwalletMain->IsChange(wtx.vout[n]))
+        {
+            if (nChange != -1)
+                throw JSONRPCError(-8, "More than one change output: cannot tell which one pays for the bump");
+            nChange = (int)n;
+        }
+    if (nChange < 0)
+        throw JSONRPCError(-8, "Transaction has no change output to take the extra fee from");
+
+    const unsigned int nSize = ::GetSerializeSize(*static_cast<const CTransaction*>(&wtx), SER_NETWORK, PROTOCOL_VERSION);
+    int64 nNewFee;
+    if (params.size() > 1)
+    {
+        nNewFee = AmountFromValue(params[1]);
+        if (nNewFee <= nOldFee)
+            throw JSONRPCError(-8, "The new fee must be more than the old one");
+    }
+    else
+        nNewFee = nOldFee + std::max<int64>(MIN_RELAY_TX_FEE * (1 + (int64)nSize / 1000), nOldFee / 10 + 1);
+    if (nNewFee > nMaxTxFee)
+        throw JSONRPCError(-4, "The new fee is over -maxtxfee");
+    const int64 nExtra = nNewFee - nOldFee;
+    if (wtx.vout[nChange].nValue - nExtra < CENT)
+        throw JSONRPCError(-6, "The change output is too small to pay for the bump (inputs are not added)");
+
+    CWalletTx wtxNew;
+    wtxNew.nVersion = wtx.nVersion;
+    wtxNew.nLockTime = wtx.nLockTime;
+    wtxNew.vout = wtx.vout;
+    wtxNew.vout[nChange].nValue -= nExtra;
+    for (const CTxIn& txin : wtx.vin)
+        wtxNew.vin.push_back(CTxIn(txin.prevout, CScript(), std::min<unsigned int>(txin.nSequence, 0xfffffffd)));
+    unsigned int nIn = 0;
+    for (const CTxIn& txin : wtx.vin)
+    {
+        const CWalletTx& prev = pwalletMain->mapWallet[txin.prevout.hash];
+        if (!SignSignature(*pwalletMain, prev, wtxNew, nIn++))
+            throw JSONRPCError(-4, "Could not sign the replacement");
+    }
+    wtxNew.fTimeReceivedIsTxTime = true;
+    wtxNew.fFromMe = true;
+    wtxNew.BindWallet(pwalletMain.get());
+
+    // Ask the pool first, as a dry run: if it would refuse the replacement, the wallet is left as it was
+    {
+        CTxDB txdb("r");
+        CTxAcceptCheck check;
+        check.fTestOnly = true;
+        bool fMissing = false;
+        if (!wtxNew.CTransaction::AcceptToMemoryPool(txdb, true, &fMissing, &check))
+            throw JSONRPCError(-26, "The pool would refuse the replacement: " + check.strReject);
+    }
+    CReserveKey reservekey(pwalletMain.get());
+    if (!pwalletMain->CommitTransaction(wtxNew, reservekey))
+        throw JSONRPCError(-4, "The replacement could not be committed");
+    std::string strError;
+    if (!pwalletMain->AbandonTransaction(hash, strError))
+        throw JSONRPCError(-4, "The replacement was sent but the old transaction could not be abandoned: " + strError);
+
+    Object result;
+    result.emplace_back("txid", wtxNew.GetHash().GetHex());
+    result.emplace_back("origfee", ValueFromAmount(nOldFee));
+    result.emplace_back("fee", ValueFromAmount(nNewFee));
+    return result;
 }
 
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
