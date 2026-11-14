@@ -1810,8 +1810,7 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
                 if (fFileBacked)
                     CWalletDB(strWalletFile).WriteMinVersion(nWalletVersion);
             }
-            LogPrintf("-walletcompat: the wallet's minimum version is %d; releases from before HD wallets will open it and ignore the HD seed
-", nWalletVersion);
+            LogPrintf("-walletcompat: the wallet's minimum version is %d; releases from before HD wallets will open it and ignore the HD seed\n", nWalletVersion);
         }
         else
             SetMinVersion(WalletFeature::FEATURE_HD);
