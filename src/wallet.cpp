@@ -1671,6 +1671,21 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
 {
     {
         LOCK2(cs_main, cs_wallet);
+
+        // Ask the mempool first, without storing anything: a transaction it would refuse must not leave the wallet with its
+        // coins marked spent and nothing on the network. (Before, the coins were marked and the refusal came after.)
+        {
+            CTxDB txdb("r");
+            CTxAcceptCheck check;
+            check.fTestOnly = true;
+            bool fMissingInputs = false;
+            if (!wtxNew.CTransaction::AcceptToMemoryPool(txdb, true, &fMissingInputs, &check))
+            {
+                LogPrintf("CommitTransaction() : the transaction was refused before it was recorded: %s%s\n", check.strReject.c_str(), fMissingInputs ? " (missing inputs)" : "");
+                return false;
+            }
+        }
+
         LogPrintf("CommitTransaction:\n%s", wtxNew.ToString().c_str());
         {
             // This is only to keep the database open to defeat the auto-flush for the
