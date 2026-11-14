@@ -28,9 +28,9 @@ class MempoolCapTest(CorgiTestFramework):
         assert len(utxos) >= 150, len(utxos)
         dest = node.getnewaddress()
 
-        self.log("fill the pool with transactions that pay 5 coins")
-        for u in utxos[:80]:
-            node.sendrawtransaction(self.spend(node, u, dest, 5))
+        self.log("fill the pool with transactions that pay 5 coins and a bit")
+        for i, u in enumerate(utxos[:80]):
+            node.sendrawtransaction(self.spend(node, u, dest, Decimal("5") + Decimal(i) / 100))   # each pays a little more
         info = node.getmempoolinfo()
         assert info["bytes"] <= CAP, info
         assert info["size"] < 80, "nothing was dropped: %r" % info
