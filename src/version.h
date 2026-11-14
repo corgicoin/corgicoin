@@ -34,7 +34,10 @@ extern const std::string CLIENT_DATE;
 // network protocol versioning
 //
 
-constexpr int PROTOCOL_VERSION = 70001;
+// 70013 adds `feefilter` (BIP 133): a peer at this version or above tells us the lowest fee rate it wants announced. A peer below
+// it is unaffected: both sides speak the lower of the two versions.
+constexpr int PROTOCOL_VERSION = 70013;
+constexpr int FEEFILTER_VERSION = 70013;
 
 // earlier versions not supported as of Feb 2012, and are disconnected
 constexpr int MIN_PROTO_VERSION = 209;

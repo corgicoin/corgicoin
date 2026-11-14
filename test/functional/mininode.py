@@ -42,11 +42,13 @@ class P2PConnection:
     wedged peer looks like to the node.
     """
 
-    def __init__(self, port, answer_pings=True, start_height=0, subver=b"/corgi-mininode:0.1/"):
+    def __init__(self, port, answer_pings=True, start_height=0, subver=b"/corgi-mininode:0.1/", protocol_version=PROTOCOL_VERSION):
         self.answer_pings = answer_pings
         self.got_verack = False
         self.pings_received = 0
         self.counts = {}            # how many messages of each command arrived
+        self.inv_txids = []         # transactions the node announced to us, as hex (display order)
+        self.feefilter = None       # the last feefilter the node sent: satoshi per kB
         self.closed = False
         self.messages = {}     # command -> list of raw payloads received, in order
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
@@ -54,7 +56,7 @@ class P2PConnection:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._read_loop, daemon=True)
         self._thread.start()
-        payload = (struct.pack("<iQq", PROTOCOL_VERSION, NODE_NETWORK, int(time.time()))
+        payload = (struct.pack("<iQq", protocol_version, NODE_NETWORK, int(time.time()))
                    + ser_addr(port=port) + ser_addr()
                    + struct.pack("<Q", random.getrandbits(64))
                    + ser_varstr(subver)
@@ -113,6 +115,17 @@ class P2PConnection:
             self.send("verack")
         elif command == "verack":
             self.got_verack = True
+        elif command == "feefilter":
+            self.feefilter = struct.unpack("<q", payload[:8])[0]
+        elif command == "inv":
+            n, off = payload[0], 1
+            if n == 0xfd:
+                n, off = struct.unpack("<H", payload[1:3])[0], 3
+            for i in range(n):
+                t = struct.unpack("<I", payload[off:off + 4])[0]
+                if t == 1:
+                    self.inv_txids.append(payload[off + 4:off + 36][::-1].hex())
+                off += 36
         elif command == "ping":
             self.pings_received += 1
             if self.answer_pings:

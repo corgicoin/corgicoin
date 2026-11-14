@@ -3439,6 +3439,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         // Change version
         pfrom->PushMessage("verack");
+        // tell a peer that understands it what fee rate we want announced: our own relay minimum (BIP 133)
+        if (pfrom->nVersion >= FEEFILTER_VERSION)
+            pfrom->PushMessage("feefilter", (int64)MIN_RELAY_TX_FEE);
         pfrom->vSend.SetVersion(min(pfrom->nVersion, PROTOCOL_VERSION));
 
         if (!pfrom->fInbound)
@@ -3498,6 +3501,15 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         return false;
     }
 
+
+    else if (strCommand == "feefilter")
+    {
+        int64 nFilter = 0;
+        vRecv >> nFilter;
+        // only from a peer that said it speaks it, and only a sane number
+        if (pfrom->nVersion >= FEEFILTER_VERSION && nFilter >= 0 && nFilter <= MAX_MONEY)
+            pfrom->nMinFeeFilter = nFilter;
+    }
 
     else if (strCommand == "verack")
     {
@@ -4229,6 +4241,16 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                         vInvWait.push_back(inv);
                         continue;
                     }
+                }
+
+                // a transaction that pays less per kB than this peer asked for is not announced to it
+                if (inv.type == static_cast<int>(MsgType::Tx) && pto->nMinFeeFilter > 0)
+                {
+                    LOCK(mempool.cs);
+                    auto itEntry = mempool.mapEntry.find(inv.hash);
+                    if (itEntry != mempool.mapEntry.end() &&
+                        (double)itEntry->second.nFee * 1000.0 / std::max<unsigned int>(1, itEntry->second.nSize) < (double)pto->nMinFeeFilter)
+                        continue;
                 }
 
                 // returns true if wasn't already contained in the set
