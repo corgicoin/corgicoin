@@ -249,6 +249,7 @@ public:
     int64 nPingUsecStart;      // when the outstanding ping was sent (micros)
     int64 nPingUsecTime;       // last measured round trip (micros)
     int64 nMinPingUsecTime;    // best round trip seen (micros); INT64_MAX if none
+    int64 nMinFeeFilter;       // feefilter: this peer wants no transaction announced that pays less than this (satoshi per kB); 0: none
     bool fPingQueued;          // `ping` RPC asked for an immediate ping
 
     CNode(SOCKET hSocketIn, CAddress addrIn, std::string addrNameIn = "", bool fInboundIn=false) : vSend(SER_NETWORK, MIN_PROTO_VERSION), vRecv(SER_NETWORK, MIN_PROTO_VERSION)
@@ -286,6 +287,7 @@ public:
         nPingUsecTime = 0;
         nMinPingUsecTime = std::numeric_limits<int64>::max();
         fPingQueued = false;
+        nMinFeeFilter = 0;
         setInventoryKnown.max_size(SendBufferSize() / 1000);
 
         // Be shy and don't send version until we hear
