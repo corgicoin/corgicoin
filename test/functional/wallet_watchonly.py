@@ -12,6 +12,11 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 class WatchOnlyTest(CorgiTestFramework):
     num_nodes = 2
 
+        """Pay dest from a coin that is not at one of the addresses in avoid (the wallet's own choice could spend a watched one).
+
+        Coins are told apart by their script: listunspent does not give an address here."""
+        scripts = [keys.validateaddress(a)["scriptPubKey"] for a in avoid]
+        coin = [u for u in keys.listunspent() if u["scriptPubKey"] not in scripts and u["amount"] > amount + 1][0]
     def run_test(self):
         keys, watcher = self.nodes
         keys.generate(101)
