@@ -295,6 +295,7 @@ std::string HelpMessage()
         "  -rpcmaxconnections=<n> " + _("Most JSON-RPC connections served at once; more get HTTP 503 (default: 64)") + "\n" +
         "  -rpcbind=<ip>          " + _("Listen for JSON-RPC connections on this address only (repeatable; default: loopback, or every interface if -rpcallowip is set)") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
+        "  -walletnotify=<cmd>    " + _("Execute command when a wallet transaction is new or changes (%s in cmd is replaced by the transaction id)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
