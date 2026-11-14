@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A block that cannot be connected is marked failed, and a block built on it is not tried again.
 
-The block below is well formed and carries valid proof of work, but its coinbase pays one satoshi too much, which only
+The block below is well formed and carries valid proof of work, but its coinbase pays far too much, which only
 ConnectBlock notices. Before the failed flag, every block built on it started a whole reorganisation that ended at the same
 invalid block again.
 """
@@ -40,7 +40,7 @@ class FailedBlockTest(CorgiTestFramework):
         i += slen + 4
         nout, i = read_compact(cb, i)
         if too_rich:
-            struct.pack_into("<q", cb, i, struct.unpack_from("<q", cb, i)[0] + 1)
+            struct.pack_into("<q", cb, i, struct.unpack_from("<q", cb, i)[0] * 1000)   # the reward depends on the previous hash: far over any of them
         header[4:36] = prev_internal
         header[36:68] = dsha256(bytes(cb))
         header[68:72] = struct.pack("<I", when)
