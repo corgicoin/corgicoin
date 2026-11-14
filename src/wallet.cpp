@@ -601,8 +601,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
                 pwalletdbEncryption->TxnAbort();
                 pwalletdbEncryption.reset();
                 mapMasterKeys.erase(nMasterKeyMaxID--);
-                LogPrintf("EncryptWallet() : could not write the master key
-");
+                LogPrintf("EncryptWallet() : could not write the master key\n");
                 return false;
             }
         }
