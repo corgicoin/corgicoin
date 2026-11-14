@@ -667,9 +667,13 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         }
     }
 
-    // A dry run stops here: the transaction passed every check
+    // A dry run stops here: the transaction passed every check (and it would not be the one the size limit throws out)
     if (pcheck && pcheck->fTestOnly)
+    {
+        if (WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION)))
+            return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s would have the lowest fee rate", hash.ToString().substr(0,10).c_str()));
         return true;
+    }
 
     // Store transaction in memory
     {
@@ -822,6 +826,32 @@ unsigned int CTxMemPool::Trim()
         nDropped++;
     }
     return nDropped;
+}
+
+bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize)
+{
+    LOCK(cs);
+    const size_t nMaxBytes = (size_t)std::max<int64>(1, GetArg("-maxmempoolkb", 100000)) * 1000;
+    if (nPoolBytes + nSize <= nMaxBytes || mapEntry.empty())
+        return false;
+    // the same candidates Trim() looks at: entries nothing in the pool spends from
+    double dLowest = -1;
+    for (const auto& item : mapEntry)
+    {
+        auto itTx = mapTx.find(item.first);
+        if (itTx == mapTx.end())
+            continue;
+        bool fHasChild = false;
+        for (unsigned int n = 0; n < itTx->second.vout.size() && !fHasChild; n++)
+            fHasChild = mapNextTx.count(COutPoint(item.first, n)) != 0;
+        if (fHasChild)
+            continue;
+        const double dRate = (double)item.second.nFee / std::max(1u, item.second.nSize);
+        if (dLowest < 0 || dRate < dLowest)
+            dLowest = dRate;
+    }
+    // strictly lower than every candidate: it goes first (a tie is left to the real thing)
+    return dLowest >= 0 && (double)nFee / std::max(1u, nSize) < dLowest;
 }
 
 void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)

@@ -1715,6 +1715,9 @@ public:
     /** Drop entries older than -mempoolexpiry hours (default 72) with whatever spends them, then, while the pool holds more
      *  than -maxmempoolkb (default 100000), the leaf entry with the lowest fee per byte. Returns how many were dropped. */
     unsigned int Trim();
+    /** Would a transaction of this size and fee be the first one dropped if it were added now? (No side effects: a dry
+     *  run asks this, because the cap is only applied after a transaction is stored.) */
+    bool WouldBeDropped(int64 nFee, unsigned int nSize);
     /** Remove a transaction and every pool transaction that spends it. */
     void RemoveRecursive(const uint256& hash);
 
