@@ -554,6 +554,33 @@ if(BUILD_QT_GUI)
     endif()
 endif()
 
+# Fuzz targets (src/fuzz). With clang and -DFUZZ_LIBFUZZER=ON this is a libFuzzer binary; otherwise it is built with a small
+# driver that replays a corpus and mutates it, which needs nothing but the compiler.
+option(BUILD_FUZZ "Build the fuzz targets (src/fuzz)" OFF)
+option(FUZZ_LIBFUZZER "Link the fuzz binary with libFuzzer (clang only)" OFF)
+if(BUILD_FUZZ)
+    set(FUZZ_DAEMON_SOURCES ${DAEMON_SOURCES})
+    list(REMOVE_ITEM FUZZ_DAEMON_SOURCES src/init.cpp)
+    set(FUZZ_SOURCES src/fuzz/fuzz.cpp)
+    if(NOT FUZZ_LIBFUZZER)
+        list(APPEND FUZZ_SOURCES src/fuzz/fuzz_driver.cpp)
+    endif()
+    add_executable(fuzz_corgicoin ${FUZZ_SOURCES} ${FUZZ_DAEMON_SOURCES} ${JSON_SOURCES})
+    add_dependencies(fuzz_corgicoin generate_build_info)
+    if(FUZZ_LIBFUZZER)
+        target_compile_definitions(fuzz_corgicoin PRIVATE FUZZ_LIBFUZZER)
+        target_link_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer)
+    endif()
+    target_link_libraries(fuzz_corgicoin ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
+        Threads::Threads ${CMAKE_DL_LIBS})
+    if(LINUX)
+        target_link_libraries(fuzz_corgicoin rt)
+    endif()
+    if(USE_UPNP)
+        target_link_libraries(fuzz_corgicoin ${MINIUPNPC_LIBRARY})
+    endif()
+endif()
+
 # Test suite
 if(BUILD_TESTS)
     enable_testing()
