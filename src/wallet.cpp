@@ -1647,6 +1647,11 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                     nFeeRet = max(nPayFee, nMinFee);
                     continue;
                 }
+                if (nFeeRet > nMaxTxFee)
+                {
+                    LogPrintf("CreateTransaction() : the fee of %s is over -maxtxfee (%s)\n", FormatMoney(nFeeRet).c_str(), FormatMoney(nMaxTxFee).c_str());
+                    return false;
+                }
 
                 // Fill vtxPrev by copying from previous transactions vtxPrev
                 wtxNew.AddSupportingTransactions(txdb);
@@ -1731,7 +1736,9 @@ string CWallet::SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew,
     if (!CreateTransaction(scriptPubKey, nValue, wtxNew, reservekey, nFeeRequired))
     {
         string strError;
-        if (nValue + nFeeRequired > GetBalance())
+        if (nFeeRequired > nMaxTxFee)
+            strError = strprintf(_("Error: The fee for this transaction, %s, is more than -maxtxfee (%s). Send less in one transaction, or raise -maxtxfee.  "), FormatMoney(nFeeRequired).c_str(), FormatMoney(nMaxTxFee).c_str());
+        else if (nValue + nFeeRequired > GetBalance())
             strError = strprintf(_("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds  "), FormatMoney(nFeeRequired).c_str());
         else
             strError = _("Error: Transaction creation failed  ");
