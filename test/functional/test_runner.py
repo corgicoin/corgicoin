@@ -96,6 +96,7 @@ TESTS = [
     "rpc_minimum_chain_work.py",
     "rpc_reorg_postponed.py",
     "rpc_big_block_locks.py",
+    "wallet_commit_dryrun.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 
