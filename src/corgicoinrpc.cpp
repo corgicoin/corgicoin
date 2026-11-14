@@ -52,6 +52,7 @@ static int DefaultRPCPort()
 extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.cpp
 extern Value getpeerinfo(const Array& params, bool fHelp);
 extern Value ping(const Array& params, bool fHelp);
+Value estimatefee(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -3420,6 +3421,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },
     { "uptime",                 &uptime,                 true },
+    { "estimatefee",            &estimatefee,            true },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -4181,6 +4183,25 @@ void ThreadRPCServer3(void* parg)
     }
 }
 
+Value estimatefee(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "estimatefee <nblocks>\n"
+            "Estimates the fee per kB (in coins) a transaction needs to be in a block within <nblocks> blocks (1 to 25): the lowest\n"
+            "fee rate at which this node has seen at least 85% of the transactions that paid it or more confirm that fast.\n"
+            "Returns -1 when the node has not seen enough yet. The node learns only from blocks it has seen since it started,\n"
+            "so after a restart it says -1 for a while.");
+    RPCTypeCheck(params, {int_type});
+    const int nBlocks = params[0].get_int();
+    if (nBlocks < 1 || nBlocks > CFeeEstimator::MAX_TARGET)
+        throw JSONRPCError(-8, strprintf("nblocks must be 1 to %d", (int)CFeeEstimator::MAX_TARGET));
+    const double dRate = feeEstimator.Estimate(nBlocks);
+    if (dRate < 0)
+        return -1;
+    return ValueFromAmount((int64)dRate);
+}
+
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
 {
     // Find method
@@ -4296,6 +4317,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     // Special case non-string parameter types
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "estimatefee"            && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);

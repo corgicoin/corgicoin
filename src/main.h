@@ -1697,6 +1697,37 @@ struct CTxAcceptCheck
     int64 nFees = -1;           // out: fee paid, once the inputs were found (-1 until then)
 };
 
+
+/** Learns from the blocks this node sees how long a transaction waits for a given fee rate, and so what to pay to be in a block
+ *  within N blocks. A transaction counts only if this node had it in its memory pool before the block arrived (so it knows when
+ *  it was first seen). Estimates start from nothing after a restart: they are not saved. Everything is under cs_main. */
+class CFeeEstimator
+{
+public:
+    static const int MAX_TARGET = 25;       // blocks
+    static const int NBUCKETS = 24;         // fee rates from the relay minimum, each 1.5 times the one before
+    static constexpr double DECAY = 0.998;  // per block: older blocks count for less
+    static constexpr double MIN_SUCCESS = 0.85;
+    static constexpr double MIN_SAMPLES = 5.0;
+
+    CFeeEstimator();
+    /** A transaction paying nFeeRate (satoshi per kB) was in a block nBlocks after this node first saw it (1: the next block). */
+    void Record(int nBlocks, double nFeeRate);
+    /** Call once per block, before its transactions are recorded. */
+    void Decay();
+    /** The lowest fee rate (satoshi per kB) at which transactions confirmed within nTarget blocks at least MIN_SUCCESS of the time
+     *  (with enough of them to say); -1 if that cannot be told yet. */
+    double Estimate(int nTarget) const;
+    void Clear();
+
+private:
+    double vBound[NBUCKETS];
+    double mConfirmed[MAX_TARGET + 1][NBUCKETS];
+    double vTotal[NBUCKETS];
+    int Bucket(double nFeeRate) const;
+};
+extern CFeeEstimator feeEstimator;
+
 class CTxMemPool
 {
 public:
@@ -1708,7 +1739,7 @@ public:
     std::map<uint256, std::pair<double, int64> > mapDeltas;
     /** What the size limit and the expiry need to know about each entry: its fee (before any prioritisetransaction
      *  delta), size in bytes and the time it was accepted. */
-    struct PoolEntry { int64 nFee; unsigned int nSize; int64 nTime; };
+    struct PoolEntry { int64 nFee; unsigned int nSize; int64 nTime; int nHeight; };    // nHeight: the best height when it arrived
     std::map<uint256, PoolEntry> mapEntry;
     size_t nPoolBytes = 0;
     /** The entries nothing in the pool spends from ("leaves"), by fee per byte, lowest first: the first to go when the pool is full, and what
