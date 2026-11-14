@@ -2381,6 +2381,18 @@ Value validateaddress(const Array& params, bool fHelp)
         if (fMine) {
             Object detail = std::visit(DescribeAddressVisitor(), dest);
             ret.insert(ret.end(), detail.begin(), detail.end());
+            // when the key was made and, for an HD key, where it sits (not known for keys from before this was recorded)
+            if (const CKeyID* pkeyid = std::get_if<CKeyID>(&dest))
+            {
+                auto itMeta = pwalletMain->mapKeyMetadata.find(*pkeyid);
+                if (itMeta != pwalletMain->mapKeyMetadata.end())
+                {
+                    if (itMeta->second.nCreateTime > 0)
+                        ret.emplace_back("timestamp", (int64_t)itMeta->second.nCreateTime);
+                    if (!itMeta->second.strHDKeypath.empty())
+                        ret.emplace_back("hdkeypath", itMeta->second.strHDKeypath);
+                }
+            }
         }
         if (pwalletMain->mapAddressBook.count(dest))
             ret.emplace_back("account", pwalletMain->mapAddressBook[dest]);

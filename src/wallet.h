@@ -73,6 +73,26 @@ WalletFeature LatestWalletFeature();
 static constexpr uint32_t HD_COIN_TYPE = 99;
 
 
+/** What the wallet knows about a key besides the key: when it was made or imported, and for an HD key where it sits.
+ *  A wallet that restores from a key's birth time instead of from the first block saves a rescan of the whole chain. */
+class CKeyMetadata
+{
+public:
+    int64 nCreateTime;          // seconds since the epoch; 0 if unknown (a key from before this was recorded)
+    std::string strHDKeypath;   // "m/44'/99'/0'/0/7" for an HD key, empty otherwise
+
+    CKeyMetadata() : nCreateTime(0) {}
+    explicit CKeyMetadata(int64 nCreateTimeIn) : nCreateTime(nCreateTimeIn) {}
+
+    IMPLEMENT_SERIALIZE
+    (
+        if (!(nType & SER_GETHASH))
+            READWRITE(nVersion);
+        READWRITE(nCreateTime);
+        READWRITE(strHDKeypath);
+    )
+};
+
 /** A key pool entry */
 class CKeyPool
 {
@@ -274,6 +294,10 @@ public:
 
     // scripts followed but not spendable (importaddress, importpubkey): see AddWatchOnly
     std::set<CScript> setWatchOnly;
+    // when each key was made, and where an HD key sits (see CKeyMetadata)
+    std::map<CKeyID, CKeyMetadata> mapKeyMetadata;
+    void SetKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta);
+    bool LoadKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta) { mapKeyMetadata[vchPubKey.GetID()] = meta; return true; }
     bool AddWatchOnly(const CScript& script);
     bool VerifyKeys(int& nKeysChecked, int& nHDChecked, std::vector<std::string>& vProblems);
     bool LoadWatchOnly(const CScript& script) { setWatchOnly.insert(script); return true; }

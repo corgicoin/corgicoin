@@ -198,6 +198,14 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 if (nNumber > nAccountingEntryNumber)
                     nAccountingEntryNumber = nNumber;
             }
+            else if (strType == "keymeta")
+            {
+                vector<unsigned char> vchPubKey;
+                ssKey >> vchPubKey;
+                CKeyMetadata meta;
+                ssValue >> meta;
+                pwallet->LoadKeyMetadata(CPubKey(vchPubKey), meta);
+            }
             else if (strType == "key" || strType == "wkey")
             {
                 vector<unsigned char> vchPubKey;

@@ -204,6 +204,12 @@ CPubKey CWallet::GenerateNewKey()
         // in the wallet derives the same keys again. A key that is already there is the one asked for, not a failure.
         if (!HaveKey(key.GetPubKey().GetID()) && !AddKey(key))
             throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
+        {
+            // where it sits, for whoever has to find it again from the recovery phrase
+            CKeyMetadata meta = mapKeyMetadata[key.GetPubKey().GetID()];
+            meta.strHDKeypath = strprintf("m/44'/%u'/0'/0/%u", (unsigned)HD_COIN_TYPE, (unsigned)nHDExternalIndex);
+            SetKeyMetadata(key.GetPubKey(), meta);
+        }
         nHDExternalIndex++;
         if (fFileBacked && !CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex))
             throw std::runtime_error("CWallet::GenerateNewKey() : could not save the HD index");
@@ -224,8 +230,23 @@ CPubKey CWallet::GenerateNewKey()
     return key.GetPubKey();
 }
 
+void CWallet::SetKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta)
+{
+    LOCK(cs_wallet);
+    mapKeyMetadata[vchPubKey.GetID()] = meta;
+    if (fFileBacked)
+        CWalletDB(strWalletFile).WriteKeyMetadata(vchPubKey, meta);
+}
+
 bool CWallet::AddKey(const CKey& key)
 {
+    // A key that arrives now is new to this wallet as of now. (Keys the wallet already had when this was added have no time:
+    // it is 0, "unknown", not the day they were encrypted or the day the wallet was upgraded.)
+    {
+        LOCK(cs_wallet);
+        if (!mapKeyMetadata.count(key.GetPubKey().GetID()))
+            SetKeyMetadata(key.GetPubKey(), CKeyMetadata(GetTime()));
+    }
     if (!CCryptoKeyStore::AddKey(key))
         return false;
     if (!fFileBacked)

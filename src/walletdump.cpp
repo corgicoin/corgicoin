@@ -139,9 +139,18 @@ bool DumpWalletToFile(CWallet* pwallet, const std::filesystem::path& path, bool 
     return true;
 }
 
-static void RescanWallet(CWallet* pwallet)
+// nStartTime: the time the oldest key being looked for was made (0: unknown, so from the first block). The scan begins two
+// hours before it, as block times are only roughly in order, and a key made later than the newest block has nothing to find.
+static void RescanWallet(CWallet* pwallet, int64 nStartTime = 0)
 {
-    pwallet->ScanForWalletTransactions(pindexGenesisBlock, true);
+    CBlockIndex* pindexStart = pindexGenesisBlock;
+    if (nStartTime > 0)
+    {
+        pindexStart = pindexBest;
+        while (pindexStart && pindexStart->pprev && pindexStart->GetBlockTime() >= nStartTime - 2 * 60 * 60)
+            pindexStart = pindexStart->pprev;
+    }
+    pwallet->ScanForWalletTransactions(pindexStart, true);
     pwallet->ReacceptWalletTransactions();
 }
 
@@ -218,7 +227,7 @@ bool ImportWalletFromFile(CWallet* pwallet, const std::filesystem::path& path, i
     return true;
 }
 
-bool ImportPrivateKey(CWallet* pwallet, const string& strSecret, const string& strLabel, bool& fAlreadyHad, string& strError)
+bool ImportPrivateKey(CWallet* pwallet, const string& strSecret, const string& strLabel, bool& fAlreadyHad, string& strError, int64 nTimestamp)
 {
     fAlreadyHad = false;
     CBitcoinSecret vchSecret;
@@ -254,6 +263,8 @@ bool ImportPrivateKey(CWallet* pwallet, const string& strSecret, const string& s
         strError = "Error adding key to wallet";
         return false;
     }
-    RescanWallet(pwallet);
+    if (nTimestamp > 0)
+        pwallet->SetKeyMetadata(key.GetPubKey(), CKeyMetadata(nTimestamp));      // the key's own date, not the day it was imported
+    RescanWallet(pwallet, nTimestamp);
     return true;
 }

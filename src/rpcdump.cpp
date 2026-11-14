@@ -39,10 +39,12 @@ public:
 
 Value importprivkey(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 1 || params.size() > 2)
+    if (fHelp || params.size() < 1 || params.size() > 3)
         throw runtime_error(
-            "importprivkey <corgicoinprivkey> [label]\n"
-            "Adds a private key (as returned by dumpprivkey) to your wallet.");
+            "importprivkey <corgicoinprivkey> [label] [timestamp]\n"
+            "Adds a private key (as returned by dumpprivkey) to your wallet.\n"
+            "timestamp is when the key was made (seconds since 1970): the block chain is then searched from two hours before\n"
+            "it instead of from the first block, which is much quicker. Leave it out, or give 0, when you do not know.");
 
     string strSecret = params[0].get_str();
     string strLabel = "";
@@ -55,7 +57,14 @@ Value importprivkey(const Array& params, bool fHelp)
 
     bool fAlreadyHad;
     string strError;
-    if (!ImportPrivateKey(pwalletMain.get(), strSecret, strLabel, fAlreadyHad, strError))
+    int64_t nTimestamp = 0;
+    if (params.size() > 2)
+    {
+        nTimestamp = params[2].get_int64();
+        if (nTimestamp < 0)
+            throw JSONRPCError(-8, "The timestamp cannot be negative");
+    }
+    if (!ImportPrivateKey(pwalletMain.get(), strSecret, strLabel, fAlreadyHad, strError, nTimestamp))
         throw JSONRPCError(-4, strError);
 
     return Value::null;

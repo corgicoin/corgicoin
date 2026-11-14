@@ -23,7 +23,8 @@ bool ImportWalletFromFile(CWallet* pwallet, const std::filesystem::path& path, i
 
 /** Add one WIF private key with a label, then rescan the chain.
  *  fAlreadyHad is set if the wallet already held it (no rescan is done). */
-bool ImportPrivateKey(CWallet* pwallet, const std::string& strSecret, const std::string& strLabel, bool& fAlreadyHad, std::string& strError);
+bool ImportPrivateKey(CWallet* pwallet, const std::string& strSecret, const std::string& strLabel, bool& fAlreadyHad, std::string& strError,
+                      int64 nTimestamp = 0);
 
 std::string EncodeDumpString(const std::string& str);
 std::string DecodeDumpString(const std::string& str);
