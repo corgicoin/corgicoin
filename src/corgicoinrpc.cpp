@@ -2145,10 +2145,11 @@ Value getworkex(const Array& params, bool fHelp)
             "If [data, coinbase] is not specified, returns extended work data.\n"
         );
 
-    if (vNodes.empty())
+    // regtest mines without peers, like generate, createauxblock and getblocktemplate
+    if (vNodes.empty() && !fRegTest)
         throw JSONRPCError(-9, "CorgiCoin is not connected!!!");
 
-    if (IsInitialBlockDownload())
+    if (IsInitialBlockDownload() && !fRegTest)
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
     using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
@@ -2281,10 +2282,11 @@ Value getwork(const Array& params, bool fHelp)
             "  \"target\" : little endian hash target\n"
             "If [data] is specified, tries to solve the block and returns true if it was successful.");
 
-    if (vNodes.empty())
+    // regtest mines without peers, like generate, createauxblock and getblocktemplate
+    if (vNodes.empty() && !fRegTest)
         throw JSONRPCError(-9, "CorgiCoin is not connected!");
 
-    if (IsInitialBlockDownload())
+    if (IsInitialBlockDownload() && !fRegTest)
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
     using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
