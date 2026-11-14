@@ -303,6 +303,7 @@ std::string HelpMessage()
         "  -blockprioritysize=<n> " + _("Bytes of each block it fills with the highest-priority (old, large-valued) transactions before it goes by fee per byte (default: 27000)") + "\n" +
         "  -maxinboundpergroup=<n> " + _("Accept at most n inbound connections from one network group (the /16 of an IPv4 address); 0: no limit (default: 0)") + "\n" +
         "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
+        "  -maxuploadtarget=<MiB> " + _("Try to keep what the node sends in 24 hours under this many MiB: past 90% it stops serving old blocks (and lets the peers that ask go), past all of it, blocks (default: 0, no limit)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
@@ -497,6 +498,14 @@ bool AppInit2()
         if (strWork.empty() || strWork.size() > 64 || strWork.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
             return InitError(strprintf(_("Invalid -minimumchainwork=<hex>: '%s'"), strWork.c_str()));
         bnMinimumChainWork.SetHex(strWork);
+    }
+
+    if (mapArgs.count("-maxuploadtarget"))
+    {
+        const int64 nMiB = GetArg("-maxuploadtarget", 0);
+        if (nMiB < 0 || nMiB > 1000000)
+            return InitError(_("-maxuploadtarget must be a number of MiB per day, 0 for no limit"));
+        SetMaxUploadTarget((uint64)nMiB * 1024 * 1024);
     }
 
     if (mapArgs.count("-mininput"))

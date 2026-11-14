@@ -3222,6 +3222,19 @@ static void ProcessGetData(CNode* pfrom)
             auto mi = mapBlockIndex.find(inv.hash);
             if (mi != mapBlockIndex.end())
             {
+                // -maxuploadtarget: a node that has sent what it promised does not send blocks. A peer that asks for old ones
+                // while the target is nearly spent is not told no, it is let go (it can fetch them from someone with bandwidth).
+                int64 nOldSeconds = 7 * 24 * 60 * 60;
+                if (fRegTest && mapArgs.count("-testhistoricalblockage"))
+                    nOldSeconds = std::max<int64>(1, GetArg("-testhistoricalblockage", nOldSeconds));    // test hook, regtest only
+                const bool fHistorical = (*mi).second->GetBlockTime() < GetTime() - nOldSeconds;
+                if (UploadTargetReached(fHistorical))
+                {
+                    LogPrintf("upload target reached: not sending %s block to %s, disconnecting\n",
+                              fHistorical ? "an old" : "a", pfrom->addr.ToString().c_str());
+                    pfrom->fDisconnect = true;
+                    return;
+                }
                 CBlock block;
                 // already accepted, so its proof of work was checked: do not pay for it again on every read
                 block.ReadFromDisk((*mi).second, true, false);

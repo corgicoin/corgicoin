@@ -133,6 +133,13 @@ Value getnettotals(const Array& params, bool fHelp)
     obj.emplace_back("totalbytesrecv", (int64_t)GetTotalBytesRecv());
     obj.emplace_back("totalbytessent", (int64_t)GetTotalBytesSent());
     obj.emplace_back("timemillis", (int64_t)GetTimeMillis());
+    Object upload;
+    upload.emplace_back("target", (int64_t)GetUploadTarget());
+    upload.emplace_back("target_reached", UploadTargetReached(false));
+    upload.emplace_back("serve_historical_blocks", !UploadTargetReached(true));
+    upload.emplace_back("bytes_left_in_cycle", (int64_t)GetUploadBytesLeft());
+    upload.emplace_back("time_left_in_cycle", (int64_t)GetUploadTimeLeft());
+    obj.emplace_back("uploadtarget", upload);
     return obj;
 }
 
