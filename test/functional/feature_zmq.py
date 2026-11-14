@@ -2,18 +2,12 @@
 """ZeroMQ notifications: hashblock, rawblock, hashtx and rawtx, with their sequence numbers."""
 import socket
 
-from test_framework import CorgiTestFramework, assert_equal
+from test_framework import CorgiTestFramework, assert_equal, free_port
 
 try:
     import zmq
 except ImportError:      # pyzmq is optional for running the suite
     zmq = None
-
-
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 PORT_BLOCKS, PORT_TXS = free_port(), free_port()
