@@ -4672,11 +4672,21 @@ void static BitcoinMiner(CWallet *pwallet)
         // Create new block
         //
         unsigned int nTransactionsUpdatedLast = nTransactionsUpdated;
-        CBlockIndex* pindexPrev = pindexBest;
 
         unique_ptr<CBlock> pblock(CreateNewBlock(reservekey));
         if (!pblock.get())
             return;
+        // The block's own parent, looked up under the lock: reading pindexBest here, outside the lock and before the block
+        // was built, could name a different tip than the one the block is built on if a block arrived in between.
+        CBlockIndex* pindexPrev = nullptr;
+        {
+            LOCK(cs_main);
+            auto mi = mapBlockIndex.find(pblock->hashPrevBlock);
+            if (mi != mapBlockIndex.end())
+                pindexPrev = mi->second;
+        }
+        if (!pindexPrev)
+            continue;   // the tip moved away under us: build again
         IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
 
         LogPrintf("Running BitcoinMiner with %d transactions in block\n", pblock->vtx.size());
@@ -4770,8 +4780,11 @@ void static BitcoinMiner(CWallet *pwallet)
                 break;
             if (nTransactionsUpdated != nTransactionsUpdatedLast && GetTime() - nStart > 60)
                 break;
-            if (pindexPrev != pindexBest)
-                break;
+            {
+                LOCK(cs_main);
+                if (pindexPrev != pindexBest)
+                    break;
+            }
 
             // Update nTime every few seconds
             pblock->UpdateTime(pindexPrev);
