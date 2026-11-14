@@ -3054,6 +3054,7 @@ Value getblockchaininfo(const Array& params, bool fHelp)
     obj.emplace_back("script_check_threads", ScriptCheckThreads());
     obj.emplace_back("blocks_scripts_assumed", (int64_t)nBlocksScriptsAssumed.load());     // connected without script checks (-assumevalid)
     obj.emplace_back("blocks_scripts_parallel", (int64_t)nBlocksScriptsParallel.load());   // script checks run on several threads
+    obj.emplace_back("minimumchainwork", bnMinimumChainWork.GetHex());
 
     Object softforks;
     softforks.emplace_back("lwma", SoftForkStatus(GetLwmaForkHeight()));

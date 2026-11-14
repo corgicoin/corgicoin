@@ -289,6 +289,7 @@ std::string HelpMessage()
         "  -prune=<MiB>           " + _("Keep about this much of the block files (at least 128), deleting the oldest; the last 2880 blocks are always kept. A pruned node validates from the unspent set, but cannot serve old blocks, rescan its wallet over the deleted part, or rebuild the set (default: 0, keep everything)") + "\n" +
         "  -par=<n>               " + _("Threads for the script checks of a block (0 = one per core, at most 16; 1 = one at a time; default: 0)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (default: 1; -nocoinsvalidate reads them from the block files as before; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
+        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -zmqpubhashblock=<address> " + _("Publish the hash of each new best block on a ZeroMQ socket, e.g. tcp://127.0.0.1:28332") + "\n" +
@@ -468,6 +469,14 @@ bool AppInit2()
         const int64 nPar = GetArg("-par", 0);
         if (nPar < 0 || nPar > 16)
             return InitError(_("Invalid -par=<n>: 0 to 16"));
+    }
+
+    if (mapArgs.count("-minimumchainwork"))
+    {
+        const std::string strWork = mapArgs["-minimumchainwork"];
+        if (strWork.empty() || strWork.size() > 64 || strWork.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+            return InitError(strprintf(_("Invalid -minimumchainwork=<hex>: '%s'"), strWork.c_str()));
+        bnMinimumChainWork.SetHex(strWork);
     }
 
     if (mapArgs.count("-mininput"))
