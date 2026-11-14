@@ -14,7 +14,9 @@
 #include "base58.h"
 #include "logging.h"
 #include "bip39.h"
+#include <boost/algorithm/string/replace.hpp>
 #include <random>
+#include <thread>
 
 using namespace std;
 
@@ -686,6 +688,19 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
         if (fInsertedNew || fUpdated)
             if (!wtx.WriteToDisk())
                 return false;
+
+        // -walletnotify: tell the operator's command about a transaction that is new to the wallet or has changed (it
+        // confirmed, say). %s is the transaction id, which is hex, so nothing a peer sent reaches the shell.
+        if (fInsertedNew || fUpdated)
+        {
+            std::string strCmd = GetArg("-walletnotify", "");
+            if (!strCmd.empty())
+            {
+                boost::replace_all(strCmd, "%s", hash.GetHex());
+                std::thread t(runCommand, strCmd);
+                t.detach();
+            }
+        }
 #ifndef QT_GUI
         // If default receiving address gets used, replace it with a new one
         CScript scriptDefaultKey;
