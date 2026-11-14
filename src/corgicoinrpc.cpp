@@ -185,6 +185,7 @@ Value getrpcinfo(const Array& params, bool fHelp);
 Value logging(const Array& params, bool fHelp);
 
 Value getmetrics(const Array& params, bool fHelp);
+Value verifywallet(const Array& params, bool fHelp);
 Value importaddress(const Array& params, bool fHelp);
 Value importpubkey(const Array& params, bool fHelp);
 Value getwatchonlybalance(const Array& params, bool fHelp);
@@ -3774,6 +3775,7 @@ static const CRPCCommand vRPCCommands[] =
     { "logging",                &logging,                true },
 
     { "getmetrics",             &getmetrics,             true },
+    { "verifywallet",           &verifywallet,           false },
     { "importaddress",          &importaddress,          false },
     { "importpubkey",           &importpubkey,           false },
     { "getwatchonlybalance",    &getwatchonlybalance,    false },
@@ -5205,6 +5207,29 @@ Value listwatchonlyunspent(const Array& params, bool fHelp)
         }
     }
     return results;
+}
+
+Value verifywallet(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "verifywallet\n"
+            "Checks the keys in the wallet and changes nothing: every private key must give the public key it is filed under,\n"
+            "and for an HD wallet every key derived from the seed so far must be in the wallet.\n"
+            "An encrypted wallet has to be unlocked. Returns {ok, keys_checked, hd_keys_checked, problems}.");
+    int nKeys = 0, nHD = 0;
+    std::vector<std::string> vProblems;
+    if (!pwalletMain->VerifyKeys(nKeys, nHD, vProblems))
+        throw JSONRPCError(-13, "Error: the wallet is locked: unlock it with walletpassphrase to check its keys");
+    Array problems;
+    for (const std::string& str : vProblems)
+        problems.push_back(str);
+    Object r;
+    r.emplace_back("ok", vProblems.empty());
+    r.emplace_back("keys_checked", nKeys);
+    r.emplace_back("hd_keys_checked", nHD);
+    r.emplace_back("problems", problems);
+    return r;
 }
 
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
