@@ -67,7 +67,7 @@ jobs:
     # standard library's assertions (-D_GLIBCXX_ASSERTIONS), which stop on out-of-range vector access
     # that UBSan alone cannot see. UBSan is built with -fno-sanitize-recover so any report fails the job.
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
 
@@ -81,7 +81,7 @@ jobs:
           mkdir build-san && cd build-san
           SAN="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -D_GLIBCXX_ASSERTIONS"
           cmake .. -DCMAKE_BUILD_TYPE=Debug             -DCMAKE_CXX_FLAGS="$SAN" -DCMAKE_C_FLAGS="$SAN" -DCMAKE_EXE_LINKER_FLAGS="$SAN"             -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
-          make -j$(nproc) test_corgicoin
+          make -j$(nproc) test_corgicoin corgicoind
 
       - name: Run unit tests under the sanitizers
         run: |
@@ -89,6 +89,14 @@ jobs:
           # DoS_checkSig asserts on wall-clock timing (cached vs. uncached signature checks), which an
           # instrumented build makes unreliable: it fails about half the time even on unmodified master.
           ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1 ./test_corgicoin --run_test='!DoS_tests/DoS_checkSig'
+
+      - name: Run the functional tests under the sanitizers
+        run: |
+          # The node's stderr is kept by the test framework, and a test fails on "runtime error:" (UBSan) or
+          # "AddressSanitizer" in it, and on a node that does not stop cleanly. Leak detection is off for the daemon: it
+          # exits through exit() with its threads still running, which is not a leak a test can act on.
+          export ASAN_OPTIONS=detect_leaks=0:abort_on_error=0 UBSAN_OPTIONS=print_stacktrace=1
+          python3 test/functional/test_runner.py --corgicoind build-san/corgicoind -j 2
 
   build-macos:
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
