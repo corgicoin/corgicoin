@@ -36,8 +36,10 @@ class ResourceLimitsTest(CorgiTestFramework):
         assert node.getmemoryinfo()["askedfor"] <= 50000
 
         self.log("100 addr messages of 1000 addresses each: the peer's known-address list stays bounded")
+        import time
         for i in range(100):
             peer.send_addrs([("10.%d.%d.%d" % (i % 250 + 1, j // 250, j % 250 + 1), 62556) for j in range(1000)])
+            time.sleep(0.05)  # about 5 MB in all: sent flat out, a busy machine hits the node's receive flood limit
         wait_until(lambda: node.getpeerinfo()[0]["addr_known"] > 0, what="addresses to be taken in")
         wait_until(lambda: peer.counts.get("addr", 0) >= 0, what="settling")
         import time
