@@ -76,6 +76,7 @@ void Shutdown(void* parg)
     if (fFirstThread)
     {
         fShutdown = true;
+        DeleteRPCCookie();
         nTransactionsUpdated++;
         bitdb.Flush(false);
         StopNode();

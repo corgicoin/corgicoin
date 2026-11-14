@@ -89,6 +89,8 @@ static void DeleteAuthCookie()
     strRPCCookieFile.clear();
 }
 
+void DeleteRPCCookie() { DeleteAuthCookie(); }
+
 static bool ReadAuthCookie(std::string& strUserPassRet)
 {
     std::ifstream file(GetCookiePath().string().c_str(), std::ios::in | std::ios::binary);
