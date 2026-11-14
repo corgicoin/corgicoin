@@ -36,14 +36,22 @@ enum LogCategory : uint32_t {
 extern LogLevel nLogLevel;
 extern uint32_t nLogCategories;
 
+// Tell the compiler these take a printf format, so that -Wformat checks every call: a wrong specifier in a log line that
+// is rarely run is a crash or a memory disclosure waiting for the day it is.
+#if defined(__GNUC__) || defined(__clang__)
+#define CORGI_PRINTF(fmt, args) __attribute__((format(printf, fmt, args)))
+#else
+#define CORGI_PRINTF(fmt, args)
+#endif
+
 // Core logging function (replaces OutputDebugStringF)
 int LogPrintStr(const std::string& str);
 
 // Formatted logging — always logs (for important messages)
-int LogPrintf(const char* fmt, ...);
+int LogPrintf(const char* fmt, ...) CORGI_PRINTF(1, 2);
 
 // Formatted error logging — prefixes with "ERROR: "
-bool LogError(const char* fmt, ...);
+bool LogError(const char* fmt, ...) CORGI_PRINTF(1, 2);
 
 // Category-gated logging — only logs if category is enabled
 // Usage: LogPrint(LOG_NET, "connected to %s\n", addr.c_str());
