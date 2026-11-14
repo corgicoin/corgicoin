@@ -8,6 +8,9 @@
 #include <string>
 #include <cstdarg>
 #include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
 
 // Log levels
 enum class LogLevel {
@@ -63,6 +66,11 @@ bool LogError(const char* fmt, ...) CORGI_PRINTF(1, 2);
 #define LogDebug(...) do { \
     if (nLogLevel >= LogLevel::DEBUG) LogPrintf(__VA_ARGS__); \
 } while(0)
+
+// The categories a running node can switch (the `logging` RPC): name and whether it is on
+std::vector<std::pair<std::string, bool> > GetLogCategories();
+// Switch one on or off by name; false if the name is not a category
+bool SetLogCategory(const std::string& strName, bool fOn);
 
 // Helper to set log categories from command-line string
 void InitLogging(const std::string& debugCategories, bool printToConsole, bool logTimestamps);

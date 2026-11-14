@@ -175,6 +175,8 @@ extern Value ping(const Array& params, bool fHelp);
 extern Value getmemoryinfo(const Array& params, bool fHelp);
 Value exportblocks(const Array& params, bool fHelp);
 Value estimatefee(const Array& params, bool fHelp);
+Value getrpcinfo(const Array& params, bool fHelp);
+Value logging(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -3751,6 +3753,8 @@ static const CRPCCommand vRPCCommands[] =
     { "uptime",                 &uptime,                 true },
     { "exportblocks",           &exportblocks,           false },
     { "estimatefee",            &estimatefee,            true },
+    { "getrpcinfo",             &getrpcinfo,             true },
+    { "logging",                &logging,                true },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -4934,8 +4938,80 @@ Value estimatefee(const Array& params, bool fHelp)
     return ValueFromAmount((int64)dRate);
 }
 
+// The calls being served (running, or waiting for the node lock), for getrpcinfo
+static CCriticalSection cs_activeRPC;
+static std::list<std::pair<std::string, int64> > listActiveRPC;
+namespace {
+struct ActiveRPC
+{
+    std::list<std::pair<std::string, int64> >::iterator it;
+    explicit ActiveRPC(const std::string& strMethod)
+    {
+        LOCK(cs_activeRPC);
+        listActiveRPC.emplace_back(strMethod, GetTimeMillis());
+        it = std::prev(listActiveRPC.end());
+    }
+    ~ActiveRPC()
+    {
+        LOCK(cs_activeRPC);
+        listActiveRPC.erase(it);
+    }
+};
+}
+
+Value getrpcinfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getrpcinfo\n"
+            "Returns details of the RPC server: the calls being served now (running, or waiting for the node lock)\n"
+            "with how long each has been at it in milliseconds, and where the log is.");
+    Array calls;
+    {
+        LOCK(cs_activeRPC);
+        const int64 nNow = GetTimeMillis();
+        for (const auto& item : listActiveRPC)
+        {
+            Object o;
+            o.emplace_back("method", item.first);
+            o.emplace_back("duration", (int64_t)(nNow - item.second));
+            calls.push_back(o);
+        }
+    }
+    Object r;
+    r.emplace_back("active_commands", calls);
+    r.emplace_back("logpath", (GetDataDir() / "debug.log").string());
+    return r;
+}
+
+Value logging(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 2)
+        throw runtime_error(
+            "logging [include] [exclude]\n"
+            "Gets or sets which debug log categories are on, without a restart.\n"
+            "include and exclude are arrays of category names; the result lists every category and whether it is on.\n"
+            "Categories: net, mempool, rpc, db, wallet, mining, addrman, selectcoins.");
+    for (unsigned int i = 0; i < params.size(); i++)
+    {
+        if (params[i].type() != array_type)
+            throw JSONRPCError(-8, "include and exclude must be arrays of category names");
+        for (const Value& v : params[i].get_array())
+        {
+            if (v.type() != str_type || !SetLogCategory(v.get_str(), i == 0))
+                throw JSONRPCError(-8, "unknown logging category");
+        }
+    }
+    Object r;
+    for (const auto& c : GetLogCategories())
+        r.emplace_back(c.first, c.second);
+    return r;
+}
+
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
 {
+    ActiveRPC active(strMethod);
+
     // Find method
     const CRPCCommand *pcmd = tableRPC[strMethod];
     if (!pcmd)
@@ -5055,6 +5131,8 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "exportblocks"           && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "exportblocks"           && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "estimatefee"            && n > 0) ConvertTo<int64_t>(params[0]);
+    if (strMethod == "logging"                && n > 0) ConvertTo<Array>(params[0]);
+    if (strMethod == "logging"                && n > 1) ConvertTo<Array>(params[1]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
