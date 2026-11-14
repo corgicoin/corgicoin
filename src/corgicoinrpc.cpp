@@ -186,6 +186,7 @@ Value logging(const Array& params, bool fHelp);
 
 Value getmetrics(const Array& params, bool fHelp);
 Value bumpfee(const Array& params, bool fHelp);
+Value fundrawtransaction(const Array& params, bool fHelp);
 Value verifywallet(const Array& params, bool fHelp);
 Value importaddress(const Array& params, bool fHelp);
 Value importpubkey(const Array& params, bool fHelp);
@@ -3805,6 +3806,7 @@ static const CRPCCommand vRPCCommands[] =
 
     { "getmetrics",             &getmetrics,             true },
     { "bumpfee",                &bumpfee,                false },
+    { "fundrawtransaction",     &fundrawtransaction,     false },
     { "verifywallet",           &verifywallet,           false },
     { "importaddress",          &importaddress,          false },
     { "importpubkey",           &importpubkey,           false },
@@ -5381,6 +5383,149 @@ Value verifywallet(const Array& params, bool fHelp)
     return r;
 }
 
+Value fundrawtransaction(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "fundrawtransaction <hex> [options]\n"
+            "Adds inputs, and a change output if there is change, to a raw transaction that has outputs and no inputs, so that it\n"
+            "pays for itself. It does not sign: sign it where the keys are (signrawtransaction) and broadcast it with\n"
+            "sendrawtransaction. Returns {hex, fee, changepos}.\n"
+            "options: {\"changeAddress\": <address>, \"includeWatching\": <bool>}\n"
+            "  changeAddress    where the change goes (default: a new address of this wallet; required with includeWatching)\n"
+            "  includeWatching  take the inputs from the watch-only coins (importaddress) instead of the spendable ones, for a\n"
+            "                   wallet that follows an address whose key is kept offline");
+    RPCTypeCheck(params, {str_type, obj_type});
+    if (!IsHex(params[0].get_str()))
+        throw JSONRPCError(-22, "TX decode failed");
+    CTransaction tx;
+    {
+        CDataStream ssData(ParseHex(params[0].get_str()), SER_NETWORK, PROTOCOL_VERSION);
+        try {
+            ssData >> tx;
+        } catch (const std::exception&) {
+            throw JSONRPCError(-22, "TX decode failed");
+        }
+        if (!ssData.empty())
+            throw JSONRPCError(-22, "TX decode failed: trailing data");
+    }
+    if (!tx.vin.empty())
+        throw JSONRPCError(-8, "The transaction already has inputs: this adds them to one that has none");
+    if (tx.vout.empty())
+        throw JSONRPCError(-8, "The transaction has no outputs to pay for");
+
+    bool fWatching = false;
+    std::string strChange;
+    if (params.size() > 1)
+    {
+        const Object& options = params[1].get_obj();
+        const Value& vWatch = find_value(options, "includeWatching");
+        if (vWatch.type() == bool_type)
+            fWatching = vWatch.get_bool();
+        else if (vWatch.type() != null_type)
+            throw JSONRPCError(-8, "includeWatching must be true or false");
+        const Value& vChange = find_value(options, "changeAddress");
+        if (vChange.type() == str_type)
+            strChange = vChange.get_str();
+        else if (vChange.type() != null_type)
+            throw JSONRPCError(-8, "changeAddress must be an address");
+    }
+    if (fWatching && strChange.empty())
+        throw JSONRPCError(-8, "With includeWatching the change has to go to an address you name (changeAddress): this wallet cannot make one that the keys elsewhere control");
+
+    int64 nValueOut = 0;
+    for (const CTxOut& out : tx.vout)
+    {
+        if (out.nValue < 0 || !MoneyRange(out.nValue))
+            throw JSONRPCError(-8, "An output has an amount out of range");
+        nValueOut += out.nValue;
+        if (!MoneyRange(nValueOut))
+            throw JSONRPCError(-8, "The outputs add up to more than there can be");
+    }
+
+    CScript scriptChange;
+    if (!strChange.empty())
+    {
+        CBitcoinAddress addr(strChange);
+        if (!addr.IsValid())
+            throw JSONRPCError(-5, "Invalid change address");
+        scriptChange.SetDestination(addr.Get());
+    }
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+
+    // the coins that could pay, largest first
+    std::vector<std::pair<int64, COutPoint> > vCoins;
+    for (const auto& item : pwalletMain->mapWallet)
+    {
+        const CWalletTx& wtx = item.second;
+        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < 1 || pwalletMain->IsConflicted(wtx))
+            continue;
+        for (unsigned int i = 0; i < wtx.vout.size(); i++)
+        {
+            if (wtx.IsSpent(i) || wtx.vout[i].nValue <= 0 || pwalletMain->IsLockedCoin(item.first, i))
+                continue;
+            const bool fOk = fWatching ? pwalletMain->IsWatchOnly(wtx.vout[i]) : pwalletMain->IsMine(wtx.vout[i]);
+            if (fOk)
+                vCoins.emplace_back(wtx.vout[i].nValue, COutPoint(item.first, i));
+        }
+    }
+    std::sort(vCoins.begin(), vCoins.end(), [](const std::pair<int64, COutPoint>& a, const std::pair<int64, COutPoint>& b) { return a.first > b.first; });
+
+    // A signed input is about 148 bytes (pay to key hash) and the change output 34: the fee is for the size the signed
+    // transaction will be, at the same rate the wallet's own sends pay
+    const unsigned int nBaseBytes = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+    const int64 nRate = std::max<int64>(nTransactionFee, MIN_TX_FEE);
+    auto FeeFor = [&](size_t nInputs, bool fChange) {
+        const unsigned int nBytes = nBaseBytes + (unsigned int)nInputs * 148 + (fChange ? 34 : 0);
+        return nRate * (1 + (int64)nBytes / 1000);
+    };
+
+    int64 nValueIn = 0;
+    size_t nUsed = 0;
+    while (nUsed < vCoins.size() && nValueIn < nValueOut + FeeFor(nUsed, true))
+        nValueIn += vCoins[nUsed++].first;
+    if (nValueIn < nValueOut + FeeFor(nUsed, false))
+        throw JSONRPCError(-4, "Insufficient funds");
+
+    int64 nFee = FeeFor(nUsed, true);
+    int64 nChange = nValueIn - nValueOut - nFee;
+    int nChangePos = -1;
+    if (nChange < CENT)
+    {
+        // too little to be worth an output (and under the dust rule): it goes to the miner
+        nFee = nValueIn - nValueOut;
+        nChange = 0;
+    }
+    if (nFee > nMaxTxFee)
+        throw JSONRPCError(-4, "The fee is over -maxtxfee");
+
+    for (size_t i = 0; i < nUsed; i++)
+        tx.vin.push_back(CTxIn(vCoins[i].second));
+    if (nChange > 0)
+    {
+        if (scriptChange.empty())
+        {
+            CReserveKey reservekey(pwalletMain.get());
+            CPubKey vchPubKey = reservekey.GetReservedKey();
+            if (!vchPubKey.IsValid())
+                throw JSONRPCError(-12, "Error: Keypool ran out, please call keypoolrefill first");
+            reservekey.KeepKey();
+            scriptChange.SetDestination(vchPubKey.GetID());
+        }
+        nChangePos = (int)tx.vout.size();
+        tx.vout.push_back(CTxOut(nChange, scriptChange));
+    }
+
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+    ssTx << tx;
+    Object r;
+    r.emplace_back("hex", HexStr(ssTx.begin(), ssTx.end()));
+    r.emplace_back("fee", ValueFromAmount(nFee));
+    r.emplace_back("changepos", nChangePos);
+    return r;
+}
+
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
 {
     ActiveRPC active(strMethod);
@@ -5506,6 +5651,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "estimatefee"            && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "logging"                && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "logging"                && n > 1) ConvertTo<Array>(params[1]);
+    if (strMethod == "fundrawtransaction"     && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "importaddress"          && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "importpubkey"           && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getwatchonlybalance"    && n > 0) ConvertTo<int64_t>(params[0]);
