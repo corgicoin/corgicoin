@@ -104,6 +104,7 @@ TESTS = [
     "rpc_metrics.py",
     "wallet_watchonly.py",
     "wallet_verify.py",
+    "wallet_backup_encrypted.py",
     "wallet_key_metadata.py",
     "wallet_fundraw.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)

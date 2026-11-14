@@ -215,6 +215,8 @@ extern Value lockunspent(const Array& params, bool fHelp);
 extern Value abandontransaction(const Array& params, bool fHelp);
 extern Value listlockunspent(const Array& params, bool fHelp);
 extern Value dumpwallet(const Array& params, bool fHelp);
+extern Value exportwalletencrypted(const Array& params, bool fHelp);
+extern Value importwalletencrypted(const Array& params, bool fHelp);
 extern Value importwallet(const Array& params, bool fHelp);
 extern Value createrawtransaction(const Array& params, bool fHelp);
 extern Value decoderawtransaction(const Array& params, bool fHelp);
@@ -3805,6 +3807,8 @@ static const CRPCCommand vRPCCommands[] =
     { "lockunspent",            &lockunspent,            false },
     { "listlockunspent",        &listlockunspent,        false },
     { "dumpwallet",             &dumpwallet,             true },
+    { "exportwalletencrypted",  &exportwalletencrypted,  true },
+    { "importwalletencrypted",  &importwalletencrypted,  true },
     { "importwallet",           &importwallet,           false },
     { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
