@@ -728,6 +728,51 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     return true;
 }
 
+// Watch-only scripts: followed, never spent. They are kept apart from the keys so that nothing that picks coins to spend can
+// pick one of these (IsMine stays false for them).
+bool CWallet::AddWatchOnly(const CScript& script)
+{
+    LOCK(cs_wallet);
+    if (::IsMine(*this, script))
+        return false;   // the wallet holds the key: it is not watch-only
+    setWatchOnly.insert(script);
+    if (fFileBacked && !CWalletDB(strWalletFile).WriteWatchOnly(script))
+        return false;
+    return true;
+}
+
+bool CWallet::IsWatchOnlyTx(const CTransaction& tx) const
+{
+    LOCK(cs_wallet);
+    for (const CTxOut& txout : tx.vout)
+        if (IsWatchOnly(txout))
+            return true;
+    // one that spends a watch-only coin: it has to be kept to know the coin is gone
+    for (const CTxIn& txin : tx.vin)
+    {
+        auto mi = mapWallet.find(txin.prevout.hash);
+        if (mi != mapWallet.end() && txin.prevout.n < (*mi).second.vout.size() && IsWatchOnly((*mi).second.vout[txin.prevout.n]))
+            return true;
+    }
+    return false;
+}
+
+int64 CWallet::GetWatchOnlyBalance(int nMinDepth) const
+{
+    int64 nTotal = 0;
+    LOCK2(cs_main, cs_wallet);
+    for (const auto& item : mapWallet)
+    {
+        const CWalletTx& wtx = item.second;
+        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < nMinDepth)
+            continue;
+        for (unsigned int i = 0; i < wtx.vout.size(); i++)
+            if (IsWatchOnly(wtx.vout[i]) && !wtx.IsSpent(i))
+                nTotal += wtx.vout[i].nValue;
+    }
+    return nTotal;
+}
+
 void CWallet::WalletUpdateSpent(const CTransaction &tx)
 {
     // Anytime a signature is successfully verified, it's proof the outpoint is spent.
@@ -741,7 +786,7 @@ void CWallet::WalletUpdateSpent(const CTransaction &tx)
             if (mi != mapWallet.end())
             {
                 CWalletTx& wtx = (*mi).second;
-                if (!wtx.IsSpent(txin.prevout.n) && IsMine(wtx.vout[txin.prevout.n]))
+                if (!wtx.IsSpent(txin.prevout.n) && (IsMine(wtx.vout[txin.prevout.n]) || IsWatchOnly(wtx.vout[txin.prevout.n])))
                 {
                     LogPrintf("WalletUpdateSpent found spent coin %sbc %s\n", FormatMoney(wtx.GetCredit()).c_str(), wtx.GetHash().ToString().c_str());
                     wtx.MarkSpent(txin.prevout.n);
@@ -872,7 +917,7 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
             if (fFileBacked)
                 CWalletDB(strWalletFile).EraseAbandoned(hash);
         }
-        if (fExisted || IsMine(tx) || IsFromMe(tx))
+        if (fExisted || IsMine(tx) || IsFromMe(tx) || IsWatchOnlyTx(tx))
         {
             CWalletTx wtx(this,tx);
             // Get merkle branch if transaction was found in a block

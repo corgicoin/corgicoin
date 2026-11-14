@@ -272,6 +272,14 @@ public:
     int64 GetOldestKeyPoolTime();
     void GetAllReserveKeys(std::set<CKeyID>& setAddress);
 
+    // scripts followed but not spendable (importaddress, importpubkey): see AddWatchOnly
+    std::set<CScript> setWatchOnly;
+    bool AddWatchOnly(const CScript& script);
+    bool LoadWatchOnly(const CScript& script) { setWatchOnly.insert(script); return true; }
+    bool IsWatchOnly(const CTxOut& txout) const { return setWatchOnly.count(txout.scriptPubKey) != 0 && !::IsMine(*this, txout.scriptPubKey); }
+    bool IsWatchOnlyTx(const CTransaction& tx) const;
+    int64 GetWatchOnlyBalance(int nMinDepth) const;
+
     bool IsMine(const CTxIn& txin) const;
     int64 GetDebit(const CTxIn& txin) const;
     bool IsMine(const CTxOut& txout) const

@@ -186,6 +186,10 @@ Value logging(const Array& params, bool fHelp);
 
 Value getmetrics(const Array& params, bool fHelp);
 Value bumpfee(const Array& params, bool fHelp);
+Value importaddress(const Array& params, bool fHelp);
+Value importpubkey(const Array& params, bool fHelp);
+Value getwatchonlybalance(const Array& params, bool fHelp);
+Value listwatchonlyunspent(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -2367,6 +2371,11 @@ Value validateaddress(const Array& params, bool fHelp)
         ret.emplace_back("bech32", address.ToBech32());
         bool fMine = IsMine(*pwalletMain, dest);
         ret.emplace_back("ismine", fMine);
+        {
+            CScript scriptWatch;
+            scriptWatch.SetDestination(dest);
+            ret.emplace_back("iswatchonly", !fMine && pwalletMain->setWatchOnly.count(scriptWatch) != 0);
+        }
         if (fMine) {
             Object detail = std::visit(DescribeAddressVisitor(), dest);
             ret.insert(ret.end(), detail.begin(), detail.end());
@@ -3795,6 +3804,10 @@ static const CRPCCommand vRPCCommands[] =
 
     { "getmetrics",             &getmetrics,             true },
     { "bumpfee",                &bumpfee,                false },
+    { "importaddress",          &importaddress,          false },
+    { "importpubkey",           &importpubkey,           false },
+    { "getwatchonlybalance",    &getwatchonlybalance,    false },
+    { "listwatchonlyunspent",   &listwatchonlyunspent,   false },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -5236,6 +5249,113 @@ Value bumpfee(const Array& params, bool fHelp)
     return result;
 }
 
+// A script to watch, from an address or from the hex of the script itself
+static CScript WatchScriptFromParam(const std::string& str)
+{
+    CBitcoinAddress address(str);
+    CScript script;
+    if (address.IsValid())
+    {
+        script.SetDestination(address.Get());
+        return script;
+    }
+    if (IsHex(str) && !str.empty())
+    {
+        std::vector<unsigned char> v = ParseHex(str);
+        return CScript(v.begin(), v.end());
+    }
+    throw JSONRPCError(-5, "Invalid address or script");
+}
+
+static Value ImportWatchOnly(const CScript& script, bool fRescan)
+{
+    if (!pwalletMain->AddWatchOnly(script))
+        throw JSONRPCError(-4, "This script is already spendable by the wallet, or could not be saved");
+    if (fRescan)
+        pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
+    return Value::null;
+}
+
+Value importaddress(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "importaddress <address or script hex> [rescan=true]\n"
+            "Follows an address (or a script, given as hex) without holding its key: what is paid to it and what is\n"
+            "spent from it is tracked, and counted by getwatchonlybalance. It is never spent by this wallet.\n"
+            "With rescan the block chain is searched for the history, which can take a while.");
+    RPCTypeCheck(params, {str_type, bool_type});
+    return ImportWatchOnly(WatchScriptFromParam(params[0].get_str()), params.size() > 1 ? params[1].get_bool() : true);
+}
+
+Value importpubkey(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "importpubkey <public key hex> [rescan=true]\n"
+            "Follows the pay-to-public-key script and the address of a public key, without its private key (see importaddress).");
+    RPCTypeCheck(params, {str_type, bool_type});
+    if (!IsHex(params[0].get_str()))
+        throw JSONRPCError(-5, "Public key is not hex");
+    CPubKey pubkey(ParseHex(params[0].get_str()));
+    if (!pubkey.IsValid())
+        throw JSONRPCError(-5, "Invalid public key");
+    // both forms an output to this key takes: the key itself, and its address
+    CScript scriptKey;
+    scriptKey << pubkey << OP_CHECKSIG;
+    CScript scriptAddress;
+    scriptAddress.SetDestination(pubkey.GetID());
+    if (!pwalletMain->AddWatchOnly(scriptKey) || !pwalletMain->AddWatchOnly(scriptAddress))
+        throw JSONRPCError(-4, "This key is already spendable by the wallet, or could not be saved");
+    if (params.size() < 2 || params[1].get_bool())
+        pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
+    return Value::null;
+}
+
+Value getwatchonlybalance(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+            "getwatchonlybalance [minconf=1]\n"
+            "The total of the unspent outputs paid to the addresses and scripts imported with importaddress and importpubkey.");
+    RPCTypeCheck(params, {int_type});
+    return ValueFromAmount(pwalletMain->GetWatchOnlyBalance(params.size() > 0 ? params[0].get_int() : 1));
+}
+
+Value listwatchonlyunspent(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+            "listwatchonlyunspent [minconf=1]\n"
+            "The unspent outputs paid to imported addresses and scripts: txid, vout, address, amount, confirmations.");
+    RPCTypeCheck(params, {int_type});
+    const int nMinDepth = params.size() > 0 ? params[0].get_int() : 1;
+    Array results;
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+    for (const auto& item : pwalletMain->mapWallet)
+    {
+        const CWalletTx& wtx = item.second;
+        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < nMinDepth)
+            continue;
+        for (unsigned int i = 0; i < wtx.vout.size(); i++)
+        {
+            if (!pwalletMain->IsWatchOnly(wtx.vout[i]) || wtx.IsSpent(i))
+                continue;
+            Object entry;
+            entry.emplace_back("txid", item.first.GetHex());
+            entry.emplace_back("vout", (int)i);
+            CTxDestination dest;
+            if (ExtractDestination(wtx.vout[i].scriptPubKey, dest))
+                entry.emplace_back("address", CBitcoinAddress(dest).ToString());
+            entry.emplace_back("scriptPubKey", HexStr(wtx.vout[i].scriptPubKey.begin(), wtx.vout[i].scriptPubKey.end()));
+            entry.emplace_back("amount", ValueFromAmount(wtx.vout[i].nValue));
+            entry.emplace_back("confirmations", wtx.GetDepthInMainChain());
+            results.push_back(entry);
+        }
+    }
+    return results;
+}
+
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
 {
     ActiveRPC active(strMethod);
@@ -5361,6 +5481,10 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "estimatefee"            && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "logging"                && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "logging"                && n > 1) ConvertTo<Array>(params[1]);
+    if (strMethod == "importaddress"          && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "importpubkey"           && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "getwatchonlybalance"    && n > 0) ConvertTo<int64_t>(params[0]);
+    if (strMethod == "listwatchonlyunspent"   && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
