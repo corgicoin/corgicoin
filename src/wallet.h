@@ -42,6 +42,12 @@ enum class WalletFeature
     // What releases before this gate recorded for an HD wallet. Only used with -walletcompat.
     FEATURE_HD_LEGACY = 130000,
 
+    // A wallet whose passphrase is derived with scrypt (-walletkdf=scrypt). Older releases cannot derive that key: they would say
+    // "incorrect passphrase" for the right one, so the wallet is marked as needing this version and they say what is wrong.
+    // It is the first release that has it, 4.11.0.0: 4.10.0.0 is out without scrypt and would open such a wallet (the minimum
+    // version is compared with CLIENT_VERSION). static_assert in wallet.cpp.
+    FEATURE_SCRYPT_KDF = 4110000,
+
     FEATURE_LATEST = 4050000
 };
 

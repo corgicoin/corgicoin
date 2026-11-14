@@ -361,6 +361,12 @@ bool CWallet::AddCScript(const CScript& redeemScript)
 
 // Milliseconds since nStart, at least 1: the key-derivation calibration divides by this, and a fast machine can finish
 // a short derivation inside one clock tick
+// -walletkdf=scrypt: encrypt, and change the passphrase of, a wallet with the memory-hard derivation
+static bool WantScryptKDF()
+{
+    return GetArg("-walletkdf", "") == "scrypt";
+}
+
 static double ElapsedMillis(int64 nStart)
 {
     int64 nElapsed = GetTimeMillis() - nStart;
@@ -439,6 +445,17 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                 // passphrase must keep working in memory as well as on disk
                 const CMasterKey kOldMasterKey = pMasterKey.second;
 
+                // A wallet that uses scrypt stays on scrypt (going back to the weaker derivation by changing a passphrase would
+                // be a silent downgrade), and -walletkdf=scrypt moves a wallet to it.
+                const bool fScrypt = WantScryptKDF() || kOldMasterKey.nDerivationMethod == WALLET_DERIVATION_SCRYPT;
+                if (fScrypt)
+                {
+                    pMasterKey.second.nDerivationMethod = WALLET_DERIVATION_SCRYPT;
+                    pMasterKey.second.nDeriveIterations = WALLET_SCRYPT_N;
+                    LogPrintf("Wallet passphrase changed, derived with scrypt, N = %i\n", pMasterKey.second.nDeriveIterations);
+                }
+                else
+                {
                 // Re-encrypt with the standard derivation (this also migrates a v4.2-v4.7 PBKDF2 master key)
                 pMasterKey.second.nDerivationMethod = WALLET_DERIVATION_BYTESTOKEY_SHA512;
                 int64 nStartTime = GetTimeMillis();
@@ -453,9 +470,13 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                     pMasterKey.second.nDeriveIterations = 25000;
 
                 LogPrintf("Wallet passphrase changed to an nDeriveIterations of %i\n", pMasterKey.second.nDeriveIterations);
+                }
 
                 // The database can fail by returning false or by throwing (it cannot open its file): either way the
                 // old master key goes back, so memory and disk agree
+                // the wallet is marked as needing a release that has scrypt before the key that needs it is written
+                if (pMasterKey.second.nDerivationMethod == WALLET_DERIVATION_SCRYPT)
+                    SetMinVersion(WalletFeature::FEATURE_SCRYPT_KDF);
                 bool fPersisted = false;
                 try
                 {
@@ -597,6 +618,15 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     }
 
     CCrypter crypter;
+    if (WantScryptKDF())
+    {
+        // a fixed cost: the work is in the memory, not in a count that has to be timed
+        kMasterKey.nDerivationMethod = WALLET_DERIVATION_SCRYPT;
+        kMasterKey.nDeriveIterations = WALLET_SCRYPT_N;
+        LogPrintf("Encrypting Wallet with scrypt, N = %i\n", kMasterKey.nDeriveIterations);
+    }
+    else
+    {
     int64 nStartTime = GetTimeMillis();
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, 25000, kMasterKey.nDerivationMethod);
     kMasterKey.nDeriveIterations = 2500000 / ElapsedMillis(nStartTime);
@@ -609,6 +639,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         kMasterKey.nDeriveIterations = 25000;
 
     LogPrintf("Encrypting Wallet with an nDeriveIterations of %i\n", kMasterKey.nDeriveIterations);
+    }
 
     if (!crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, kMasterKey.nDeriveIterations, kMasterKey.nDerivationMethod))
         return false;
@@ -668,6 +699,8 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 
         // Encryption was introduced in version 0.4.0
         SetMinVersion(WalletFeature::FEATURE_WALLETCRYPT, pwalletdbEncryption.get(), true);
+        if (kMasterKey.nDerivationMethod == WALLET_DERIVATION_SCRYPT)
+            SetMinVersion(WalletFeature::FEATURE_SCRYPT_KDF, pwalletdbEncryption.get());
 
         if (fFileBacked)
         {
