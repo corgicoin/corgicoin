@@ -182,6 +182,15 @@ uint64 GetTotalBytesSent();
 void RecordBytesRecv(uint64 nBytes);
 void RecordBytesSent(uint64 nBytes);
 
+/** -maxuploadtarget: a cap on what the node sends in a 24 hour cycle (0: none). Once most of it is gone the node stops serving
+ *  old blocks (the load that a node that is syncing puts on it); once all of it is gone, it stops serving blocks. */
+void SetMaxUploadTarget(uint64 nBytesPerCycle);
+/** fHistorical: the question is about a block old enough that serving it is not part of keeping the network up to date. */
+bool UploadTargetReached(bool fHistorical);
+uint64 GetUploadTarget();
+uint64 GetUploadBytesLeft();
+int64 GetUploadTimeLeft();
+
 // How often to send a latency-measuring ping to each peer (BIP31).
 constexpr int64 PING_INTERVAL_SECONDS = 2 * 60;
 // Disconnect a BIP31 peer whose ping goes unanswered this long (-pingtimeout).
