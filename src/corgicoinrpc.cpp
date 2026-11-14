@@ -3120,6 +3120,34 @@ Value sethdseed(const Array& params, bool fHelp)
     return r;
 }
 
+Value gethdseed(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "gethdseed true
+"
+            "Return the wallet's HD recovery phrase. The wallet must be unlocked.
+"
+            "The argument must be true: it confirms you want the phrase shown.
+"
+            "Anyone who sees the phrase can spend every HD key in this wallet.");
+
+    if (params[0].type() != bool_type || !params[0].get_bool())
+        throw JSONRPCError(-8, "Pass true to confirm that you want the recovery phrase shown");
+    if (!pwalletMain->IsHDEnabled())
+        throw JSONRPCError(-4, "This wallet has no HD seed");
+    if (pwalletMain->IsLocked())
+        throw JSONRPCError(-13, "Error: Please enter the wallet passphrase with walletpassphrase first.");
+    std::string mnemonic = pwalletMain->GetHDMnemonic();
+    if (mnemonic.empty())
+        throw JSONRPCError(-4, "The recovery phrase is not available in memory");
+
+    Object r;
+    r.emplace_back("mnemonic", mnemonic);
+    r.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
+    return r;
+}
+
 Value getchaintips(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 0)
@@ -3409,6 +3437,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getnetworkinfo",         &getnetworkinfo,         true },
     { "getwalletinfo",          &getwalletinfo,          false },
     { "sethdseed",              &sethdseed,              false },
+    { "gethdseed",              &gethdseed,              false },
     { "getchaintips",           &getchaintips,           true },
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },
@@ -4289,6 +4318,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     // Special case non-string parameter types
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "gethdseed"              && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);

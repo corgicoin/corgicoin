@@ -98,12 +98,17 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& 
         return false;
     }
 
+    // Setting the seed the wallet already uses must not rewind the derivation index:
+    // the next address would repeat one already handed out.
+    const bool fSameSeed = fHDEnabled;
+    const CKeyID idBefore = hdSeedId;
+    const uint32_t nIndexBefore = nHDExternalIndex;
     if (!LoadHDMnemonic(mnemonic))
     {
         strError = "Could not derive the seed from the recovery phrase (key derivation failed)";
         return false;
     }
-    nHDExternalIndex = 0;
+    nHDExternalIndex = (fSameSeed && hdSeedId == idBefore) ? nIndexBefore : 0;
     SetMinVersion(WalletFeature::FEATURE_HD);
 
     if (fFileBacked)
@@ -1386,7 +1391,7 @@ static void ApproximateBestSubset(vector<pair<int64, pair<const CWalletTx*,unsig
         {
             for (unsigned int i = 0; i < vValue.size(); i++)
             {
-                if (nPass == 0 ? rand() % 2 : !vfIncluded[i])
+                if (nPass == 0 ? GetRandInt(2) : !vfIncluded[i])
                 {
                     nTotal += vValue[i].first;
                     vfIncluded[i] = true;
