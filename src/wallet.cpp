@@ -1936,7 +1936,9 @@ bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strEr
 
     // The next address is the first one never used. (The keys before it stay in the key store: coins sent to any of them
     // are the wallet's.)
-    nHDExternalIndex = static_cast<uint32_t>(nHighest + 1);
+    // (Never lower it: restoring the phrase the wallet already uses must not hand out addresses it has given out before,
+    // and those are not on the chain yet.)
+    nHDExternalIndex = std::max(nHDExternalIndex, static_cast<uint32_t>(nHighest + 1));
     if (fFileBacked)
         CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
     nUsedRet = nHighest + 1;
