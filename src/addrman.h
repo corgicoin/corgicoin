@@ -322,6 +322,12 @@ public:
             } else {
                 int nUBuckets = 0;
                 READWRITE(nUBuckets);
+                // The file is ours, and checksummed, but what it says is not trusted: a count past the tables below, or a negative
+                // one, would index outside them. A file like that is treated as unreadable (the caller starts with no addresses).
+                if (am->nNew < 0 || am->nNew > ADDRMAN_NEW_BUCKET_COUNT * ADDRMAN_NEW_BUCKET_SIZE ||
+                    am->nTried < 0 || am->nTried > ADDRMAN_TRIED_BUCKET_COUNT * ADDRMAN_TRIED_BUCKET_SIZE ||
+                    nUBuckets < 0 || nUBuckets > ADDRMAN_NEW_BUCKET_COUNT)
+                    throw std::ios_base::failure("CAddrMan: a count in the address file is out of range");
                 am->nIdCount = 0;
                 am->mapInfo.clear();
                 am->mapAddr.clear();
@@ -367,10 +373,14 @@ public:
                     std::set<int> &vNew = am->vvNew[b];
                     int nSize = 0;
                     READWRITE(nSize);
+                    if (nSize < 0 || nSize > am->nNew)
+                        throw std::ios_base::failure("CAddrMan: a bucket size in the address file is out of range");
                     for (int n = 0; n < nSize; n++)
                     {
                         int nIndex = 0;
                         READWRITE(nIndex);
+                        if (nIndex < 0 || nIndex >= am->nNew)
+                            throw std::ios_base::failure("CAddrMan: an address index in the address file is out of range");
                         CAddrInfo &info = am->mapInfo[nIndex];
                         if (nUBuckets == ADDRMAN_NEW_BUCKET_COUNT && info.nRefCount < ADDRMAN_NEW_BUCKETS_PER_ADDRESS)
                         {

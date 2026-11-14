@@ -529,6 +529,7 @@ if(BUILD_TESTS)
         src/test/getarg_tests.cpp
         src/test/key_tests.cpp
         src/test/miner_tests.cpp
+        src/test/addrman_tests.cpp
         src/test/mruset_tests.cpp
         src/test/multisig_tests.cpp
         src/test/netbase_tests.cpp
