@@ -1347,9 +1347,14 @@ int GetNumBlocksOfPeers()
     return std::max(cPeerBlockCounts.median(), Checkpoints::GetTotalBlocksEstimate());
 }
 
+CBigNum bnMinimumChainWork = 0;
+
 bool IsInitialBlockDownload()
 {
-    if (pindexBest == nullptr || nBestHeight < Checkpoints::GetTotalBlocksEstimate())
+    // A node that has only been given a chain with less work than the floor has not caught up, however recent its last block
+    // looks: a peer feeding it a short, cheap chain must not be able to make it think it is finished (and start mining on it,
+    // serving templates, or taking payments).
+    if (pindexBest == nullptr || nBestHeight < Checkpoints::GetTotalBlocksEstimate() || pindexBest->bnChainWork < bnMinimumChainWork)
         return true;
     static int64 nLastUpdate;
     static CBlockIndex* pindexLastBest;

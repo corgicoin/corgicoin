@@ -278,6 +278,7 @@ std::string HelpMessage()
         "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 62555)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
+        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -zmqpubhashblock=<address> " + _("Publish the hash of each new best block on a ZeroMQ socket, e.g. tcp://127.0.0.1:28332") + "\n" +
@@ -437,6 +438,14 @@ bool AppInit2()
             return InitError(strprintf(_("Invalid amount for -paytxfee=<amount>: '%s'"), mapArgs["-paytxfee"].c_str()));
         if (nTransactionFee > 25.0 * COIN)
             InitWarning(_("Warning: -paytxfee is set very high. This is the transaction fee you will pay if you send a transaction."));
+    }
+
+    if (mapArgs.count("-minimumchainwork"))
+    {
+        const std::string strWork = mapArgs["-minimumchainwork"];
+        if (strWork.empty() || strWork.size() > 64 || strWork.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+            return InitError(strprintf(_("Invalid -minimumchainwork=<hex>: '%s'"), strWork.c_str()));
+        bnMinimumChainWork.SetHex(strWork);
     }
 
     if (mapArgs.count("-mininput"))

@@ -3039,6 +3039,7 @@ Value getblockchaininfo(const Array& params, bool fHelp)
         obj.emplace_back("chainwork", pindexBest->bnChainWork.GetHex());
     }
     obj.emplace_back("initialblockdownload", IsInitialBlockDownload());
+    obj.emplace_back("minimumchainwork", bnMinimumChainWork.GetHex());
 
     Object softforks;
     softforks.emplace_back("lwma", SoftForkStatus(GetLwmaForkHeight()));
