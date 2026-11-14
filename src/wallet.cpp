@@ -103,45 +103,78 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& 
     const bool fSameSeed = fHDEnabled;
     const CKeyID idBefore = hdSeedId;
     const uint32_t nIndexBefore = nHDExternalIndex;
+
+    // Everything the seed change touches in memory, so a failed write can put it back: the wallet
+    // must never run on a seed that is not the one on disk.
+    const CExtKey keyBefore = hdMasterKey;
+    const bool fEnabledBefore = fHDEnabled;
+    const std::string mnemonicBefore = strHDMnemonic;
+    const std::vector<unsigned char> cryptedBefore = vchCryptedHDMnemonic;
+    auto Restore = [&]() {
+        hdMasterKey = keyBefore;
+        fHDEnabled = fEnabledBefore;
+        strHDMnemonic = mnemonicBefore;
+        hdSeedId = idBefore;
+        nHDExternalIndex = nIndexBefore;
+        vchCryptedHDMnemonic = cryptedBefore;
+    };
+
     if (!LoadHDMnemonic(mnemonic))
     {
+        // (it leaves the wallet as it was when the derivation fails)
         strError = "Could not derive the seed from the recovery phrase (key derivation failed)";
         return false;
     }
     nHDExternalIndex = (fSameSeed && hdSeedId == idBefore) ? nIndexBefore : 0;
-    SetMinVersion(WalletFeature::FEATURE_HD);
 
     if (fFileBacked)
     {
+        // Seed id, chain index, phrase and minimum version go in as one unit: a crash or a failed
+        // write leaves the old seed in the file, never half of the new one.
         CWalletDB walletdb(strWalletFile);
-        if (!walletdb.WriteHDSeedId(hdSeedId) || !walletdb.WriteHDChain(nHDExternalIndex))
+        if (!walletdb.TxnBegin())
         {
-            strError = "Failed to write HD seed to wallet";
+            Restore();
+            strError = "Failed to start a wallet transaction";
             return false;
         }
-        if (IsCrypted())
+        bool fOk = walletdb.WriteHDSeedId(hdSeedId) && walletdb.WriteHDChain(nHDExternalIndex);
+        if (fOk && IsCrypted())
         {
             std::vector<unsigned char> ct;
             CSecret sec(mnemonic.begin(), mnemonic.end());
             if (!EncryptSecret(vMasterKey, sec, HDSeedIV(hdSeedId), ct))
             {
+                walletdb.TxnAbort();
+                Restore();
                 strError = "Failed to encrypt HD seed";
                 return false;
             }
             vchCryptedHDMnemonic = ct;
-            if (!walletdb.WriteCryptedHDMnemonic(ct))
-            {
-                strError = "Failed to write encrypted HD seed";
-                return false;
-            }
-            walletdb.EraseHDMnemonic(); // no plaintext phrase on disk
+            fOk = walletdb.WriteCryptedHDMnemonic(ct) && walletdb.EraseHDMnemonic(); // no plaintext phrase on disk
         }
-        else if (!walletdb.WriteHDMnemonic(mnemonic))
+        else if (fOk)
+            fOk = walletdb.WriteHDMnemonic(mnemonic);
+        if (fOk)
+            fOk = SetMinVersion(WalletFeature::FEATURE_HD, &walletdb);
+        if (fRegTest && GetArg("-testwalletwritefault", "") == "hdseed")
+            fOk = false; // test hook (regtest only): fail the write so the rollback can be checked
+        if (!fOk)
         {
+            walletdb.TxnAbort();
+            Restore();
             strError = "Failed to write HD seed to wallet";
             return false;
         }
+        if (!walletdb.TxnCommit())
+        {
+            Restore();
+            strError = "Failed to commit the HD seed to the wallet file";
+            return false;
+        }
     }
+    else
+        SetMinVersion(WalletFeature::FEATURE_HD);
     return true;
 }
 
@@ -160,8 +193,8 @@ CPubKey CWallet::GenerateNewKey()
         if (!AddKey(key))
             throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
         nHDExternalIndex++;
-        if (fFileBacked)
-            CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
+        if (fFileBacked && !CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex))
+            throw std::runtime_error("CWallet::GenerateNewKey() : could not save the HD index");
         if (fCompressed)
             SetMinVersion(WalletFeature::FEATURE_COMPRPUBKEY);
         return key.GetPubKey();
@@ -558,8 +591,20 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         {
             pwalletdbEncryption = std::make_unique<CWalletDB>(strWalletFile);
             if (!pwalletdbEncryption->TxnBegin())
+            {
+                mapMasterKeys.erase(nMasterKeyMaxID--);
+                pwalletdbEncryption.reset();
                 return false;
-            pwalletdbEncryption->WriteMasterKey(nMasterKeyMaxID, kMasterKey);
+            }
+            if (!pwalletdbEncryption->WriteMasterKey(nMasterKeyMaxID, kMasterKey))
+            {
+                pwalletdbEncryption->TxnAbort();
+                pwalletdbEncryption.reset();
+                mapMasterKeys.erase(nMasterKeyMaxID--);
+                LogPrintf("EncryptWallet() : could not write the master key
+");
+                return false;
+            }
         }
 
         if (!EncryptKeys(vMasterKey))
@@ -583,8 +628,11 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             vchCryptedHDMnemonic = ct;
             if (fFileBacked)
             {
-                pwalletdbEncryption->WriteCryptedHDMnemonic(ct);
-                pwalletdbEncryption->EraseHDMnemonic();
+                if (!pwalletdbEncryption->WriteCryptedHDMnemonic(ct) || !pwalletdbEncryption->EraseHDMnemonic())
+                {
+                    pwalletdbEncryption->TxnAbort();
+                    exit(1); // keys are encrypted in memory only: die and let the user reload the unencrypted wallet
+                }
             }
         }
 

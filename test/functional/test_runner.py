@@ -43,6 +43,7 @@ TESTS = [
     "rpc_hostile_inputs.py",
     "wallet_hd_phrase.py",
     "wallet_hdseed_index.py",
+    "wallet_hdseed_atomic.py",
     "rpc_http_auth.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
