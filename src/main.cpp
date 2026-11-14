@@ -685,7 +685,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             remove(*ptxOld);
         }
         addUnchecked(hash, tx);
-        PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime(), fCheckInputs };
+        PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime(), fCheckInputs, nBestHeight };
         mapEntry[hash] = entry;
         nPoolBytes += entry.nSize;
         Trim();
@@ -798,6 +798,71 @@ std::vector<std::pair<double, uint256> > CTxMemPool::EvictionCandidates() const
     }
     std::sort(v.begin(), v.end());
     return v;
+}
+
+CFeeEstimator feeEstimator;
+
+CFeeEstimator::CFeeEstimator()
+{
+    double bound = (double)MIN_RELAY_TX_FEE;
+    for (int i = 0; i < NBUCKETS; i++, bound *= 1.5)
+        vBound[i] = bound;
+    Clear();
+}
+
+void CFeeEstimator::Clear()
+{
+    memset(mConfirmed, 0, sizeof(mConfirmed));
+    memset(vTotal, 0, sizeof(vTotal));
+}
+
+int CFeeEstimator::Bucket(double nFeeRate) const
+{
+    int b = 0;
+    while (b + 1 < NBUCKETS && nFeeRate >= vBound[b + 1])
+        b++;
+    return b;
+}
+
+void CFeeEstimator::Decay()
+{
+    for (int i = 0; i < NBUCKETS; i++)
+    {
+        vTotal[i] *= DECAY;
+        for (int n = 0; n <= MAX_TARGET; n++)
+            mConfirmed[n][i] *= DECAY;
+    }
+}
+
+void CFeeEstimator::Record(int nBlocks, double nFeeRate)
+{
+    if (nBlocks < 1 || nFeeRate < (double)MIN_RELAY_TX_FEE)
+        return;
+    const int b = Bucket(nFeeRate);
+    vTotal[b] += 1;
+    for (int n = std::min(nBlocks, MAX_TARGET + 1); n <= MAX_TARGET; n++)
+        mConfirmed[n][b] += 1;
+}
+
+double CFeeEstimator::Estimate(int nTarget) const
+{
+    if (nTarget < 1 || nTarget > MAX_TARGET)
+        return -1;
+    // From the highest fee rate down, take in one bucket at a time: all the transactions paying at least this much. The answer is
+    // the lowest bound that still gives the success rate, found when going lower stops doing so.
+    double dTotal = 0, dConfirmed = 0, dAnswer = -1;
+    for (int b = NBUCKETS - 1; b >= 0; b--)
+    {
+        dTotal += vTotal[b];
+        dConfirmed += mConfirmed[nTarget][b];
+        if (dTotal < MIN_SAMPLES)
+            continue;
+        if (dConfirmed / dTotal >= MIN_SUCCESS)
+            dAnswer = vBound[b];
+        else
+            break;
+    }
+    return dAnswer;
 }
 
 unsigned int CTxMemPool::Trim()
@@ -2175,6 +2240,22 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
     // Add to current best branch
     pindexNew->pprev->pnext = pindexNew;
     NotifyConnected();
+
+    // What this block teaches about fees: the transactions that were waiting in the pool, and how many blocks each waited
+    {
+        LOCK(mempool.cs);
+        feeEstimator.Decay();
+        for (const CTransaction& tx : vtx)
+        {
+            if (tx.IsCoinBase())
+                continue;
+            auto itEntry = mempool.mapEntry.find(tx.GetHash());
+            if (itEntry == mempool.mapEntry.end())
+                continue;
+            feeEstimator.Record(std::max(1, pindexNew->nHeight - itEntry->second.nHeight),
+                                (double)itEntry->second.nFee * 1000.0 / std::max<unsigned int>(1, itEntry->second.nSize));
+        }
+    }
 
     // Delete redundant memory transactions
     for (CTransaction& tx : vtx)
