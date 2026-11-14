@@ -286,6 +286,7 @@ std::string HelpMessage()
         "  -zmqpubrawtx=<address>     " + _("Publish each such transaction, serialized") + "\n" +
         "  -upgradewallet         " + _("Upgrade wallet to latest format") + "\n" +
         "  -keypool=<n>           " + _("Set key pool size to <n> (default: 100)") + "\n" +
+        "  -walletcompat          " + _("Record the old low minimum version in HD wallets so releases from before HD wallets can open them (they ignore the HD seed: use only on purpose)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
         "  -checkblocks=<n>       " + _("How many blocks to check at startup (default: 2500, 0 = all)") + "\n" +
         "  -checklevel=<n>        " + _("How thorough the block verification is (0-6, default: 1)") + "\n" +
@@ -696,9 +697,9 @@ bool AppInit2()
         int nMaxVersion = GetArg("-upgradewallet", 0);
         if (nMaxVersion == 0) // the -upgradewallet without argument case
         {
-            LogPrintf("Performing wallet upgrade to %i\n", static_cast<int>(WalletFeature::FEATURE_LATEST));
+            LogPrintf("Performing wallet upgrade to %i\n", static_cast<int>(LatestWalletFeature()));
             nMaxVersion = CLIENT_VERSION;
-            pwalletMain->SetMinVersion(WalletFeature::FEATURE_LATEST); // permanently upgrade the wallet immediately
+            pwalletMain->SetMinVersion(LatestWalletFeature()); // permanently upgrade the wallet immediately
         }
         else
             LogPrintf("Allowing wallet upgrade up to %i\n", nMaxVersion);

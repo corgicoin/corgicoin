@@ -104,7 +104,7 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& 
         return false;
     }
     nHDExternalIndex = 0;
-    SetMinVersion(WalletFeature::FEATURE_HD);
+    SetMinVersion(HDWalletFeature());
 
     if (fFileBacked)
     {
@@ -454,6 +454,16 @@ public:
     )
 };
 
+WalletFeature HDWalletFeature()
+{
+    return GetBoolArg("-walletcompat", false) ? WalletFeature::FEATURE_HD_LEGACY : WalletFeature::FEATURE_HD;
+}
+
+WalletFeature LatestWalletFeature()
+{
+    return GetBoolArg("-walletcompat", false) ? WalletFeature::FEATURE_HD_LEGACY : WalletFeature::FEATURE_LATEST;
+}
+
 bool CWallet::SetMinVersion(WalletFeature nVersion, CWalletDB* pwalletdbIn, bool fExplicit)
 {
     if (nWalletVersion >= static_cast<int>(nVersion))
@@ -461,7 +471,7 @@ bool CWallet::SetMinVersion(WalletFeature nVersion, CWalletDB* pwalletdbIn, bool
 
     // when doing an explicit upgrade, if we pass the max version permitted, upgrade all the way
     if (fExplicit && static_cast<int>(nVersion) > nWalletMaxVersion)
-            nVersion = WalletFeature::FEATURE_LATEST;
+            nVersion = LatestWalletFeature();
 
     nWalletVersion = static_cast<int>(nVersion);
 
@@ -1790,6 +1800,22 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
         return nLoadWalletRet;
     fFirstRunRet = !vchDefaultKey.IsValid();
 
+    {
+        if (GetBoolArg("-walletcompat", false))
+        {
+            // Put the old number back, so that an older release can open the wallet (the gate cannot otherwise be undone)
+            if (nWalletVersion > static_cast<int>(WalletFeature::FEATURE_HD_LEGACY))
+            {
+                nWalletVersion = static_cast<int>(WalletFeature::FEATURE_HD_LEGACY);
+                if (fFileBacked)
+                    CWalletDB(strWalletFile).WriteMinVersion(nWalletVersion);
+            }
+            LogPrintf("-walletcompat: the wallet's minimum version is %d; releases from before HD wallets will open it and ignore the HD seed
+", nWalletVersion);
+        }
+        else
+            SetMinVersion(WalletFeature::FEATURE_HD);
+    }
     CreateThread(ThreadFlushWalletDB, &strWalletFile);
     return DB_LOAD_OK;
 }
