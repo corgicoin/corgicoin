@@ -3124,12 +3124,9 @@ Value gethdseed(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "gethdseed true
-"
-            "Return the wallet's HD recovery phrase. The wallet must be unlocked.
-"
-            "The argument must be true: it confirms you want the phrase shown.
-"
+            "gethdseed true\n"
+            "Return the wallet's HD recovery phrase. The wallet must be unlocked.\n"
+            "The argument must be true: it confirms you want the phrase shown.\n"
             "Anyone who sees the phrase can spend every HD key in this wallet.");
 
     if (params[0].type() != bool_type || !params[0].get_bool())
