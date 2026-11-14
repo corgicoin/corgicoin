@@ -92,6 +92,46 @@ Value dumpprivkey(const Array& params, bool fHelp)
     return CBitcoinSecret(vchSecret, fCompressed).ToString();
 }
 
+Value exportwalletencrypted(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 2)
+        throw runtime_error(
+            "exportwalletencrypted <filename> <passphrase>\n"
+            "Writes the wallet's keys, recovery phrase, labels, key dates and watch-only entries to a new file, encrypted with\n"
+            "a key made from <passphrase> (scrypt, AES-256-GCM). Unlike dumpwallet, the file is safe to keep on a USB stick or in\n"
+            "the cloud, as long as the passphrase is long and is not kept with it (at least 8 characters). Restore with\n"
+            "importwalletencrypted. The wallet must be unlocked. The passphrase is an argument here, so it shows in a shell's\n"
+            "history and in the process list if you type it on a command line: call it from a script or a JSON-RPC client.");
+    EnsureWalletIsUnlocked();
+    std::filesystem::path path = std::filesystem::absolute(params[0].get_str());
+    string strError;
+    if (!ExportEncryptedBackup(pwalletMain.get(), path, params[1].get_str(), strError))
+        throw JSONRPCError(-8, strError);
+    Object result;
+    result.emplace_back("filename", path.string());
+    return result;
+}
+
+Value importwalletencrypted(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 2)
+        throw runtime_error(
+            "importwalletencrypted <filename> <passphrase>\n"
+            "Adds what an encrypted backup (exportwalletencrypted) holds and this wallet does not: keys, labels, watch-only\n"
+            "entries and, for a wallet with no recovery phrase yet, the phrase. Refuses a backup of another network, of another\n"
+            "recovery phrase, with the wrong passphrase, or that has been changed. Then searches the chain from the oldest key's\n"
+            "date. The wallet must be unlocked. Returns {keys_added, labels}.");
+    EnsureWalletIsUnlocked();
+    int nKeys = 0, nLabels = 0;
+    string strError;
+    if (!ImportEncryptedBackup(pwalletMain.get(), std::filesystem::absolute(params[0].get_str()), params[1].get_str(), nKeys, nLabels, strError))
+        throw JSONRPCError(-8, strError);
+    Object result;
+    result.emplace_back("keys_added", nKeys);
+    result.emplace_back("labels", nLabels);
+    return result;
+}
+
 Value dumpwallet(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
