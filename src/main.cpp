@@ -3303,6 +3303,16 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (!vRecv.empty())
             vRecv >> pfrom->nStartingHeight;
 
+        // Dogecoin nodes use the same magic bytes as this chain, so they connect, take a slot, and can never agree on a block.
+        // Turn them away by what they call themselves (a different chain's node that hides its name is not caught here).
+        if (pfrom->strSubVer.find("Shibetoshi") != std::string::npos || pfrom->strSubVer.find("Dogecoin") != std::string::npos ||
+            pfrom->strSubVer.find("dogecoin") != std::string::npos)
+        {
+            LogPrintf("partner %s is a node of another chain (%s); disconnecting\n", pfrom->addr.ToString().c_str(), pfrom->strSubVer.c_str());
+            pfrom->fDisconnect = true;
+            return false;
+        }
+
         if (pfrom->fInbound && addrMe.IsRoutable())
         {
             pfrom->addrLocal = addrMe;
