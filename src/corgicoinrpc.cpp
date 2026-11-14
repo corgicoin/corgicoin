@@ -39,6 +39,97 @@ using namespace json_spirit;
 void ThreadRPCServer2(void* parg);
 
 static std::string strRPCUserColonPass;
+static std::string strRPCCookieFile;   // set while the server authenticates with a cookie
+
+// Cookie authentication: with no -rpcuser and no -rpcpassword the server makes a random password, writes it to
+// <datadir>/.cookie (readable by its owner only) and removes the file at shutdown. The command line client reads it.
+static const char* COOKIE_USER = "__cookie__";
+static std::filesystem::path GetCookiePath() { return std::filesystem::path(GetDataDir()) / ".cookie"; }
+
+static bool GenerateAuthCookie(std::string& strUserPassRet)
+{
+    unsigned char rand[32];
+    if (!GetRandBytesChecked(rand, 32))
+        return false;
+    static const char* hex = "0123456789abcdef";
+    std::string strPass;
+    for (int i = 0; i < 32; i++) { strPass += hex[rand[i] >> 4]; strPass += hex[rand[i] & 15]; }
+    OPENSSL_cleanse(rand, sizeof(rand));
+    strUserPassRet = std::string(COOKIE_USER) + ":" + strPass;
+
+    const std::filesystem::path path = GetCookiePath();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+#ifndef WIN32
+    // create it closed to everyone else from the start (not written, then chmod)
+    int fd = open(path.string().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0)
+        return false;
+    ssize_t n = write(fd, strUserPassRet.data(), strUserPassRet.size());
+    close(fd);
+    if (n != (ssize_t)strUserPassRet.size())
+        return false;
+#else
+    std::ofstream file(path.string().c_str(), std::ios::out | std::ios::trunc | std::ios::binary);
+    file << strUserPassRet;
+    file.close();
+    if (!file)
+        return false;
+#endif
+    strRPCCookieFile = path.string();
+    return true;
+}
+
+static void DeleteAuthCookie()
+{
+    if (strRPCCookieFile.empty())
+        return;
+    std::error_code ec;
+    std::filesystem::remove(strRPCCookieFile, ec);
+    strRPCCookieFile.clear();
+}
+
+static bool ReadAuthCookie(std::string& strUserPassRet)
+{
+    std::ifstream file(GetCookiePath().string().c_str(), std::ios::in | std::ios::binary);
+    if (!file)
+        return false;
+    std::getline(file, strUserPassRet);
+    return strUserPassRet.compare(0, strlen(COOKIE_USER) + 1, std::string(COOKIE_USER) + ":") == 0;
+}
+
+// Failed logins per client address: after -rpcmaxauthfailures (default 20) in a minute the address is refused for the
+// rest of that minute, even with the right password. (A sleep per failure would tie up a handler thread instead.)
+static CCriticalSection cs_rpcAuthFailures;
+static std::map<std::string, std::pair<int, int64>> mapRPCAuthFailures;   // address -> (failures, start of window)
+static const int64 RPC_AUTH_WINDOW = 60;
+
+static bool RPCAuthLockedOut(const std::string& strAddr)
+{
+    LOCK(cs_rpcAuthFailures);
+    auto it = mapRPCAuthFailures.find(strAddr);
+    if (it == mapRPCAuthFailures.end())
+        return false;
+    if (GetTime() - it->second.second >= RPC_AUTH_WINDOW)
+    {
+        mapRPCAuthFailures.erase(it);
+        return false;
+    }
+    return it->second.first >= std::max<int64>(1, GetArg("-rpcmaxauthfailures", 20));
+}
+
+static void RPCAuthFailed(const std::string& strAddr)
+{
+    LOCK(cs_rpcAuthFailures);
+    const int64 now = GetTime();
+    if (mapRPCAuthFailures.size() > 1000)
+        for (auto it = mapRPCAuthFailures.begin(); it != mapRPCAuthFailures.end();)
+            it = (now - it->second.second >= RPC_AUTH_WINDOW) ? mapRPCAuthFailures.erase(it) : std::next(it);
+    auto& e = mapRPCAuthFailures[strAddr];
+    if (now - e.second >= RPC_AUTH_WINDOW || e.first == 0)
+        e = std::make_pair(0, now);
+    e.first++;
+}
 
 static int64 nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
@@ -3927,7 +4018,18 @@ void ThreadRPCServer2(void* parg)
     LogPrintf("ThreadRPCServer started\n");
 
     strRPCUserColonPass = mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"];
-    if (mapArgs["-rpcpassword"] == "")
+    if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && !GetBoolArg("-norpccookie", false))
+    {
+        if (!GenerateAuthCookie(strRPCUserColonPass))
+        {
+            uiInterface.ThreadSafeMessageBox(strprintf(_("Could not write the RPC cookie file %s"), GetCookiePath().string().c_str()),
+                _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+            StartShutdown();
+            return;
+        }
+        LogPrintf("ThreadRPCServer: no rpcuser or rpcpassword set, authenticating with the cookie in %s\n", strRPCCookieFile.c_str());
+    }
+    else if (mapArgs["-rpcpassword"] == "")
     {
         unsigned char rand_pwd[32];
         GetRandBytes(rand_pwd, 32);
@@ -4201,8 +4303,15 @@ void ThreadRPCServer3(void* parg)
             conn->stream() << HTTPReply(401, "", false) << std::flush;
             break;
         }
+        if (RPCAuthLockedOut(conn->peer_address_to_string()))
+        {
+            LogPrintf("ThreadRPCServer too many failed logins from %s, refused\n", conn->peer_address_to_string().c_str());
+            conn->stream() << HTTPReply(401, "", false) << std::flush;
+            break;
+        }
         if (!HTTPAuthorized(mapHeaders))
         {
+            RPCAuthFailed(conn->peer_address_to_string());
             LogPrintf("ThreadRPCServer incorrect password attempt from %s\n", conn->peer_address_to_string().c_str());
             /* Deter brute-forcing short passwords.
                If this results in a DOS the user really
@@ -4294,7 +4403,9 @@ json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_s
 
 Object CallRPC(const string& strMethod, const Array& params)
 {
-    if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "")
+    std::string strCookie;
+    const bool fCookie = mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "" && ReadAuthCookie(strCookie);
+    if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "" && !fCookie)
         throw runtime_error(strprintf(
             _("You must set rpcpassword=<password> in the configuration file:\n%s\n"
               "If the file does not exist, create it with owner-readable-only file permissions."),
@@ -4312,7 +4423,7 @@ Object CallRPC(const string& strMethod, const Array& params)
         throw runtime_error("couldn't connect to server");
 
     // HTTP basic authentication
-    string strUserPass64 = EncodeBase64(mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"]);
+    string strUserPass64 = EncodeBase64(fCookie ? strCookie : mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"]);
     map<string, string> mapRequestHeaders;
     mapRequestHeaders["Authorization"] = string("Basic ") + strUserPass64;
 

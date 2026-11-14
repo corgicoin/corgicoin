@@ -275,6 +275,8 @@ std::string HelpMessage()
 #endif
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
+        "  -norpccookie           " + _("Without -rpcuser and -rpcpassword, refuse to serve RPC instead of making a cookie file (<datadir>/.cookie) the client reads") + "\n" +
+        "  -rpcmaxauthfailures=<n> " + _("Refuse a client address for a minute after <n> failed logins (default: 20)") + "\n" +
         "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 62555)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
         "  -rpcbind=<ip>          " + _("Listen for JSON-RPC connections on this address only (repeatable; default: loopback, or every interface if -rpcallowip is set)") + "\n" +
