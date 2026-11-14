@@ -3384,13 +3384,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             pfrom->PushGetBlocks(pindexBest, uint256(0));
         }
 
-        // Relay alerts
-        {
-            LOCK(cs_mapAlerts);
-            for (std::pair<const uint256, CAlert>& item : mapAlerts)
-                item.second.RelayTo(pfrom);
-        }
-
         pfrom->fSuccessfullyConnected = true;
 
         LogPrintf("receive version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", pfrom->nVersion, pfrom->nStartingHeight, addrMe.ToString().c_str(), addrFrom.ToString().c_str(), pfrom->addr.ToString().c_str());
@@ -3860,19 +3853,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
     else if (strCommand == "alert")
     {
-        CAlert alert;
-        vRecv >> alert;
-
-        if (alert.ProcessAlert())
-        {
-            // Relay
-            pfrom->setKnown.insert(alert.GetHash());
-            {
-                LOCK(cs_vNodes);
-                for (CNode* pnode : vNodes)
-                    alert.RelayTo(pnode);
-            }
-        }
+        // Retired. Alerts were signed with a key that is not secret, every one cost a signature check, and they could put
+        // any text in the status bar of every node. The message is read and dropped: not parsed, not checked, not relayed.
+        LogPrint(LOG_NET, "ignoring an alert from %s (alerts are retired)\n", pfrom->addr.ToString().c_str());
     }
 
 
