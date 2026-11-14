@@ -287,6 +287,8 @@ std::string HelpMessage()
         "  -zmqpubrawtx=<address>     " + _("Publish each such transaction, serialized") + "\n" +
         "  -upgradewallet         " + _("Upgrade wallet to latest format") + "\n" +
         "  -keypool=<n>           " + _("Set key pool size to <n> (default: 100)") + "\n" +
+        "  -maxmempoolkb=<n>      " + _("Keep the transaction memory pool under <n> kB, dropping the lowest fee rate first (default: 100000)") + "\n" +
+        "  -mempoolexpiry=<n>     " + _("Drop transactions that have waited <n> hours in the memory pool (default: 72)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
         "  -checkblocks=<n>       " + _("How many blocks to check at startup (default: 2500, 0 = all)") + "\n" +
         "  -checklevel=<n>        " + _("How thorough the block verification is (0-6, default: 1)") + "\n" +

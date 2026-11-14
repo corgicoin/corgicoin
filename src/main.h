@@ -1706,6 +1706,17 @@ public:
     /** Operator adjustments from prioritisetransaction: priority and fee deltas that only steer block assembly and
      *  relay admission. Kept by txid (so a transaction can be prioritised before it arrives), dropped when it leaves. */
     std::map<uint256, std::pair<double, int64> > mapDeltas;
+    /** What the size limit and the expiry need to know about each entry: its fee (before any prioritisetransaction
+     *  delta), size in bytes and the time it was accepted. */
+    struct PoolEntry { int64 nFee; unsigned int nSize; int64 nTime; };
+    std::map<uint256, PoolEntry> mapEntry;
+    size_t nPoolBytes = 0;
+
+    /** Drop entries older than -mempoolexpiry hours (default 72) with whatever spends them, then, while the pool holds more
+     *  than -maxmempoolkb (default 100000), the leaf entry with the lowest fee per byte. Returns how many were dropped. */
+    unsigned int Trim();
+    /** Remove a transaction and every pool transaction that spends it. */
+    void RemoveRecursive(const uint256& hash);
 
     bool accept(CTxDB& txdb, CTransaction &tx,
                 bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck = nullptr);
