@@ -47,6 +47,8 @@ TESTS = [
     "rpc_mempool_cap.py",
     "wallet_rbf.py",
     "wallet_commit_dryrun.py",
+
+    "wallet_maxtxfee.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 
