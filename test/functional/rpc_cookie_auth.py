@@ -60,8 +60,7 @@ class RPCCookieAuthTest(CorgiTestFramework):
         conf = os.path.join(node.datadir, "nocreds.conf")
         cookie = os.path.join(node.datadir, "regtest", ".cookie")
         with open(conf, "w") as f:
-            f.write("regtest=1
-")
+            f.write("regtest=1"+chr(10))
         node.stop()
 
         self.log("no rpcuser or rpcpassword: the node serves with a cookie")
