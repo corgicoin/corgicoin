@@ -49,7 +49,9 @@ class GetWorkTest(CorgiTestFramework):
         assert_equal(node.getwork(solved_stale), False)
         assert_equal(node.getblockcount(), 4)
         garbage = bytearray(bytes.fromhex(self.solve(node.getwork())))
-        garbage[8:12] = b"\xff\xff\xff\xff"     # a different merkle root than any work handed out
+        # inside the merkle root: not work the node handed out. (Only the time and nonce of a submission are used; the rest
+        # comes from the node's own copy of the work, which is why changing the previous-block hash changes nothing.)
+        garbage[40:44] = b"\xff\xff\xff\xff"
         try:
             assert_equal(node.getwork(bytes(garbage).hex()), False)
         except Exception as e:
