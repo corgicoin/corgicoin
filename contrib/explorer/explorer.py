@@ -538,7 +538,7 @@ def svg_line_chart(values, color="#4caf50", w=920, h=220, pad=34, fmt="{:.4g}"):
     )
 
 
-def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
+def create_app(rpc: CorgiRPC, db_path: Path, show_peer_addresses: bool = False) -> Flask:
     app = Flask(__name__)
     app.jinja_loader = None  # templates are inline
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY
@@ -701,6 +701,10 @@ def create_app(rpc: CorgiRPC, db_path: Path) -> Flask:
             peers = rpc.call("getpeerinfo")
         except Exception:
             pass
+        if peers and not show_peer_addresses:
+            # A public page that lists who the node is connected to tells anyone which machines to attack or watch, and who runs
+            # a node. Show what the peers are (version, height, ping), not where they are.
+            peers = [dict(p, addr="peer %d" % (i + 1)) for i, p in enumerate(peers)]
         try:
             mempool = rpc.call("getrawmempool") or []
         except Exception:
@@ -926,6 +930,9 @@ def main():
     ap.add_argument("--db", default="explorer.db")
     ap.add_argument("--bind", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--show-peer-addresses", action="store_true",
+                    help="list the node's peers by address on /network (off: they are numbered)")
+    ap.add_argument("--dev", action="store_true", help="use Flask's development server instead of waitress")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -938,10 +945,21 @@ def main():
     db_path = Path(args.db)
     open_db(db_path).close()  # create schema before threads race
     Indexer(rpc, db_path).start()
+    app = create_app(rpc, db_path, show_peer_addresses=args.show_peer_addresses)
     if args.bind not in ("127.0.0.1", "::1", "localhost"):
-        log.warning("Binding to %s: this is Flask's development server and the wallet page takes recovery phrases. Put it "
-                    "behind a reverse proxy over HTTPS and keep --bind 127.0.0.1.", args.bind)
-    create_app(rpc, db_path).run(host=args.bind, port=args.port)
+        log.warning("Binding to %s: the wallet page takes recovery phrases. Put the explorer behind a reverse proxy over HTTPS "
+                    "and keep --bind 127.0.0.1.", args.bind)
+    server = None
+    if not args.dev:
+        try:
+            from waitress import serve as server
+        except ImportError:
+            log.warning("waitress is not installed (pip install -r requirements.txt): using Flask's development server, which "
+                        "is not meant for a public site.")
+    if server is not None:
+        server(app, host=args.bind, port=args.port, threads=8)
+    else:
+        app.run(host=args.bind, port=args.port)
 
 
 if __name__ == "__main__":

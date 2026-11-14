@@ -121,3 +121,26 @@ def test_wallet_page_has_a_content_security_policy(client):
     assert "script-src 'self'" in csp and "'unsafe-inline'" not in csp.split("style-src")[0]
     assert r.headers["Cache-Control"] == "no-store"
     assert r.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_network_page_numbers_the_peers_instead_of_naming_them(tmp_path):
+    class PeerRPC(FakeRPC):
+        def call(self, method, *params):
+            if method == "getnetworkinfo":
+                return {"version": 1, "connections": 2}
+            if method == "getpeerinfo":
+                return [{"addr": "203.0.113.7:62556", "subver": "/CorgiCoin:4.8.0/", "startingheight": 100, "pingtime": 0.05},
+                        {"addr": "198.51.100.9:62556", "subver": "/CorgiCoin:4.8.0/", "startingheight": 101, "pingtime": 0.07}]
+            if method == "getrawmempool":
+                return []
+            return super().call(method, *params)
+
+    explorer.open_db(tmp_path / "e.db").close()
+    hidden = explorer.create_app(PeerRPC(), tmp_path / "e.db")
+    body = hidden.test_client().get("/network").get_data(as_text=True)
+    assert "203.0.113.7" not in body and "198.51.100.9" not in body
+    assert "peer 1" in body and "peer 2" in body and "/CorgiCoin:4.8.0/" in body
+
+    shown = explorer.create_app(PeerRPC(), tmp_path / "e.db", show_peer_addresses=True)
+    body = shown.test_client().get("/network").get_data(as_text=True)
+    assert "203.0.113.7:62556" in body
