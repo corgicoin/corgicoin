@@ -1309,6 +1309,48 @@ int64 CWallet::GetImmatureBalance() const
 }
 
 // populate vCoins with vector of spendable COutputs
+std::set<uint256> CWallet::GetConflicts(const CWalletTx& wtx) const
+{
+    std::set<uint256> result;
+    LOCK(cs_wallet);
+    const uint256 hash = wtx.GetHash();
+    for (const auto& item : mapWallet)
+    {
+        if (item.first == hash)
+            continue;
+        for (const CTxIn& other : item.second.vin)
+        {
+            bool fShared = false;
+            for (const CTxIn& mine : wtx.vin)
+                if (mine.prevout == other.prevout)
+                {
+                    fShared = true;
+                    break;
+                }
+            if (fShared)
+            {
+                result.insert(item.first);
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+bool CWallet::IsConflicted(const CWalletTx& wtx) const
+{
+    if (wtx.IsCoinBase() || wtx.GetDepthInMainChain() >= 1)
+        return false;
+    LOCK(cs_wallet);
+    for (const uint256& hashOther : GetConflicts(wtx))
+    {
+        auto it = mapWallet.find(hashOther);
+        if (it != mapWallet.end() && it->second.GetDepthInMainChain() >= 1)
+            return true;
+    }
+    return false;
+}
+
 void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl* coinControl) const
 {
     vCoins.clear();
