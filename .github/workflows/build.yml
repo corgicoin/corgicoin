@@ -30,7 +30,8 @@ jobs:
         run: |
           mkdir build && cd build
           # ZeroMQ is opt-in; turn it on here so feature_zmq.py runs instead of skipping
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DUSE_ZMQ=ON
+          # a wrong printf format in a log line is a build error here (-DENABLE_WERROR_FORMAT)
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DUSE_ZMQ=ON -DENABLE_WERROR_FORMAT=ON
           make -j$(nproc)
 
       - name: Run tests

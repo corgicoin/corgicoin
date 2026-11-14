@@ -781,11 +781,11 @@ bool AppInit2()
     RandAddSeedPerfmon();
 
     //// debug print
-    LogPrintf("mapBlockIndex.size() = %d\n",   mapBlockIndex.size());
+    LogPrintf("mapBlockIndex.size() = %d\n",   (int)mapBlockIndex.size());
     LogPrintf("nBestHeight = %d\n",            nBestHeight);
-    LogPrintf("setKeyPool.size() = %d\n",      pwalletMain->setKeyPool.size());
-    LogPrintf("mapWallet.size() = %d\n",       pwalletMain->mapWallet.size());
-    LogPrintf("mapAddressBook.size() = %d\n",  pwalletMain->mapAddressBook.size());
+    LogPrintf("setKeyPool.size() = %d\n",      (int)pwalletMain->setKeyPool.size());
+    LogPrintf("mapWallet.size() = %d\n",       (int)pwalletMain->mapWallet.size());
+    LogPrintf("mapAddressBook.size() = %d\n",  (int)pwalletMain->mapAddressBook.size());
 
     {
         std::string strZMQError;

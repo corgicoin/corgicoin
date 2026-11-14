@@ -2217,7 +2217,7 @@ Value getworkex(const Array& params, bool fHelp)
         result.emplace_back("coinbase", HexStr(ssTx.begin(), ssTx.end()));
 
         Array merkle_arr;
-        LogPrintf("DEBUG: merkle size %i\n", merkle.size());
+        LogPrintf("DEBUG: merkle size %i\n", (int)merkle.size());
 
         for (uint256 merkleh : merkle) {
             LogPrintf("%s\n", merkleh.ToString().c_str());

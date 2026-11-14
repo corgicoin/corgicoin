@@ -191,7 +191,7 @@ bool AddOrphanTx(const CDataStream& vMsg)
     // at most 500 megabytes of orphans:
     if (pvMsg->size() > DEFAULT_MAX_MESSAGE_SIZE)
     {
-        LogPrintf("ignoring large orphan tx (size: %u, hash: %s)\n", pvMsg->size(), hash.ToString().substr(0,10).c_str());
+        LogPrintf("ignoring large orphan tx (size: %u, hash: %s)\n", (unsigned)pvMsg->size(), hash.ToString().substr(0,10).c_str());
         return false;
     }
 
@@ -200,7 +200,7 @@ bool AddOrphanTx(const CDataStream& vMsg)
         mapOrphanTransactionsByPrev[txin.prevout.hash].insert({hash, pvMsg});
 
     LogPrintf("stored orphan tx %s (mapsz %u)\n", hash.ToString().substr(0,10).c_str(),
-        mapOrphanTransactions.size());
+        (unsigned)mapOrphanTransactions.size());
     return true;
 }
 
@@ -665,7 +665,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
     LogPrintf("CTxMemPool::accept() : accepted %s (poolsz %u)\n",
            hash.ToString().substr(0,10).c_str(),
-           mapTx.size());
+           (unsigned)mapTx.size());
     ZMQNotifyTransaction(tx);
     return true;
 }
@@ -1504,7 +1504,7 @@ bool CTransaction::FetchInputs(CTxDB& txdb, const map<uint256, CTxIndex>& mapTes
             // Revisit this if/when transaction replacement is implemented and allows
             // adding inputs:
             fInvalid = true;
-            return DoS(100, LogError("FetchInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
+            return DoS(100, LogError("FetchInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, (int)txPrev.vout.size(), (int)txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
         }
     }
 
@@ -1573,7 +1573,7 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
             CTransaction& txPrev = inputs[prevout.hash].second;
 
             if (prevout.n >= txPrev.vout.size() || prevout.n >= txindex.vSpent.size())
-                return DoS(100, LogError("ConnectInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
+                return DoS(100, LogError("ConnectInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, (int)txPrev.vout.size(), (int)txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
 
             // If prev is coinbase, check that it's matured
             if (txPrev.IsCoinBase())
@@ -1856,8 +1856,8 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         vConnect.push_back(pindex);
     reverse(vConnect.begin(), vConnect.end());
 
-    LogPrintf("REORGANIZE: Disconnect %i blocks; %s..%s\n", vDisconnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexBest->GetBlockHash().ToString().substr(0,20).c_str());
-    LogPrintf("REORGANIZE: Connect %i blocks; %s..%s\n", vConnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexNew->GetBlockHash().ToString().substr(0,20).c_str());
+    LogPrintf("REORGANIZE: Disconnect %i blocks; %s..%s\n", (int)vDisconnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexBest->GetBlockHash().ToString().substr(0,20).c_str());
+    LogPrintf("REORGANIZE: Connect %i blocks; %s..%s\n", (int)vConnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexNew->GetBlockHash().ToString().substr(0,20).c_str());
 
     // Disconnect shorter branch
     vector<CTransaction> vResurrect;
@@ -1984,7 +1984,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
         }
 
         if (!vpindexSecondary.empty())
-            LogPrintf("Postponing %i reconnects\n", vpindexSecondary.size());
+            LogPrintf("Postponing %i reconnects\n", (int)vpindexSecondary.size());
 
         // Switch to new best branch
         if (!Reorganize(txdb, pindexIntermediate))
@@ -2706,7 +2706,7 @@ void PrintBlockTree()
             pindex->nBlockPos,
             block.GetHash().ToString().substr(0,20).c_str(),
             DateTimeStrFormat("%x %H:%M:%S", block.GetBlockTime()).c_str(),
-            block.vtx.size());
+            (int)block.vtx.size());
 
         PrintWallets(block);
 
@@ -3014,7 +3014,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<CService, CPubKey> mapReuseKey;
     RandAddSeedPerfmon();
-    LogDebug("received: %s (%d bytes)\n", strCommand.c_str(), vRecv.size());
+    LogDebug("received: %s (%d bytes)\n", strCommand.c_str(), (int)vRecv.size());
     if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
     {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
@@ -3165,7 +3165,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (vAddr.size() > 1000)
         {
             pfrom->Misbehaving(20);
-            return LogError("message addr size() = %d", vAddr.size());
+            return LogError("message addr size() = %d", (int)vAddr.size());
         }
 
         // Store the new addresses
@@ -3228,7 +3228,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (vInv.size() > 50000)
         {
             pfrom->Misbehaving(20);
-            return LogError("message inv size() = %d", vInv.size());
+            return LogError("message inv size() = %d", (int)vInv.size());
         }
 
         // find last block in inv vector
@@ -3277,10 +3277,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (vInv.size() > 50000)
         {
             pfrom->Misbehaving(20);
-            return LogError("message getdata size() = %d", vInv.size());
+            return LogError("message getdata size() = %d", (int)vInv.size());
         }
 
-        LogPrint(LOG_NET, "received getdata (%d invsz)\n", vInv.size());
+        LogPrint(LOG_NET, "received getdata (%d invsz)\n", (int)vInv.size());
 
         // Queue the request and answer as much as the send buffer takes. The rest is answered as it drains
         // (ProcessMessages), and nothing newer from this peer is read until then, so replies stay in order. One message
@@ -3289,7 +3289,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (pfrom->vRecvGetData.size() + vInv.size() > MAX_GETDATA_QUEUE)
         {
             pfrom->Misbehaving(20);
-            return LogError("getdata queue of %d items is full", pfrom->vRecvGetData.size());
+            return LogError("getdata queue of %d items is full", (int)pfrom->vRecvGetData.size());
         }
         pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
         ProcessGetData(pfrom);
@@ -3630,7 +3630,7 @@ bool ProcessMessages(CNode* pfrom)
             break;
         }
         if (pstart - vRecv.begin() > 0)
-            LogPrintf("\n\nPROCESSMESSAGE SKIPPED %d BYTES\n\n", pstart - vRecv.begin());
+            LogPrintf("\n\nPROCESSMESSAGE SKIPPED %d BYTES\n\n", (int)(pstart - vRecv.begin()));
         vRecv.erase(vRecv.begin(), pstart);
 
         // Read header
@@ -4186,7 +4186,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
 
         nLastBlockTx = nBlockTx;
         nLastBlockSize = nBlockSize;
-        LogPrintf("CreateNewBlock(): total size %lu\n", nBlockSize);
+        LogPrintf("CreateNewBlock(): total size %" PRI64u "\n", (uint64)nBlockSize);
 
     }
     pblock->vtx[0].vout[0].nValue = GetBlockValue(pindexPrev->nHeight+1, nFees, pindexPrev->GetBlockHash());
@@ -4351,7 +4351,7 @@ void static BitcoinMiner(CWallet *pwallet)
             return;
         IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
 
-        LogPrintf("Running BitcoinMiner with %d transactions in block\n", pblock->vtx.size());
+        LogPrintf("Running BitcoinMiner with %d transactions in block\n", (int)pblock->vtx.size());
 
 
         //
