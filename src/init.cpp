@@ -308,6 +308,8 @@ std::string HelpMessage()
         "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
         "  -maxuploadtarget=<MiB> " + _("Try to keep what the node sends in 24 hours under this many MiB: past 90% it stops serving blocks a week older than the tip (and lets the peers that ask go); new blocks are always sent (default: 0, no limit)") + "\n" +
         "  -feefilter=<n>         " + _("Ask peers (protocol 70013) not to announce transactions that pay less than n satoshi per kB; 0 asks nothing (default: 0)") + "\n" +
+        "  -mempoolreplacement    " + _("Let a transaction that pays more replace one in the pool that signalled it can be replaced (BIP 125; default: 1)") + "\n" +
+        "  -walletrbf             " + _("Send the wallet's transactions as replaceable, so that bumpfee can raise their fee (default: 0)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +

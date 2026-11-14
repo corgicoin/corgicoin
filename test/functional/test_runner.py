@@ -98,6 +98,7 @@ TESTS = [
     "rpc_minimum_chain_work.py",
     "rpc_reorg_postponed.py",
     "rpc_big_block_locks.py",
+    "wallet_rbf.py",
     "wallet_commit_dryrun.py",
     "rpc_observability.py",
 

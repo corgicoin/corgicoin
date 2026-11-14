@@ -1820,6 +1820,10 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 // Fill vin
                 for (const std::pair<const CWalletTx*,unsigned int>& coin : setCoins)
                     wtxNew.vin.emplace_back(coin.first->GetHash(),coin.second);
+                // -walletrbf: say that the transaction may be replaced by one that pays more (BIP 125), so bumpfee can
+                if (GetBoolArg("-walletrbf", false))
+                    for (CTxIn& txin : wtxNew.vin)
+                        txin.nSequence = 0xfffffffd;
 
                 // Sign
                 int nIn = 0;
