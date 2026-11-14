@@ -19,7 +19,10 @@ import datetime
 import json
 import logging
 import os
+import shlex
 import signal
+import stat
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -53,6 +56,20 @@ DEFAULT_SOLANA_RPC    = "https://api.devnet.solana.com"
 # ---------------------------------------------------------------------------
 # CorgiCoin JSON-RPC client
 # ---------------------------------------------------------------------------
+
+def alert(message: str) -> None:
+    """Tell the operator something needs a person (BRIDGE_ALERT_CMD: a command, which gets the message as its last argument).
+
+    The log has the same words, but nobody reads a log at night. A failing command is logged and does not stop the bridge.
+    """
+    command = os.environ.get("BRIDGE_ALERT_CMD", "").strip()
+    if not command:
+        return
+    try:
+        subprocess.run(shlex.split(command) + [message], timeout=30, check=False)
+    except Exception as e:     # an alert that cannot be sent must not stop the bridge from doing its work
+        log.error("could not run BRIDGE_ALERT_CMD: %s", e)
+
 
 class RPCError(RuntimeError):
     """corgicoind answered with a JSON-RPC error. .code is its error code (None if it had none)."""
@@ -109,6 +126,10 @@ class Partner:
     @classmethod
     def from_config(cls, tag: str, cfg: dict, keys_dir: Path) -> "Partner":
         keypair_path = keys_dir / cfg["treasury_keypair"]
+        # The treasury key is a hot key. A file that other users of the machine can read is a key they can take.
+        if os.name == "posix" and keypair_path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+            raise SystemExit("refusing to start: %s can be read by other users (mode %o). chmod 600 it."
+                             % (keypair_path, stat.S_IMODE(keypair_path.stat().st_mode)))
         with keypair_path.open() as f:
             secret = json.load(f)
         return cls(
@@ -273,6 +294,16 @@ class SolanaDispatcher:
             raise DispatchUnconfirmed(sol_sig) from e
         return sol_sig
 
+    def treasury_balance(self, partner: Partner) -> Decimal | None:
+        """The partner token the treasury holds, in whole tokens; None if it cannot be found out (then the payment is tried)."""
+        try:
+            ata = get_associated_token_address(partner.treasury.pubkey(), partner.token_mint)
+            amount = self._client.get_token_account_balance(ata).value.amount
+            return Decimal(amount) / (Decimal(10) ** partner.decimals)
+        except Exception as e:
+            log.warning("could not read the treasury balance for %s: %s", partner.tag, e)
+            return None
+
     def _account_exists(self, pubkey: Pubkey) -> bool:
         info = self._client.get_account_info(pubkey).value
         return info is not None
@@ -295,6 +326,8 @@ def tick(rpc: CorgiRPC, partners: dict[str, Partner], dispatcher: SolanaDispatch
             log.error("REORG deeper than %d blocks: block %d is no longer %s. Rewinding the scan to height %d. Rewards for burns "
                       "in blocks that were replaced may have been paid for burns that no longer exist: review state.json.",
                       confirmations, state.last_height, state.last_hash, rewind)
+            alert("CorgiCoin bridge: a reorganisation deeper than %d blocks replaced block %d. Rewards may have been paid for burns "
+                  "that no longer exist: review state.json." % (confirmations, state.last_height))
             state.last_height = rewind
             state.last_hash = None
             state.save()
@@ -356,6 +389,17 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
                   burn.key, over)
         state.record(burn.key, {**base_entry, "status": "over_limit", "error": over})
         state.save()
+        alert("CorgiCoin bridge: burn %s NOT paid, %s. Pay it by hand or raise the limit." % (burn.key, over))
+        return
+
+    # A treasury that does not hold the reward cannot pay it: say so before anything is recorded as pending.
+    balance = dispatcher.treasury_balance(partner)
+    if isinstance(balance, Decimal) and balance < reward:
+        msg = "treasury holds %s %s, the reward is %s" % (balance, partner.tag, reward)
+        log.error("NOT paying burn %s: %s. Recorded as treasury_low; fund the treasury, then reset it to be paid.", burn.key, msg)
+        state.record(burn.key, {**base_entry, "status": "treasury_low", "error": msg})
+        state.save()
+        alert("CorgiCoin bridge: burn %s NOT paid, %s. Fund the treasury, then --reset it." % (burn.key, msg))
         return
 
     state.record(burn.key, {**base_entry, "status": "pending"})
@@ -369,12 +413,14 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
         state.record(burn.key, {**base_entry, "status": "unconfirmed", "sol_sig": e.sol_sig, "error": str(e)})
         state.add_paid(partner.tag, today, reward)      # count it: it may well have landed
         state.save()
+        alert("CorgiCoin bridge: reward for %s was submitted as %s but is not confirmed. Look the signature up before paying again." % (burn.key, e.sol_sig))
         return
     except Exception as e:
         log.error("dispatch failed for %s -> %s: %s — marked dispatch_error, manual review required",
                   burn.key, burn.partner, e)
         state.record(burn.key, {**base_entry, "status": "dispatch_error", "error": str(e)})
         state.save()
+        alert("CorgiCoin bridge: payment for %s failed (%s). Manual review needed." % (burn.key, e))
         return
 
     log.info("dispatched %s %s -> %s (corg tx %s, sol sig %s)",
@@ -388,7 +434,7 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
 # Reconciliation (operator actions on stuck entries)
 # ---------------------------------------------------------------------------
 
-RECONCILABLE_STATUSES = ("pending", "dispatch_error", "unconfirmed", "over_limit")
+RECONCILABLE_STATUSES = ("pending", "dispatch_error", "unconfirmed", "over_limit", "treasury_low")
 
 
 def reconcile_list_pending(state: "State") -> int:
@@ -520,11 +566,16 @@ def main() -> int:
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
+    failures = 0
     while not stopping:
         try:
             tick(rpc, partners, dispatcher, state, args.confirmations)
+            failures = 0
         except Exception as e:
             log.exception("tick failed: %s", e)
+            failures += 1
+            if failures == 5:       # once, not on every try after it
+                alert("CorgiCoin bridge: the last %d ticks failed (%s). Is corgicoind or Solana reachable?" % (failures, e))
         if args.once:
             return 0
         for _ in range(args.poll_seconds):
