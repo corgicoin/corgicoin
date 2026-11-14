@@ -730,6 +730,62 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 
 // Watch-only scripts: followed, never spent. They are kept apart from the keys so that nothing that picks coins to spend can
 // pick one of these (IsMine stays false for them).
+// Check what the wallet holds: every private key has to produce the public key it is filed under, and for an HD wallet every key
+// derived so far has to be there. Nothing is changed. A locked wallet cannot be checked: the caller says so.
+bool CWallet::VerifyKeys(int& nKeysChecked, int& nHDChecked, std::vector<std::string>& vProblems)
+{
+    LOCK2(cs_main, cs_wallet);
+    nKeysChecked = 0;
+    nHDChecked = 0;
+    if (IsLocked())
+        return false;
+
+    std::set<CKeyID> setKeys;
+    GetKeys(setKeys);
+    for (const CKeyID& keyid : setKeys)
+    {
+        CKey key;
+        CPubKey pubkey;
+        if (!GetKey(keyid, key))
+        {
+            vProblems.push_back("the private key for " + CBitcoinAddress(keyid).ToString() + " cannot be read");
+            continue;
+        }
+        if (!GetPubKey(keyid, pubkey) || !pubkey.IsValid())
+        {
+            vProblems.push_back("no public key for " + CBitcoinAddress(keyid).ToString());
+            continue;
+        }
+        if (key.GetPubKey().GetID() != keyid || key.GetPubKey() != pubkey)
+            vProblems.push_back("the private key filed under " + CBitcoinAddress(keyid).ToString() + " belongs to a different public key");
+        nKeysChecked++;
+    }
+
+    if (fHDEnabled)
+    {
+        if (!fHDMasterLoaded)
+        {
+            vProblems.push_back("the HD seed is not available, so the HD keys could not be re-derived");
+        }
+        else
+        {
+            for (uint32_t i = 0; i < nHDExternalIndex; i++)
+            {
+                CKey key;
+                if (!DeriveHDChild(hdMasterKey, i, key))
+                {
+                    vProblems.push_back(strprintf("HD key %u could not be derived", (unsigned)i));
+                    continue;
+                }
+                if (!HaveKey(key.GetPubKey().GetID()))
+                    vProblems.push_back(strprintf("HD key %u (%s) is missing from the wallet", (unsigned)i, CBitcoinAddress(key.GetPubKey().GetID()).ToString().c_str()));
+                nHDChecked++;
+            }
+        }
+    }
+    return true;
+}
+
 bool CWallet::AddWatchOnly(const CScript& script)
 {
     LOCK(cs_wallet);

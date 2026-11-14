@@ -275,6 +275,7 @@ public:
     // scripts followed but not spendable (importaddress, importpubkey): see AddWatchOnly
     std::set<CScript> setWatchOnly;
     bool AddWatchOnly(const CScript& script);
+    bool VerifyKeys(int& nKeysChecked, int& nHDChecked, std::vector<std::string>& vProblems);
     bool LoadWatchOnly(const CScript& script) { setWatchOnly.insert(script); return true; }
     bool IsWatchOnly(const CTxOut& txout) const { return setWatchOnly.count(txout.scriptPubKey) != 0 && !::IsMine(*this, txout.scriptPubKey); }
     bool IsWatchOnlyTx(const CTransaction& tx) const;
