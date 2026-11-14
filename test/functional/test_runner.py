@@ -95,6 +95,7 @@ TESTS = [
     "feature_bootstrap_export.py",
     "rpc_minimum_chain_work.py",
     "rpc_reorg_postponed.py",
+    "rpc_big_block_locks.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 
