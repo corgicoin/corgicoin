@@ -107,6 +107,14 @@ void RegisterWallet(CWallet* pwalletIn);
 void UnregisterWallet(CWallet* pwalletIn);
 void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = nullptr, bool fUpdate = false);
 bool ProcessBlock(CNode* pfrom, CBlock* pblock);
+// headers-first sync (headerssync.cpp)
+bool HeadersFirstEnabled();
+bool HaveHeaderFor(const uint256& hash);
+bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv);
+void HeadersFirstSendMessages(CNode* pto);
+void HeadersFirstBlockArrived(const uint256& hash);
+bool IsOrphanBlock(const uint256& hash);
+unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock);
 void AddOrphanBlock(const std::shared_ptr<CBlock>& pblock);
 unsigned int LimitOrphanBlocks(unsigned int nMaxBlocks, unsigned int nMaxBytes);
 uint64 GetOrphanBlockBytes();
