@@ -744,6 +744,52 @@ bool CTxDB::LoadBlockIndexGuts()
 
 
 
+bool CTxDB::ForEachTxIndex(const std::function<bool(const uint256&, const CTxIndex&)>& fn)
+{
+    Dbc* pcursor = GetCursor();
+    if (!pcursor)
+        return false;
+    bool fOk = true;
+    unsigned int fFlags = DB_SET_RANGE;
+    while (true)
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        if (fFlags == DB_SET_RANGE)
+            ssKey << std::make_pair(string("tx"), uint256(0));
+        CDataStream ssValue(SER_DISK, CLIENT_VERSION);
+        int ret = ReadAtCursor(pcursor, ssKey, ssValue, fFlags);
+        fFlags = DB_NEXT;
+        if (ret == DB_NOTFOUND)
+            break;
+        if (ret != 0)
+        {
+            fOk = false;
+            break;
+        }
+        try {
+            string strType;
+            ssKey >> strType;
+            if (strType != "tx")
+                break;                  // past the transaction records
+            uint256 hash;
+            ssKey >> hash;
+            CTxIndex txindex;
+            ssValue >> txindex;
+            if (!fn(hash, txindex))
+            {
+                fOk = false;
+                break;
+            }
+        } catch (std::exception& e) {
+            fOk = false;
+            break;
+        }
+    }
+    pcursor->close();
+    return fOk;
+}
+
+
 //
 // CAddrDB
 //

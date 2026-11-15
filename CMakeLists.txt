@@ -199,6 +199,7 @@ set(DAEMON_SOURCES
     src/rpcnet.cpp
     src/rpcrawtransaction.cpp
     src/headerssync.cpp
+    src/utxoset.cpp
     src/bech32.cpp
     src/bip32.cpp
     src/bip39.cpp
