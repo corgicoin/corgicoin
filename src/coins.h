@@ -98,6 +98,28 @@ void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo);
 uint64 CoinsCheckFailures();
 void CoinsDisconnectBlock(const CBlock& block, const CBlockIndex* pindex);
 
+/** True if the set is for the chain the index holds and can decide validity: it is open, was rebuilt or opened at the tip, no write
+ *  to it has failed, and nothing in the open index transaction has put it out of step. */
+bool CoinsUsable();
+
+/** One input of a transaction, as the set has it. */
+struct CCoinInput
+{
+    CTxOut txout;
+    bool fCoinBase;
+    int nHeight;
+    CCoinInput() : fCoinBase(false), nHeight(0) {}
+};
+
+enum CoinsFetchResult { COINS_FETCH_OK, COINS_FETCH_MISSING, COINS_FETCH_SPENT, COINS_FETCH_RANGE };
+
+/** The outputs the inputs of tx spend, seen through the changes the open index transaction has made so far (earlier transactions of
+ *  the block, earlier blocks of a reorganisation). On failure vIn holds those found before it, and nBad is the input that failed. */
+CoinsFetchResult CoinsFetchInputs(const CTransaction& tx, std::vector<CCoinInput>& vIn, unsigned int& nBad);
+
+/** Is there a transaction of this id with an unspent output (BIP30), as of the changes made so far. */
+bool CoinsHaveUnspent(const uint256& hash);
+
 /** Calls fn for every transaction that has unspent outputs, in key order. */
 bool CoinsForEach(const std::function<bool(const uint256&, const CCoins&)>& fn);
 /** The tip the set is for (null if there is none). */

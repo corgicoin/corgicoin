@@ -140,6 +140,7 @@ class TestNode:
                 "-port=%d" % self.p2p_port, "-rpcport=%d" % self.rpc_port,
                 "-bind=127.0.0.1", "-listen=1", "-printtoconsole=0", "-keypool=10"]
         args += self.extra_args + list(extra_args or [])
+        args += os.environ.get("CORGI_TEST_NODE_ARGS", "").split()      # for running the whole suite with an option on, e.g. -coinsvalidate=1
         self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.wait_for_rpc()
 
