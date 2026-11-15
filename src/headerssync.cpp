@@ -285,6 +285,17 @@ void HeadersFirstSendMessages(CNode* pto)
         }
     }
 
+    // 1b. a peer whose tip we do not know and that has no more than our best header (it joined after the headers were in, or is level with
+    //     us): without its tip it would never be asked for blocks, and sits idle while another peer does all the work (and cannot take over
+    //     if that one stalls). Ask once, from the header before our best, so that the answer holds the peer's tip if it is on our chain.
+    if (!pto->fSyncStarted && !pto->pindexBestKnown && pto->nStartingHeight >= pindexBestHeader->nHeight && pindexBestHeader->pprev &&
+        pindexBestHeader->nHeight > pindexBest->nHeight)
+    {
+        pto->fSyncStarted = true;
+        LogPrintf("headers-first: asking %s for its tip (its height %d)\n", pto->addr.ToString().c_str(), pto->nStartingHeight);
+        PushGetHeaders(pto, pindexBestHeader->pprev);
+    }
+
     // 2. a block asked for and not delivered in time: this peer is not doing its part
     const int64 nTimeout = GetArg("-blocktimeout", 120);
     const int64 nNow = GetTime();

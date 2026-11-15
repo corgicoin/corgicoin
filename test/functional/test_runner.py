@@ -32,6 +32,7 @@ TESTS = [
     "p2p_headers_first.py",
     "p2p_headers_first_reorg.py",
     "p2p_headers_first_oldpeer.py",
+    "p2p_headers_first_latepeer.py",
     "rpc_createauxblock.py",
     "feature_auxpow.py",
     "rpc_mempool_verify.py",
