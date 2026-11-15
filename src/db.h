@@ -12,6 +12,7 @@
 #include "main.h"
 #include "compat_bdb.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -325,6 +326,8 @@ public:
     bool ReadInvalidatedBlocks(std::vector<uint256>& vHashes);
     bool WriteInvalidatedBlocks(const std::vector<uint256>& vHashes);
     bool LoadBlockIndex();
+    /** Calls fn for every record of the transaction index, in key order; stops, and returns false, if fn returns false. */
+    bool ForEachTxIndex(const std::function<bool(const uint256&, const CTxIndex&)>& fn);
 private:
     bool LoadBlockIndexGuts();
 };

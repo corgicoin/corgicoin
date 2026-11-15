@@ -68,6 +68,7 @@ extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
 extern Value getrawtransaction(const Array& params, bool fHelp); // in rcprawtransaction.cpp
 extern Value gettxout(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
+extern Value gettxoutsetinfo(const Array& params, bool fHelp); // in utxoset.cpp
 extern Value testmempoolaccept(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
 extern Value prioritisetransaction(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
 extern Value listunspent(const Array& params, bool fHelp);
@@ -3428,6 +3429,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
     { "gettxout",               &gettxout,               false },
+    { "gettxoutsetinfo",        &gettxoutsetinfo,        false },
     { "createrawtransaction",   &createrawtransaction,   false },
     { "decoderawtransaction",   &decoderawtransaction,   false },
     { "signrawtransaction",     &signrawtransaction,     false },
