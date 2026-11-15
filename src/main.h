@@ -109,6 +109,8 @@ void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = nullptr, boo
 bool ProcessBlock(CNode* pfrom, CBlock* pblock);
 // headers-first sync (headerssync.cpp)
 bool HeadersFirstEnabled();
+/** Headers-first with this peer: enabled, and the peer speaks 70014 (has the getheaders fix). Never ask any other peer for headers. */
+bool HeadersFirstWith(const CNode* pnode);
 bool HaveHeaderFor(const uint256& hash);
 bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv);
 void HeadersFirstSendMessages(CNode* pto);
