@@ -30,12 +30,17 @@ struct CExtKey
     CKey key;
 
     // Master key from a seed: I = HMAC-SHA512("Bitcoin seed", seed),
-    // key = I[0:32], chain code = I[32:64].
-    void SetSeed(const unsigned char* seed, unsigned int nSeedLen);
+    // key = I[0:32], chain code = I[32:64]. Returns false, leaving this key untouched, if HMAC fails: carrying on
+    // would derive the key from an uninitialised buffer.
+    // hmac is the primitive (true on success); it defaults to OpenSSL's HMAC and is a parameter so tests can
+    // inject a failing one.
+    typedef bool (*HmacSha512Fn)(const unsigned char* key, int keylen, const unsigned char* data, int datalen,
+                                 unsigned char out[64]);
+    bool SetSeed(const unsigned char* seed, unsigned int nSeedLen, HmacSha512Fn hmac = nullptr);
 
     // CKDpriv: derive the child at nChildIn (hardened if >= BIP32_HARDENED).
-    // Returns false only on the (cryptographically negligible) invalid-child case.
-    bool Derive(CExtKey& out, uint32_t nChildIn) const;
+    // Returns false on the (cryptographically negligible) invalid-child case, or if HMAC fails.
+    bool Derive(CExtKey& out, uint32_t nChildIn, HmacSha512Fn hmac = nullptr) const;
 
     // Base58Check xprv string. vchVersion is the 4-byte version prefix
     // (e.g. Bitcoin mainnet {0x04,0x88,0xAD,0xE4}); CorgiCoin picks its own

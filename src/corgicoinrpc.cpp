@@ -1358,6 +1358,10 @@ Value addmultisigaddress(const Array& params, bool fHelp)
         throw runtime_error(
             strprintf("not enough keys supplied "
                       "(got %d keys, but need at least %d to redeem)", keys.size(), nRequired));
+    // OP_CHECKMULTISIG counts keys with OP_1..OP_16 (EncodeOP_N asserts above 16)
+    if (keys.size() > 16)
+        throw runtime_error(
+            strprintf("a multisignature address can involve at most 16 keys (got %d)", keys.size()));
     std::vector<CKey> pubkeys;
     pubkeys.resize(keys.size());
     for (unsigned int i = 0; i < keys.size(); i++)
@@ -1396,6 +1400,13 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     // Construct using pay-to-script-hash:
     CScript inner;
     inner.SetMultisig(nRequired, pubkeys);
+    // The spender must push the redeem script in its scriptSig, and a push over 520 bytes fails script evaluation
+    // (EvalScript), so funds sent to a larger script can never be spent: 15 compressed keys fit, 16 do not.
+    static const size_t MAX_REDEEMSCRIPT_SIZE = 520;
+    if (inner.size() > MAX_REDEEMSCRIPT_SIZE)
+        throw runtime_error(
+            strprintf("redeemScript exceeds size limit: %d > %d (use fewer or compressed keys)",
+                      (int)inner.size(), (int)MAX_REDEEMSCRIPT_SIZE));
     CScriptID innerID = inner.GetID();
     pwalletMain->AddCScript(inner);
 
@@ -2886,13 +2897,28 @@ Value getblockhash(const Array& params, bool fHelp)
 
 Value getblock(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "getblock <hash>\n"
-            "Returns details of a block with given block-hash.");
+            "getblock <hash> [verbose=true]\n"
+            "If verbose is true (or 1, or 2), returns an object with details of the block.\n"
+            "If verbose is false (or 0), returns the block as one serialized hex string,\n"
+            "exactly as sent over the network: header, the AuxPoW proof of a merged-mined\n"
+            "block, then the transactions.");
 
     std::string strHash = params[0].get_str();
     uint256 hash(strHash);
+
+    // Accept a boolean, or an integer verbosity as bitcoind does (0 = hex, 1 and up = JSON).
+    bool fVerbose = true;
+    if (params.size() > 1)
+    {
+        if (params[1].type() == bool_type)
+            fVerbose = params[1].get_bool();
+        else if (params[1].type() == int_type)
+            fVerbose = params[1].get_int() != 0;
+        else
+            throw JSONRPCError(-8, "verbose must be a boolean or an integer");
+    }
 
     if (mapBlockIndex.count(hash) == 0)
         throw JSONRPCError(-5, "Block not found");
@@ -2900,6 +2926,13 @@ Value getblock(const Array& params, bool fHelp)
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
     block.ReadFromDisk(pblockindex, true);
+
+    if (!fVerbose)
+    {
+        CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
+        ssBlock << block;
+        return HexStr(ssBlock.begin(), ssBlock.end());
+    }
 
     return blockToJSON(block, pblockindex);
 }
@@ -3076,7 +3109,7 @@ Value sethdseed(const Array& params, bool fHelp)
     pwalletMain->NewKeyPool();
 
     Object r;
-    r.emplace_back("mnemonic", mnemonic);
+    r.emplace_back("mnemonic", bip39::NormaliseMnemonic(mnemonic)); // the phrase as stored, not as typed
     r.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
     r.emplace_back("warning", "Write this recovery phrase down and keep it safe — it backs up all HD keys.");
     return r;
@@ -4280,6 +4313,14 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
     if (strMethod == "submitblock"            && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "getblockheader"         && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "getblock"               && n > 1)
+    {
+        // true/false or an integer verbosity: keep whichever JSON type was given
+        Value v;
+        if (!read_string(params[1].get_str(), v))
+            throw runtime_error("Error parsing JSON:" + params[1].get_str());
+        params[1] = v;
+    }
     if (strMethod == "getchaintxstats"        && n > 0) ConvertTo<int>(params[0]);
     if (strMethod == "listsinceblock"         && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "sendmany"               && n > 1) ConvertTo<Object>(params[1]);
