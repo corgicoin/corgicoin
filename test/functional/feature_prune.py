@@ -81,6 +81,10 @@ class PruneTest(CorgiTestFramework):
         wait_until(lambda: pruned.getblockcount() == BLOCKS + 6, what="the pruned node to follow after a restart")
         assert_equal(pruned.getbestblockhash(), full.getbestblockhash())
 
+        self.log("a key imported with no date needs a rescan of every block: refused, not silently found empty")
+        key = full.dumpprivkey(full.getnewaddress())
+        assert_raises_rpc_error(-1, "pruned", pruned.importprivkey, key)
+
         self.log("a pruned node does not offer old blocks: it does not claim NODE_NETWORK, and a new node does not sync from it")
         peers = full.getpeerinfo()
         assert len(peers) == 1 and int(peers[0]["services"], 16) & 1 == 0, peers
