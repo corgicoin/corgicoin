@@ -1358,6 +1358,10 @@ Value addmultisigaddress(const Array& params, bool fHelp)
         throw runtime_error(
             strprintf("not enough keys supplied "
                       "(got %d keys, but need at least %d to redeem)", keys.size(), nRequired));
+    // OP_CHECKMULTISIG counts keys with OP_1..OP_16 (EncodeOP_N asserts above 16)
+    if (keys.size() > 16)
+        throw runtime_error(
+            strprintf("a multisignature address can involve at most 16 keys (got %d)", keys.size()));
     std::vector<CKey> pubkeys;
     pubkeys.resize(keys.size());
     for (unsigned int i = 0; i < keys.size(); i++)
@@ -1396,6 +1400,13 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     // Construct using pay-to-script-hash:
     CScript inner;
     inner.SetMultisig(nRequired, pubkeys);
+    // The spender must push the redeem script in its scriptSig, and a push over 520 bytes fails script evaluation
+    // (EvalScript), so funds sent to a larger script can never be spent: 15 compressed keys fit, 16 do not.
+    static const size_t MAX_REDEEMSCRIPT_SIZE = 520;
+    if (inner.size() > MAX_REDEEMSCRIPT_SIZE)
+        throw runtime_error(
+            strprintf("redeemScript exceeds size limit: %d > %d (use fewer or compressed keys)",
+                      (int)inner.size(), (int)MAX_REDEEMSCRIPT_SIZE));
     CScriptID innerID = inner.GetID();
     pwalletMain->AddCScript(inner);
 
