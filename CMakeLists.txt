@@ -200,6 +200,7 @@ set(DAEMON_SOURCES
     src/rpcrawtransaction.cpp
     src/headerssync.cpp
     src/utxoset.cpp
+    src/txindexcache.cpp
     src/bech32.cpp
     src/bip32.cpp
     src/bip39.cpp
