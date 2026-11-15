@@ -13,6 +13,7 @@ import threading
 import time
 
 REGTEST_MAGIC = bytes.fromhex("fac0b6da")
+PROTOCOL_VERSION = 70014
 PROTOCOL_VERSION = 70001
 NODE_NETWORK = 1
 

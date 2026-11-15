@@ -2474,7 +2474,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
             LogPrintf("ProcessBlock: evicted %u orphan block(s) to stay within the orphan limits\n", nEvicted);
 
         // Ask this guy to fill in what we're missing (headers-first knows what it is missing and fetches it itself)
-        if (pfrom && !(HeadersFirstEnabled() && HaveHeaderFor(pblock->hashPrevBlock)))
+        if (pfrom && !(HeadersFirstWith(pfrom) && HaveHeaderFor(pblock->hashPrevBlock)))
             pfrom->PushGetBlocks(pindexBest, GetOrphanRoot(pblock2));
         return true;
     }
@@ -3131,7 +3131,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             (pfrom->nVersion < NOBLKS_VERSION_START ||
              pfrom->nVersion >= NOBLKS_VERSION_END) &&
              (nAskedForBlocks < 1 || vNodes.size() <= 1 || pfrom->nStartingHeight > nBestHeight) &&
-             !HeadersFirstEnabled())      // headers-first asks for headers instead, from SendMessages
+             !HeadersFirstWith(pfrom))    // headers-first asks for headers instead, from SendMessages (of a peer that speaks it)
         {
             nAskedForBlocks++;
             pfrom->PushGetBlocks(pindexBest, uint256(0));

@@ -179,6 +179,11 @@ bool HeadersFirstEnabled()
     return GetBoolArg("-headersfirst", false);
 }
 
+bool HeadersFirstWith(const CNode* pnode)
+{
+    return pnode && HeadersFirstEnabled() && pnode->nVersion >= HEADERSFIRST_VERSION;
+}
+
 bool HaveHeaderFor(const uint256& hash)
 {
     return mapHeaderIndex.count(hash) != 0;
@@ -186,7 +191,7 @@ bool HaveHeaderFor(const uint256& hash)
 
 bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
 {
-    if (!HeadersFirstEnabled())
+    if (!HeadersFirstWith(pfrom))
         return true;
     vector<CBlock> vHeaders;
     vRecv >> vHeaders;
@@ -256,7 +261,7 @@ void HeadersFirstBlockArrived(const uint256& hash)
 
 void HeadersFirstSendMessages(CNode* pto)
 {
-    if (!HeadersFirstEnabled() || !pto->fSuccessfullyConnected || pto->fClient || pto->fOneShot)
+    if (!HeadersFirstWith(pto) || !pto->fSuccessfullyConnected || pto->fClient || pto->fOneShot)
         return;
     EnsureHeaderChain();
     if (!pindexBestHeader)
