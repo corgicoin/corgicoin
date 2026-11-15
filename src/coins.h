@@ -26,9 +26,7 @@ struct CCoins
 
     IMPLEMENT_SERIALIZE
     (
-        unsigned char nCoinBase = fCoinBase ? 1 : 0;
-        READWRITE(nCoinBase);
-        fCoinBase = nCoinBase != 0;
+        READWRITE(fCoinBase);
         READWRITE(nHeight);
         READWRITE(vout);
     )
@@ -57,9 +55,7 @@ struct CTxInUndo
     IMPLEMENT_SERIALIZE
     (
         READWRITE(txout);
-        unsigned char nCoinBase = fCoinBase ? 1 : 0;
-        READWRITE(nCoinBase);
-        fCoinBase = nCoinBase != 0;
+        READWRITE(fCoinBase);
         READWRITE(nHeight);
         READWRITE(nOutputs);
     )
