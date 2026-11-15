@@ -296,7 +296,11 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
             {
                 std::string mnemonic;
                 ssValue >> mnemonic;
-                pwallet->LoadHDMnemonic(mnemonic);
+                if (!pwallet->LoadHDMnemonic(mnemonic))
+                {
+                    LogPrintf("Error: could not derive the HD seed from the wallet's recovery phrase\n");
+                    return DB_CORRUPT;
+                }
             }
             else if (strType == "chdmnemonic")
             {

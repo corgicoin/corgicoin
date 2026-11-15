@@ -11,6 +11,7 @@
 #include <sstream>
 
 #include <openssl/sha.h>
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
@@ -36,6 +37,12 @@ std::vector<std::string> Split(const std::string& s)
     while (iss >> w)
         words.push_back(w);
     return words;
+}
+
+bool OpenSslPbkdf2(const unsigned char* pass, int passlen, const unsigned char* salt, int saltlen, unsigned char out[64])
+{
+    return PKCS5_PBKDF2_HMAC(reinterpret_cast<const char*>(pass), passlen, salt, saltlen,
+                             2048, EVP_sha512(), 64, out) == 1;
 }
 
 } // namespace
@@ -136,13 +143,20 @@ bool CheckMnemonic(const std::string& mnemonic)
 }
 
 std::vector<unsigned char> MnemonicToSeed(const std::string& mnemonic,
-                                          const std::string& passphrase)
+                                          const std::string& passphrase,
+                                          Pbkdf2Fn pbkdf2)
 {
+    if (pbkdf2 == nullptr)
+        pbkdf2 = OpenSslPbkdf2;
     std::string salt = "mnemonic" + passphrase;
     std::vector<unsigned char> seed(64);
-    PKCS5_PBKDF2_HMAC(mnemonic.c_str(), (int)mnemonic.size(),
-                      reinterpret_cast<const unsigned char*>(salt.data()), (int)salt.size(),
-                      2048, EVP_sha512(), 64, seed.data());
+    if (!pbkdf2(reinterpret_cast<const unsigned char*>(mnemonic.data()), (int)mnemonic.size(),
+                reinterpret_cast<const unsigned char*>(salt.data()), (int)salt.size(), seed.data()))
+    {
+        // never hand back the zero-filled buffer: it would look like a seed and be a public one
+        OPENSSL_cleanse(seed.data(), seed.size());
+        return std::vector<unsigned char>();
+    }
     return seed;
 }
 
