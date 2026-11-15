@@ -6,7 +6,7 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.8.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining (pool-ready `getauxblock`), an HD (seed-phrase) wallet with Coin Control, and a non-custodial web wallet:
+**Version 4.9.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining with pool RPCs and ZeroMQ notifications, an HD (seed-phrase) wallet with Coin Control, and a non-custodial web wallet:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
@@ -118,7 +118,7 @@ rpcport=62555
 
 ## Version History
 
-### Unreleased
+### v4.9.0.0 — Pool RPCs, ZeroMQ, Low-S Signatures + macOS Qt Wallet
 - **macOS Qt wallet**: releases now include `corgicoin-qt-<version>-macos-arm64.zip`, a self-contained `CorgiCoin-Qt.app`. The macOS daemon download also bundles its libraries in `lib/`; until now it only ran on Macs with the same Homebrew packages installed. Both are signed ad hoc, not notarized, so the first launch needs **Open Anyway** (see `doc/macos-first-launch.md`)
 - **Pool and integration RPCs** (thanks @colneech-dev):
   - `submitblock` (BIP 22, #90)
