@@ -5326,7 +5326,7 @@ Value fundrawtransaction(const Array& params, bool fHelp)
     for (const auto& item : pwalletMain->mapWallet)
     {
         const CWalletTx& wtx = item.second;
-        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < 1 || pwalletMain->IsConflicted(wtx))
+        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < 1)
             continue;
         for (unsigned int i = 0; i < wtx.vout.size(); i++)
         {
@@ -5364,8 +5364,6 @@ Value fundrawtransaction(const Array& params, bool fHelp)
         nFee = nValueIn - nValueOut;
         nChange = 0;
     }
-    if (nFee > nMaxTxFee)
-        throw JSONRPCError(-4, "The fee is over -maxtxfee");
 
     for (size_t i = 0; i < nUsed; i++)
         tx.vin.push_back(CTxIn(vCoins[i].second));
