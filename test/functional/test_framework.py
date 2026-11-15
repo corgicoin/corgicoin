@@ -180,6 +180,8 @@ class TestNode:
         self._killed = False
         self._abnormal_exit = False
         self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=self.stderr_file)
+        args += os.environ.get("CORGI_TEST_NODE_ARGS", "").split()      # for running the whole suite with an option on, e.g. -coinsvalidate=1
+        self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.wait_for_rpc()
 
     def wait_for_rpc(self, timeout=60):
