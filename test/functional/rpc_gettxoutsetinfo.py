@@ -22,6 +22,7 @@ class TxOutSetInfoTest(CorgiTestFramework):
         coins = node.gettxoutsetinfo("coins")
         assert_equal(index["bogus_spends"], 0)
         assert_equal(blocks["bogus_spends"], 0)
+        assert_equal(coins["coins_check_failures"], 0)
         for key in ("height", "bestblock", "txouts", "transactions", "total_amount", "hash_serialized"):
             assert_equal(index[key], blocks[key])
             assert_equal(index[key], coins[key])

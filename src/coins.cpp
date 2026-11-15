@@ -30,6 +30,7 @@ std::map<uint256, CBlockUndo> mapPendingUndo;
 std::set<uint256> setPendingUndoErase;
 uint256 hashPendingBest;
 bool fHavePendingBest = false;
+uint64 nCheckFailures = 0;
 bool fTxnBroken = false;            // a change in this transaction could not be applied: the set must be rebuilt once it commits
 
 std::string Key(char chType, const uint256& hash)
@@ -100,36 +101,43 @@ void Broken(const char* pszWhat, const uint256& hash)
     fTxnBroken = true;
 }
 
-// the effect of one block on the pending set, and the undo data it needs
+// the effect of one transaction on the pending set, and the undo data it needs
+void ApplyConnectTx(const CTransaction& tx, int nHeight, CBlockUndo& undo)
+{
+    if (!tx.IsCoinBase())
+    {
+        for (const CTxIn& txin : tx.vin)
+        {
+            CCoins coins;
+            if (!GetCoins(txin.prevout.hash, coins) || !coins.IsAvailable(txin.prevout.n))
+            {
+                Broken("spent output not in the set", txin.prevout.hash);
+                return;
+            }
+            CTxInUndo u;
+            u.txout = coins.vout[txin.prevout.n];
+            u.fCoinBase = coins.fCoinBase;
+            u.nHeight = coins.nHeight;
+            u.nOutputs = coins.vout.size();
+            undo.vprevout.push_back(u);
+            coins.vout[txin.prevout.n].SetNull();
+            SetCoins(txin.prevout.hash, coins);
+        }
+    }
+    CCoins created;
+    created.fCoinBase = tx.IsCoinBase();
+    created.nHeight = nHeight;
+    created.vout = tx.vout;
+    SetCoins(tx.GetHash(), created);
+}
+
 void ApplyConnect(const CBlock& block, int nHeight, CBlockUndo& undo)
 {
     for (const CTransaction& tx : block.vtx)
     {
-        if (!tx.IsCoinBase())
-        {
-            for (const CTxIn& txin : tx.vin)
-            {
-                CCoins coins;
-                if (!GetCoins(txin.prevout.hash, coins) || !coins.IsAvailable(txin.prevout.n))
-                {
-                    Broken("spent output not in the set", txin.prevout.hash);
-                    return;
-                }
-                CTxInUndo u;
-                u.txout = coins.vout[txin.prevout.n];
-                u.fCoinBase = coins.fCoinBase;
-                u.nHeight = coins.nHeight;
-                u.nOutputs = coins.vout.size();
-                undo.vprevout.push_back(u);
-                coins.vout[txin.prevout.n].SetNull();
-                SetCoins(txin.prevout.hash, coins);
-            }
-        }
-        CCoins created;
-        created.fCoinBase = tx.IsCoinBase();
-        created.nHeight = nHeight;
-        created.vout = tx.vout;
-        SetCoins(tx.GetHash(), created);
+        ApplyConnectTx(tx, nHeight, undo);
+        if (fTxnBroken)
+            return;
     }
 }
 
@@ -387,15 +395,59 @@ void CoinsTxnCommit()
         GiveUp();
 }
 
-void CoinsConnectBlock(const CBlock& block, const CBlockIndex* pindex)
+void CoinsConnectTx(const CTransaction& tx, int nHeight, CBlockUndo& undo)
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
     if (!pdb || fTxnBroken)
         return;
-    CBlockUndo undo;
-    ApplyConnect(block, pindex->nHeight, undo);
-    if (!fTxnBroken)
-        mapPendingUndo[pindex->GetBlockHash()] = undo;
+    ApplyConnectTx(tx, nHeight, undo);
+}
+
+void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo)
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    if (!pdb || fTxnBroken)
+        return;
+    mapPendingUndo[pindex->GetBlockHash()] = undo;
+}
+
+uint64 CoinsCheckFailures()
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    return nCheckFailures;
+}
+
+void CoinsCheckInputs(const CTransaction& tx, const MapPrevTx& mapInputs, const CBlockIndex* pindex)
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    if (!pdb || fTxnBroken || tx.IsCoinBase())
+        return;
+    for (const CTxIn& txin : tx.vin)
+    {
+        const char* pszWhy = nullptr;
+        CCoins coins;
+        auto it = mapInputs.find(txin.prevout.hash);
+        if (it == mapInputs.end() || txin.prevout.n >= it->second.second.vout.size())
+            pszWhy = "the index path has no such input";
+        else if (!GetCoins(txin.prevout.hash, coins) || !coins.IsAvailable(txin.prevout.n))
+            pszWhy = "the index accepted an input that is not an unspent output of the set";
+        else
+        {
+            const CTxOut& txoutIndex = it->second.second.vout[txin.prevout.n];
+            const CTxOut& txoutCoins = coins.vout[txin.prevout.n];
+            if (txoutIndex.nValue != txoutCoins.nValue || !(txoutIndex.scriptPubKey == txoutCoins.scriptPubKey))
+                pszWhy = "the output differs in value or script";
+            else if (coins.fCoinBase != it->second.second.IsCoinBase())
+                pszWhy = "the set and the index disagree on whether the output is a coinbase's";
+            else if (coins.fCoinBase && pindex->nHeight - coins.nHeight < COINBASE_MATURITY)
+                pszWhy = "the index accepted a coinbase the set holds as immature";
+        }
+        if (pszWhy)
+        {
+            nCheckFailures++;
+            LogPrintf("COINS CHECK: %s (%s:%u, in block %d)\n", pszWhy, txin.prevout.hash.ToString().substr(0, 20).c_str(), txin.prevout.n, pindex->nHeight);
+        }
+    }
 }
 
 void CoinsDisconnectBlock(const CBlock& block, const CBlockIndex* pindex)
