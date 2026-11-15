@@ -74,6 +74,8 @@ bool FromBlocks(UtxoSummary& out, std::string& strError)
             strError = strprintf("block %d could not be read", (*it)->nHeight);
             return false;
         }
+        if ((*it)->nHeight == 0)
+            continue;           // the genesis block's output can never be spent and the index never holds it
         for (const CTransaction& tx : block.vtx)
         {
             if (!tx.IsCoinBase())
