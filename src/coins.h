@@ -87,7 +87,15 @@ void CoinsTxnAbort();
 /** The tip the index transaction leaves the chain on. */
 void CoinsSetBest(const uint256& hashBlock);
 
-void CoinsConnectBlock(const CBlock& block, const CBlockIndex* pindex);
+/** A block is connected one transaction at a time, so a later one sees the outputs of an earlier one in the same block.
+ *  CoinsCheckInputs compares what the index path has just accepted for a transaction with what the set holds: every input must be an
+ *  unspent output of the set with the same value and script, and a coinbase must be as mature by the set's height as by the index's. A
+ *  difference is counted (and logged): it means the set cannot yet be trusted to decide validity. */
+void CoinsCheckInputs(const CTransaction& tx, const MapPrevTx& mapInputs, const CBlockIndex* pindex);
+void CoinsConnectTx(const CTransaction& tx, int nHeight, CBlockUndo& undo);
+void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo);
+/** How many differences CoinsCheckInputs has found since the node started. */
+uint64 CoinsCheckFailures();
 void CoinsDisconnectBlock(const CBlock& block, const CBlockIndex* pindex);
 
 /** Calls fn for every transaction that has unspent outputs, in key order. */
