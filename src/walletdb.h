@@ -14,6 +14,7 @@
 #include "base58.h"
 
 class CKeyPool;
+class CKeyMetadata;
 class CAccount;
 class CAccountingEntry;
 
