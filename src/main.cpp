@@ -834,7 +834,7 @@ double CFeeEstimator::Estimate(int nTarget) const
     {
         dTotal += vTotal[b];
         dConfirmed += mConfirmed[nTarget][b];
-        if (dTotal < MIN_SAMPLES)
+        if (dTotal < MIN_SAMPLES || vTotal[b] <= 0)       // too few to say, or nothing seen at this rate: the answer moves only where there is data
             continue;
         if (dConfirmed / dTotal >= MIN_SUCCESS)
             dAnswer = vBound[b];
