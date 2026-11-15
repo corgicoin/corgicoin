@@ -201,6 +201,7 @@ set(DAEMON_SOURCES
     src/headerssync.cpp
     src/utxoset.cpp
     src/txindexcache.cpp
+    src/coins.cpp
     src/bech32.cpp
     src/bip32.cpp
     src/bip39.cpp
@@ -247,6 +248,16 @@ if(USE_ZMQ)
         message(STATUS "ZeroMQ not found: -zmqpub* notifications disabled")
     endif()
 endif()
+
+# LevelDB: the unspent-output set and the undo data of each block (src/coins.cpp, 8.1). contrib/build-leveldb.sh builds the pinned release.
+find_library(LEVELDB_LIBRARY leveldb)
+find_path(LEVELDB_INCLUDE_DIR leveldb/db.h)
+if(NOT LEVELDB_LIBRARY OR NOT LEVELDB_INCLUDE_DIR)
+    message(FATAL_ERROR "LevelDB not found. Build the pinned release with contrib/build-leveldb.sh <prefix> and pass "
+                        "-DLEVELDB_INCLUDE_DIR=<prefix>/include -DLEVELDB_LIBRARY=<prefix>/lib/libleveldb.a, or install libleveldb-dev.")
+endif()
+include_directories(${LEVELDB_INCLUDE_DIR})
+list(APPEND ZMQ_LIBRARIES ${LEVELDB_LIBRARY})
 
 # Daemon executable
 add_executable(corgicoind ${DAEMON_SOURCES} ${JSON_SOURCES})
@@ -488,6 +499,7 @@ if(BUILD_QT_GUI)
 
     # Link other libraries
     target_link_libraries(corgicoin-qt
+        ${ZMQ_LIBRARIES}
         ${OPENSSL_LIBRARIES}
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}

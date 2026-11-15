@@ -6,6 +6,7 @@
 // hash of it. This is the reference any change to how the node stores or looks up coins is checked against: both ways must give
 // the same hash, and so must the node before and after the change.
 
+#include "coins.h"
 #include "corgicoinrpc.h"
 #include "db.h"
 #include "main.h"
@@ -90,28 +91,52 @@ bool FromBlocks(UtxoSummary& out, std::string& strError)
     return true;
 }
 
+// The set the node keeps in LevelDB beside the index (coins.h)
+bool FromCoins(UtxoSummary& out, std::string& strError)
+{
+    if (!CoinsEnabled())
+    {
+        strError = "the unspent-output database is not available";
+        return false;
+    }
+    if (CoinsBestBlock() != pindexBest->GetBlockHash())
+    {
+        strError = "the unspent-output database is not at the tip";
+        return false;
+    }
+    if (!CoinsForEach([&](const uint256& hash, const CCoins& coins) {
+            for (unsigned int n = 0; n < coins.vout.size(); n++)
+                if (coins.IsAvailable(n))
+                    out.mapCoins[OutKey(hash, n)] = coins.vout[n];
+            return true;
+        }))
+        strError = "the unspent-output database could not be read to the end";
+    return strError.empty();
+}
+
 } // namespace
 
 Value gettxoutsetinfo(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
         throw runtime_error(
-            "gettxoutsetinfo [index|blocks]\n"
+            "gettxoutsetinfo [index|blocks|coins]\n"
             "Returns statistics about the unspent transaction outputs of the active chain, and a hash of the whole set (outputs sorted\n"
             "by txid and index, each as txid, index, amount, script). Reading is slow and holds the node's main lock throughout.\n"
             "  index   (default) the set the transaction index records as unspent\n"
             "  blocks  the set found by applying every block from the genesis block in order, which does not use the index\n"
-            "The two must agree. Result: {mode, height, bestblock, txouts, transactions, total_amount, hash_serialized, bogus_spends}");
+            "  coins   the set the node keeps in its unspent-output database (chainstate)\n"
+            "All three must agree. Result: {mode, height, bestblock, txouts, transactions, total_amount, hash_serialized, bogus_spends}");
     RPCTypeCheck(params, {str_type});
     std::string strMode = params.empty() ? "index" : params[0].get_str();
-    if (strMode != "index" && strMode != "blocks")
-        throw JSONRPCError(-8, "mode must be index or blocks");
+    if (strMode != "index" && strMode != "blocks" && strMode != "coins")
+        throw JSONRPCError(-8, "mode must be index, blocks or coins");
     if (!pindexBest)
         throw JSONRPCError(-1, "No chain loaded");
 
     UtxoSummary utxo;
     std::string strError;
-    if (!(strMode == "index" ? FromIndex(utxo, strError) : FromBlocks(utxo, strError)))
+    if (!(strMode == "index" ? FromIndex(utxo, strError) : strMode == "blocks" ? FromBlocks(utxo, strError) : FromCoins(utxo, strError)))
         throw JSONRPCError(-1, strError);
 
     // std::map is sorted by (txid, n) with txid compared as a number; the hash must not depend on that, so sort by the bytes

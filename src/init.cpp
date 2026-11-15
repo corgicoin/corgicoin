@@ -11,6 +11,7 @@
 #include "corgicoinrpc.h"
 #include "net.h"
 #include "init.h"
+#include "coins.h"
 #include "util.h"
 #include "main.h"
 #include "ui_interface.h"
@@ -80,6 +81,7 @@ void Shutdown(void* parg)
         bitdb.Flush(false);
         StopNode();
         ZMQShutdown();
+        CoinsShutdown();
         bitdb.Flush(true);
         std::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain.get());
