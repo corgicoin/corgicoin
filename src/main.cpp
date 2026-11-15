@@ -1127,6 +1127,7 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     return bnResult.GetCompact();
 }
 
+unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock);
 unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock *pblock)
 {
     unsigned int nProofOfWorkLimit = bnProofOfWorkLimit.GetCompact();
@@ -1221,6 +1222,11 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     LogPrintf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString().c_str());
 
     return bnNew.GetCompact();
+}
+
+unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock)
+{
+    return GetNextWorkRequired(pindexLast, pblock);
 }
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits)
@@ -2415,6 +2421,11 @@ bool CBlock::AcceptBlock()
     return true;
 }
 
+bool IsOrphanBlock(const uint256& hash)
+{
+    return mapOrphanBlocks.count(hash) != 0;
+}
+
 bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 {
     // Check for duplicate
@@ -2462,8 +2473,8 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
         if (nEvicted)
             LogPrintf("ProcessBlock: evicted %u orphan block(s) to stay within the orphan limits\n", nEvicted);
 
-        // Ask this guy to fill in what we're missing
-        if (pfrom)
+        // Ask this guy to fill in what we're missing (headers-first knows what it is missing and fetches it itself)
+        if (pfrom && !(HeadersFirstEnabled() && HaveHeaderFor(pblock->hashPrevBlock)))
             pfrom->PushGetBlocks(pindexBest, GetOrphanRoot(pblock2));
         return true;
     }
@@ -3119,7 +3130,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (!pfrom->fClient && !pfrom->fOneShot &&
             (pfrom->nVersion < NOBLKS_VERSION_START ||
              pfrom->nVersion >= NOBLKS_VERSION_END) &&
-             (nAskedForBlocks < 1 || vNodes.size() <= 1 || pfrom->nStartingHeight > nBestHeight))
+             (nAskedForBlocks < 1 || vNodes.size() <= 1 || pfrom->nStartingHeight > nBestHeight) &&
+             !HeadersFirstEnabled())      // headers-first asks for headers instead, from SendMessages
         {
             nAskedForBlocks++;
             pfrom->PushGetBlocks(pindexBest, uint256(0));
@@ -3366,6 +3378,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     }
 
 
+    else if (strCommand == "headers")
+    {
+        ProcessHeadersMessage(pfrom, vRecv);
+    }
+
+
     else if (strCommand == "tx")
     {
         vector<uint256> vWorkQueue;
@@ -3443,6 +3461,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CInv inv(static_cast<int>(MsgType::Block), block.GetHash());
         pfrom->AddInventoryKnown(inv);
 
+        HeadersFirstBlockArrived(inv.hash);
         if (ProcessBlock(pfrom, &block))
             mapAlreadyAskedFor.erase(inv);
         if (block.nDoS) pfrom->Misbehaving(block.nDoS);
@@ -3723,6 +3742,8 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
         // Don't send anything until we get their version message
         if (pto->nVersion == 0)
             return true;
+
+        HeadersFirstSendMessages(pto);
 
         // Ping: BIP31-capable peers get a nonce'd ping every
         // PING_INTERVAL_SECONDS (or on demand via the `ping` RPC) so we can

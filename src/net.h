@@ -291,6 +291,12 @@ public:
     int64 nPingUsecStart;      // when the outstanding ping was sent (micros)
     int64 nPingUsecTime;       // last measured round trip (micros)
     int64 nMinPingUsecTime;    // best round trip seen (micros); INT64_MAX if none
+    // headers-first (-headersfirst): what this peer has told us of its chain, and which blocks we are waiting for from it
+    CBlockIndex* pindexBestKnown;                   // the most-work header it has sent us (a header index entry or a block index one)
+    bool fSyncStarted;                              // we have asked it for headers
+    bool fSyncing;                                  // and it has not yet said it has no more
+    int nUnconnectingHeaders;                       // headers messages from it that did not connect
+    std::map<uint256, int64> mapBlocksInFlight;     // block hash -> when we asked it for the block
     bool fPingQueued;          // `ping` RPC asked for an immediate ping
 
     CNode(SOCKET hSocketIn, CAddress addrIn, std::string addrNameIn = "", bool fInboundIn=false) : vSend(SER_NETWORK, MIN_PROTO_VERSION), vRecv(SER_NETWORK, MIN_PROTO_VERSION)
@@ -328,6 +334,10 @@ public:
         nPingUsecTime = 0;
         nMinPingUsecTime = std::numeric_limits<int64>::max();
         fPingQueued = false;
+        pindexBestKnown = nullptr;
+        fSyncStarted = false;
+        fSyncing = false;
+        nUnconnectingHeaders = 0;
         setInventoryKnown.max_size(SendBufferSize() / 1000);
         setAddrKnown.max_size(5000);
 
