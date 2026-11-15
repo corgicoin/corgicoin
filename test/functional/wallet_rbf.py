@@ -13,7 +13,8 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 
 class RBFTest(CorgiTestFramework):
     num_nodes = 2
-    extra_args = [["-walletrbf"], []]       # node 0 sends replaceable transactions; node 1 does not
+    # node 0 sends replaceable transactions, and always pays a fee (a coin old enough sends for nothing, and a fee of 0 cannot be bumped "to the old one"); node 1 does not
+    extra_args = [["-walletrbf", "-paytxfee=0.001"], []]
 
     def spend(self, node, coin, dest, fee, signal):
         """A signed transaction spending the whole coin to dest, paying fee; signalling replaceability or not."""
