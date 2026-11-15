@@ -56,6 +56,7 @@ TESTS = [
     "rpc_submitblock.py",
     "rpc_getblocktemplate.py",
     "mining_feerate_blocks.py",
+    "rpc_gettxoutsetinfo.py",
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",
     "rpc_mempool_policy.py",
