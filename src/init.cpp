@@ -313,6 +313,8 @@ std::string HelpMessage()
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (regtest only in this release, default: 0; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
         "  -mempoolreplacement    " + _("Let a transaction that pays more replace one in the pool that signalled it can be replaced (BIP 125, see doc/replace-by-fee.md; wallets report bip125-replaceable; default: 0 in this release)") + "\n" +
         "  -walletrbf             " + _("Send the wallet's transactions as replaceable, so that bumpfee can raise their fee (default: 0)") + "\n" +
+        "  -headersfirst          " + _("Download the block headers first, check them, then fetch the blocks from several peers at once (default: 1; -noheadersfirst for the old one-peer getblocks sync)") + "\n" +
+        "  -blocktimeout=<n>      " + _("Seconds a peer may hold a requested block before it is dropped (headers-first sync; default: 120)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
