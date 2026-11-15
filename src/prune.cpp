@@ -2,6 +2,7 @@
 #include "prune.h"
 
 #include "init.h"
+#include "ui_interface.h"
 #include "util.h"
 
 #include <algorithm>
