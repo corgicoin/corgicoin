@@ -18,6 +18,7 @@
 #include "logging.h"
 
 class CTransaction;
+class CTxOut;
 
 /** Signature hash types/flags */
 enum
