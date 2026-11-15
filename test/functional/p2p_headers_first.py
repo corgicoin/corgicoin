@@ -58,7 +58,7 @@ class HeadersFirstTest(CorgiTestFramework):
         # whose handshake ends after the node already has every header (best header at the peer's height) is never asked for headers, so
         # it is not used for blocks until it announces something. Which peer shakes hands first, and how late the second one is, depends on
         # timing (on a loaded machine the second is late), so the two-peer check is made only when both peers were asked for headers.
-        asked_headers = {l.split("asking ")[1].split(" for ")[0] for l in text.split("\n") if "headers-first: asking" in l and " for headers from " in l}
+        asked_headers = {l.split("asking ")[1].split(" for ")[0] for l in text.split("\n") if "headers-first: asking" in l and (" for headers from " in l or " for its tip " in l)}
         if {a.p2p_addr, b.p2p_addr} <= asked_headers:
             assert len(askers) >= 2, "both peers were asked for headers but blocks came from one only: %s" % sorted(askers)
         else:
