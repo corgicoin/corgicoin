@@ -38,7 +38,7 @@ std::vector<CBlockIndex*> vHeaderChain;
 constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
 constexpr size_t MAX_HEADER_INDEX = 4000000;        // headers held that are not blocks: far above any real chain's length
 constexpr int BLOCK_DOWNLOAD_WINDOW = 512;          // below MAX_ORPHAN_BLOCKS, so blocks that arrive early do not push each other out
-constexpr size_t MAX_BLOCKS_IN_FLIGHT_PER_PEER = 16;
+constexpr size_t MAX_BLOCKS_IN_FLIGHT_PER_PEER = 64;      // the message loop ticks every 100 ms, so 16 made an initial download slower than getblocks
 constexpr int MAX_HEADER_SYNC_PEERS = 3;            // peers asked for the same headers at once
 
 bool SameBlock(const CBlockIndex* a, const CBlockIndex* b)
