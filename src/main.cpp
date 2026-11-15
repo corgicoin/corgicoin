@@ -2216,6 +2216,8 @@ void CBlock::NotifyConnected() const
     for (const CTransaction& tx : vtx)
     CoinsConnectBlock(*this, pindex);
     CoinsEndBlock(pindex, coinsUndo);
+    if (fFromCoins)
+        CoinsNoteBlockFromSet();
 
     // Watch for transactions paying to me
     for (CTransaction& tx : vtx)

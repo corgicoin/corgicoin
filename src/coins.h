@@ -96,6 +96,9 @@ void CoinsConnectTx(const CTransaction& tx, int nHeight, CBlockUndo& undo);
 void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo);
 /** How many differences CoinsCheckInputs has found since the node started. */
 uint64 CoinsCheckFailures();
+/** How many blocks have had their inputs checked against the set (-coinsvalidate) since the node started. */
+void CoinsNoteBlockFromSet();
+uint64 CoinsBlocksFromSet();
 void CoinsDisconnectBlock(const CBlock& block, const CBlockIndex* pindex);
 
 /** True if the set is for the chain the index holds and can decide validity: it is open, was rebuilt or opened at the tip, no write
