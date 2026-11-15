@@ -126,11 +126,16 @@ rpcport=62555
   - `testmempoolaccept`, a dry run that reports why a transaction would be refused (#91)
   - `prioritisetransaction` (#92)
   - `abandontransaction`, which gives up on an unconfirmed wallet transaction and its wallet descendants and frees their coins (#93)
+  - `getblock <hash> false` (or `0`) returns the raw block hex, including a merged-mined block's AuxPoW proof; `getblock <hash> 1` also works now, as pool software calls it (#106)
 - **ZeroMQ notifications** (thanks @colneech-dev, #95): `-zmqpubhashblock`, `-zmqpubrawblock`, `-zmqpubhashtx` and `-zmqpubrawtx`. Opt-in at build time (`-DUSE_ZMQ=ON`); release binaries leave it out. See `doc/mining.md`
 - **Low-S signatures** (thanks @colneech-dev, #94): the wallet now always signs with a low S value, so a third party can't re-encode its transactions under a different txid. A new `-standardsigs=1` option makes the node relay only strict-DER, low-S signatures. It is **off by default** for now, because older wallets produce a high S on about half of their inputs. It is relay policy only, and blocks are unaffected
 - **RPC credentials are compared in constant time** (thanks @colneech-dev, #87)
 - **`importprivkey` rejects keys outside 1…n−1** (zero, the curve order, or larger) instead of importing a key that isn't valid (thanks @colneech-dev, #88)
 - **`walletpassphrasechange` keeps the old passphrase working** if the new master key can't be written. Previously, memory and disk could end up disagreeing. A database file that fails to open is now handled instead of leaving a dead handle behind (thanks @colneech-dev, #86)
+- **Restoring a recovery phrase with extra spaces now gives the right wallet** (thanks @colneech-dev, #104). Double spaces, tabs, line breaks or no-break spaces used to pass the checksum and then restore a different, empty wallet. `sethdseed` and the Qt restore dialog now normalise the spacing first. Wallets already on disk keep the phrase exactly as stored, so their keys don't change
+- **HD key derivation fails closed** (thanks @colneech-dev, #103): if OpenSSL's PBKDF2 or HMAC ever fails, the wallet refuses the seed instead of building keys from an empty buffer
+- **`addmultisigaddress` refuses addresses that could never be spent**: more than 16 keys, or a redeem script over 520 bytes (16 compressed keys already exceed it). Coins sent to such an address were lost (thanks @colneech-dev, #102)
+- Fixed undefined behaviour when an RPC decoded empty hex into a data stream, found by the sanitizer CI job (thanks @colneech-dev, #105)
 
 ### v4.8.0.0 — HD Wallet Fixes, Wallet Compatibility + Pool-Ready Merged Mining
 

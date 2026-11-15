@@ -7,7 +7,7 @@ checksum test and then derive a completely different, empty wallet. sethdseed no
 from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_error
 
 CANON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-NBSP = " "
+NBSP = "\u00a0"
 
 
 class WalletHDPhraseTest(CorgiTestFramework):
@@ -42,7 +42,7 @@ class WalletHDPhraseTest(CorgiTestFramework):
         self.log("normalising whitespace does not make a bad phrase valid")
         assert_raises_rpc_error(-4, "Invalid BIP39 mnemonic", reference.sethdseed, "abandon  abandon  abandon")
         assert_raises_rpc_error(-4, "Invalid BIP39 mnemonic", reference.sethdseed,
-                                CANON.replace(" ", "​ ", 1))
+                                CANON.replace(" ", "\u200b ", 1))  # zero-width space glued to a word
 
 
 if __name__ == "__main__":
