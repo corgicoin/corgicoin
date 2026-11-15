@@ -18,6 +18,7 @@ namespace {
 uint64 nPruneTargetBytes = 0;
 std::set<unsigned int> setPrunedFiles;      // numbers of the block files that were deleted
 int nLastPruneCheckHeight = 0;
+int nPruneHeightCache = -1;                // -1: not worked out since the last file went
 unsigned int nLastPruneCheckFile = 0;
 
 std::filesystem::path PrunedListPath() { return GetDataDir() / "blkpruned.dat"; }
@@ -126,6 +127,8 @@ int PruneHeight()
 {
     if (setPrunedFiles.empty())
         return 0;
+    if (nPruneHeightCache >= 0)
+        return nPruneHeightCache;       // the scan below visits every block: once, and again only after more files go
     int nLowest = -1;
     for (const auto& item : mapBlockIndex)
     {
@@ -133,7 +136,8 @@ int PruneHeight()
         if (pindex->nFile != 0 && !IsBlockFilePruned(pindex->nFile) && (nLowest < 0 || pindex->nHeight < nLowest))
             nLowest = pindex->nHeight;
     }
-    return nLowest < 0 ? 0 : nLowest;
+    nPruneHeightCache = nLowest < 0 ? 0 : nLowest;
+    return nPruneHeightCache;
 }
 
 uint64 BlockFileThreshold()
@@ -192,6 +196,7 @@ void PruneBlockFiles()
         if (nFile >= nCurrentFile || mapMaxHeight[nFile] >= nLimitHeight)
             break;
         setPrunedFiles.insert(nFile);
+        nPruneHeightCache = -1;
         if (!WritePrunedList())
         {
             setPrunedFiles.erase(nFile);

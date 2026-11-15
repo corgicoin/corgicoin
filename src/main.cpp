@@ -293,6 +293,11 @@ static bool ReadPrevTx(const uint256& hash, const CTxIndex& txindex, CTransactio
         return false;
     txPrev.SetNull();
     txPrev.vout = coins.vout;
+    // A spent output is a null one in the set (value -1). Left so, spending it again would fail the amount check with a penalty for the
+    // peer; as the transaction it came from reads, it is simply "already used". So it is an output of no value that nothing can spend.
+    for (CTxOut& txout : txPrev.vout)
+        if (CCoins::IsSpentOut(txout))
+            txout = CTxOut(0, CScript() << OP_RETURN);
     if (coins.fCoinBase)
         txPrev.vin.resize(1);                   // a null previous output: IsCoinBase()
     return true;
@@ -1610,6 +1615,7 @@ struct CScriptCheck
 class CScriptCheckBatch
 {
 public:
+    static constexpr size_t MIN_FOR_THREADS = 8;        // fewer than this is faster done here than handed to threads
     void Add(const CScript& scriptPubKey, const CTransaction* ptx, unsigned int nIn, bool fStrict)
     {
         vChecks.push_back({scriptPubKey, ptx, nIn, fStrict});
@@ -1650,7 +1656,16 @@ public:
         std::vector<std::thread> vThreads;
         vThreads.reserve(nWorkers - 1);
         for (int k = 1; k < nWorkers; k++)
-            vThreads.emplace_back(worker);
+        {
+            try
+            {
+                vThreads.emplace_back(worker);
+            }
+            catch (...)
+            {
+                break;          // no more threads to be had: the ones started, and this one, do the work
+            }
+        }
         worker();
         for (std::thread& t : vThreads)
             t.join();
@@ -1658,7 +1673,6 @@ public:
     }
 
 private:
-    static constexpr size_t MIN_FOR_THREADS = 8;        // fewer than this is faster done here than handed to threads
     std::vector<CScriptCheck> vChecks;
 };
 
@@ -1938,9 +1952,19 @@ static bool ConnectTxFromCoins(CTransaction& tx, const CDiskTxPos& posThisTx, co
 
 bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
+    if (fPruneMode)
+    {
+        // A pruned node has nothing to check a block against but the unspent set, and reads of old transactions that the plain way
+        // makes are served from that set too: there is no second opinion to ask (and no second pass to give the plain way's error), so a
+        // refusal is final. The script checks are still run together.
+        bool fUnused1 = false, fUnused2 = false;
+        return ConnectBlockWith(txdb, pindex, true, true, fUnused1, fUnused2);
+    }
     bool fUsedCoins = false, fBatched = false;
     if (ConnectBlockWith(txdb, pindex, true, true, fUsedCoins, fBatched))
+        return true;
     if (!fUsedCoins && !fBatched)
+        return false;
     // refused by the set, or by script checks run together: once more the plain way (the index, one check at a time), which gives the
     // error, the log and the peer penalty that it always did. The set has had this block's changes applied, so it is rebuilt if the block is
     // good after all (if it is bad the transaction is dropped and nothing is kept).
@@ -1949,9 +1973,12 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     CoinsMarkBroken("a block was refused and is checked again");
     bool fUnused1 = false, fUnused2 = false;
     return ConnectBlockWith(txdb, pindex, false, false, fUnused1, fUnused2);
+}
+
 namespace {
 // where this block's script checks go while it is being connected on this thread (see CScriptCheckBatch)
 struct CScriptCheckScope
+{
     CScriptCheckScope(CScriptCheckBatch* pBatch, bool fAssumed) { pScriptBatch = pBatch; fScriptsAssumedValid = fAssumed; }
     ~CScriptCheckScope() { pScriptBatch = nullptr; fScriptsAssumedValid = false; }
 };
@@ -2065,7 +2092,7 @@ bool CBlock::ConnectBlockWith(CTxDB& txdb, CBlockIndex* pindex, bool fMayUseCoin
     // The script checks of the whole block, before anything is written: a block whose scripts fail leaves no trace in the index
     if (fBatched)
     {
-        if (nScriptThreads > 1 && scriptBatch.Size() >= 8)
+        if (nScriptThreads > 1 && scriptBatch.Size() >= CScriptCheckBatch::MIN_FOR_THREADS)
             nBlocksScriptsParallel++;
         if (!scriptBatch.Run(nScriptThreads))
         {
@@ -2220,6 +2247,8 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
     uint256 hash = GetHash();
 
     // Adding to current best branch
+    // a pruned node whose unspent set is not in order (it is shutting down, see CoinsTxnCommit) could not check the block: that is not the block's fault
+    if (!fConnected && !(fPruneMode && !CoinsUsable()))
     if (!ConnectBlock(txdb, pindexNew) || !txdb.WriteHashBestChain(hash))
     {
         txdb.TxnAbort();
@@ -2851,6 +2880,8 @@ FILE* AppendBlockFile(unsigned int& nFileRet)
     nFileRet = 0;
     while(true)
     {
+        while (IsBlockFilePruned(nCurrentBlockFile))
+            nCurrentBlockFile++;        // a deleted file is never started again (after a restart this begins at 1)
         FILE* file = OpenBlockFile(nCurrentBlockFile, 0, "ab");
         if (!file)
             return nullptr;
@@ -4835,4 +4866,11 @@ void GenerateBitcoins(bool fGenerate, CWallet* pwallet)
             Sleep(10);
         }
     }
+}
+
+void FatalChainstateError(const std::string& strMessage)
+{
+    LogPrintf("ERROR: %s\n", strMessage.c_str());
+    strMiscWarning = strMessage;
+    StartShutdown();
 }

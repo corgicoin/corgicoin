@@ -108,6 +108,9 @@ bool CoinsUsable();
 /** The unspent outputs of a transaction as the set has them (a spent one is a null output); false if it has none left or the set is not open. */
 bool CoinsLookup(const uint256& txid, CCoins& coins);
 
+/** Say that the set cannot be trusted for the open index transaction (it is rebuilt when the transaction commits, and not used meanwhile). */
+void CoinsMarkBroken(const char* pszWhy);
+
 /** One input of a transaction, as the set has it. */
 struct CCoinInput
 {

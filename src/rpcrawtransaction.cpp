@@ -164,6 +164,7 @@ Value gettxout(const Array& params, bool fHelp)
 
     CTransaction tx;
     int nConfirmations = 0;
+    bool fOutline = false;         // tx is only what the unspent set knows of it (a pruned block): no version
     {
         LOCK(mempool.cs);
         if (fIncludeMempool && mempool.exists(hash))
@@ -185,6 +186,7 @@ Value gettxout(const Array& params, bool fHelp)
             tx.vout = coins.vout;
             if (coins.fCoinBase)
                 tx.vin.resize(1);
+            fOutline = true;
             nConfirmations = 1 + nBestHeight - coins.nHeight;
         }
         else
@@ -222,7 +224,8 @@ Value gettxout(const Array& params, bool fHelp)
     Object o;
     ScriptPubKeyToJSON(tx.vout[n].scriptPubKey, o);
     ret.emplace_back("scriptPubKey", o);
-    ret.emplace_back("version", tx.nVersion);
+    if (!fOutline)
+        ret.emplace_back("version", tx.nVersion);
     ret.emplace_back("coinbase", tx.IsCoinBase());
     return ret;
 }

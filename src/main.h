@@ -142,6 +142,8 @@ FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszM
 FILE* AppendBlockFile(unsigned int& nFileRet);
 /** The number of the block file blocks are being added to. */
 unsigned int CurrentBlockFile();
+/** Something that a pruned node cannot recover from while running: say so and stop (it is repaired at the next start). */
+void FatalChainstateError(const std::string& strMessage);
 bool LoadBlockIndex(bool fAllowNew=true);
 void PrintBlockTree();
 bool ProcessMessages(CNode* pfrom);

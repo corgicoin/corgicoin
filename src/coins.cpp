@@ -4,6 +4,7 @@
 
 #include "coins.h"
 #include "util.h"
+#include "prune.h"
 
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
@@ -308,6 +309,52 @@ bool Rebuild(const CBlockIndex* ptip)
     return true;
 }
 
+// The set is for a block that is on the chain, below the tip (the set was written after the index lost its last blocks to a crash, or
+// the other way round): apply the blocks above it, instead of every block since the first. False if the marker is not on this chain or a
+// block cannot be read or does not apply; the caller then rebuilds (which a pruned node cannot).
+bool CatchUp(const CBlockIndex* pMarker, const CBlockIndex* ptip)
+{
+    std::vector<const CBlockIndex*> vChain;
+    for (const CBlockIndex* p = ptip; p && p != pMarker; p = p->pprev)
+        vChain.push_back(p);
+    if (vChain.empty() || vChain.back()->pprev != pMarker)
+        return false;
+    LogPrintf("COINS: the set is %d blocks behind the chain; applying them\n", (int)vChain.size());
+    ClearPending();
+    int nSince = 0;
+    for (auto it = vChain.rbegin(); it != vChain.rend(); ++it)
+    {
+        const CBlockIndex* pindex = *it;
+        CBlock block;
+        if (!block.ReadFromDisk(pindex, true, false))
+        {
+            LogPrintf("COINS: block %d could not be read while catching up\n", pindex->nHeight);
+            ClearPending();
+            return false;
+        }
+        CBlockUndo undo;
+        ApplyConnect(block, pindex->nHeight, undo);
+        if (fTxnBroken)
+        {
+            LogPrintf("COINS: the chain does not apply cleanly at height %d\n", pindex->nHeight);
+            ClearPending();
+            return false;
+        }
+        mapPendingUndo[pindex->GetBlockHash()] = undo;
+        if (++nSince >= 500 || pindex == ptip)
+        {
+            if (!WritePending(pindex->GetBlockHash()))
+            {
+                ClearPending();
+                return false;
+            }
+            nSince = 0;
+        }
+    }
+    LogPrintf("COINS: caught up\n");
+    return true;
+}
+
 void GiveUp()
 {
     LogPrintf("COINS: the unspent set is not available; the node runs on the transaction index alone\n");
@@ -320,6 +367,13 @@ bool CoinsEnabled()
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
     return pdb != nullptr;
+}
+
+void CoinsMarkBroken(const char* pszWhy)
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    if (pdb)
+        Broken(pszWhy, uint256(0));
 }
 
 bool CoinsUsable()
@@ -381,6 +435,12 @@ bool CoinsInit()
     const bool fEmptyChain = !pindexBest || pindexBest->nHeight == 0;
     if (fHave ? hashBest == hashChain : fEmptyChain)
         return true;
+    if (fHave)
+    {
+        auto mi = mapBlockIndex.find(hashBest);
+        if (mi != mapBlockIndex.end() && CatchUp(mi->second, pindexBest))
+            return true;
+    }
     if (!Rebuild(pindexBest))
     {
         GiveUp();
@@ -432,10 +492,19 @@ void CoinsTxnCommit()
     }
     if (!fBroken)
     {
+        if (fStale)
+        {
+            // an earlier write failed, so the set lacks that block's changes: do not move its marker on to this block, or the next start
+            // would take the set for the chain's. The marker stays where it was, and the next start rebuilds.
+            ClearPending();
+            return;
+        }
         if (!WritePending(hashBest))
         {
             LogPrintf("COINS: writing the unspent set failed; it will be rebuilt at the next start\n");
             fStale = true;
+            if (fPruneMode)
+                FatalChainstateError("The unspent-output set could not be written. A pruned node cannot go on without it, so it is stopping; the set is brought up to date from the blocks at the next start.");
         }
         ClearPending();
         return;

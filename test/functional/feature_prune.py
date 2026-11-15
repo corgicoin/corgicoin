@@ -7,6 +7,7 @@ gettxout for such a coin; it says "pruned" for the block itself; it keeps all th
 others (it does not claim NODE_NETWORK); and a data directory that was pruned does not start without -prune.
 """
 import os
+import shutil
 
 from test_framework import CorgiTestFramework, AssertionFailed, assert_equal, assert_raises_rpc_error, wait_until
 
@@ -92,6 +93,26 @@ class PruneTest(CorgiTestFramework):
         wait_until(lambda: fresh.getconnectioncount() > 0, what="the new node to connect")
         __import__("time").sleep(5)
         assert_equal(fresh.getblockcount(), 0)
+
+        self.log("after a restart no deleted file is started again: new blocks are readable, and blk0001.dat is still gone")
+        assert not os.path.exists(self.datadir_of(pruned) + "/blk0001.dat")
+        assert_equal(pruned.getblock(pruned.getbestblockhash())["height"], pruned.getblockcount())
+
+        self.log("a chainstate that is behind (as after a crash) is brought up to date from the blocks still there, pruned or not")
+        pruned.stop()
+        chain = self.datadir_of(pruned) + "/chainstate"
+        shutil.rmtree(chain + ".saved", ignore_errors=True)
+        shutil.copytree(chain, chain + ".saved")
+        pruned.start()
+        self.connect_nodes(1, 0)
+        full.generate(10)
+        wait_until(lambda: pruned.getblockcount() == full.getblockcount(), what="the pruned node to follow ten more blocks")
+        pruned.stop()
+        shutil.rmtree(chain)
+        shutil.copytree(chain + ".saved", chain)
+        pruned.start()
+        assert_equal(pruned.getblockcount(), full.getblockcount())
+        assert_equal(pruned.gettxoutsetinfo("coins")["hash_serialized"], full.gettxoutsetinfo("coins")["hash_serialized"])
 
         self.log("a data directory that was pruned does not start without -prune")
         pruned.stop()
