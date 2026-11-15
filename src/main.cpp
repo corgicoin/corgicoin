@@ -7,6 +7,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "checkpoints.h"
+#include "coins.h"
 #include "db.h"
 #include "net.h"
 #include "init.h"
@@ -2003,6 +2004,7 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
             return LogError("DisconnectBlock() : WriteBlockIndex failed");
     }
 
+    CoinsDisconnectBlock(*this, pindex);
     return true;
 }
 
@@ -2139,6 +2141,10 @@ void CBlock::NotifyConnected() const
 {
     const bool fNotifyZMQ = !IsInitialBlockDownload();
     for (const CTransaction& tx : vtx)
+    CoinsConnectBlock(*this, pindex);
+
+    // Watch for transactions paying to me
+    for (CTransaction& tx : vtx)
     {
         SyncWithWallets(tx, this, true);
         if (fNotifyZMQ)
@@ -3015,6 +3021,9 @@ bool LoadBlockIndex(bool fAllowNew)
         if (!block.AddToBlockIndex(nFile, nBlockPos))
             return LogError("LoadBlockIndex() : genesis block not accepted");
     }
+
+    // the unspent-output set: opened, and rebuilt from the blocks if it is not the one for this chain (the node runs without it if it cannot be)
+    CoinsInit();
 
     return true;
 }

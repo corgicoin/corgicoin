@@ -11,6 +11,7 @@
 #include "corgicoinrpc.h"
 #include "net.h"
 #include "init.h"
+#include "coins.h"
 #include "util.h"
 #include "main.h"
 #include "ui_interface.h"
@@ -86,6 +87,7 @@ void Shutdown(void* parg)
         // wallet is freed and exit() destroys the mutexes they lock
         while (nWalletThreadsRunning > 0)
             Sleep(20);
+        CoinsShutdown();
         bitdb.Flush(true);
         std::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain.get());
