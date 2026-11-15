@@ -44,6 +44,7 @@ TESTS = [
     "p2p_bad_subver.py",
     "p2p_maxconnections.py",
     "p2p_resource_limits.py",
+    "p2p_log_injection.py",
     "rpc_createauxblock.py",
     "rpc_createauxblock_cache.py",
     "feature_auxpow.py",
