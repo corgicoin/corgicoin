@@ -529,6 +529,27 @@ if(BUILD_QT_GUI)
     endif()
 endif()
 
+# Differential check of OpenSSL against libsecp256k1 on signature verification (src/fuzz/secp_diff.cpp). It is not part of the node: it
+# needs libsecp256k1 installed, and exists to measure whether the two accept exactly the same signatures (8.3).
+option(BUILD_SECP_DIFF "Build the OpenSSL / libsecp256k1 signature differential (needs libsecp256k1)" OFF)
+if(BUILD_SECP_DIFF)
+    find_library(SECP256K1_LIBRARY secp256k1 REQUIRED)
+    find_path(SECP256K1_INCLUDE_DIR secp256k1.h REQUIRED)
+    set(DIFF_DAEMON_SOURCES ${DAEMON_SOURCES})
+    list(REMOVE_ITEM DIFF_DAEMON_SOURCES src/init.cpp)
+    add_executable(secp_diff src/fuzz/secp_diff.cpp ${DIFF_DAEMON_SOURCES} ${JSON_SOURCES})
+    add_dependencies(secp_diff generate_build_info)
+    target_include_directories(secp_diff PRIVATE ${SECP256K1_INCLUDE_DIR})
+    target_link_libraries(secp_diff ${SECP256K1_LIBRARY} ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
+        Threads::Threads ${CMAKE_DL_LIBS})
+    if(LINUX)
+        target_link_libraries(secp_diff rt)
+    endif()
+    if(USE_UPNP)
+        target_link_libraries(secp_diff ${MINIUPNPC_LIBRARY})
+    endif()
+endif()
+
 # Test suite
 if(BUILD_TESTS)
     enable_testing()

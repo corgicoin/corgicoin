@@ -564,6 +564,20 @@ static bool ParseDERLax(const unsigned char* input, size_t inputlen, BIGNUM** pr
     return true;
 }
 
+bool ParseSignatureLax(const std::vector<unsigned char>& vchSig, unsigned char* out64)
+{
+    if (vchSig.empty())
+        return false;
+    BIGNUM* r = nullptr;
+    BIGNUM* s = nullptr;
+    if (!ParseDERLax(&vchSig[0], vchSig.size(), &r, &s))
+        return false;
+    const bool fOk = BN_bn2binpad(r, out64, 32) == 32 && BN_bn2binpad(s, out64 + 32, 32) == 32;
+    BN_free(r);
+    BN_free(s);
+    return fOk;
+}
+
 bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
 {
     // Whether a signature is valid is consensus, so it must not depend on how strict the linked OpenSSL is about the

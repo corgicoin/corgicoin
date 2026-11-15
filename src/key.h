@@ -164,4 +164,8 @@ public:
     bool IsValid();
 };
 
+/** Read the r and s of a DER signature by the same lax rules CKey::Verify uses, as 32 bytes each (r, then s) into out64.
+ *  False if it cannot be read. Exists so that another verifier can be compared with this one on the same input. */
+bool ParseSignatureLax(const std::vector<unsigned char>& vchSig, unsigned char* out64);
+
 #endif
