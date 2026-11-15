@@ -103,3 +103,4 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |
 | `rpc_multisig_limits.py` | `addmultisigaddress`: 15 compressed keys work and the coins can be spent; 16 keys by size, 17 keys by count, and 8 uncompressed keys are refused with an error instead of an assert or an unspendable address |
+| `wallet_hd_phrase.py` | `sethdseed` with a recovery phrase typed with extra spaces, tabs or no-break spaces restores the same wallet as the canonical phrase; a bad phrase is still refused |
