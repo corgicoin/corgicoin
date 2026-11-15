@@ -2008,6 +2008,87 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     return true;
 }
 
+// The inputs of tx taken from the unspent set instead of from the transactions on disk (-coinsvalidate): the same checks as
+// FetchInputs and ConnectInputs make, on the same facts (is the output there and unspent, its value and script, a coinbase's age),
+// and the same marks in the index for what the wallet and the RPC read from it. Sets the block's fees and sigops. False if the tx
+// is invalid; fSigOpsOverflow says it was the sigop limit (a fault of the block, not of the transaction).
+static bool ConnectTxFromCoins(CTransaction& tx, const CDiskTxPos& posThisTx, const CBlockIndex* pindex, CTxIndexCache& view,
+                               bool fStrictPayToScriptHash, unsigned int& nSigOps, int64& nFees, bool& fSigOpsOverflow)
+{
+    std::vector<CCoinInput> vIn;
+    unsigned int nBad = 0;
+    switch (CoinsFetchInputs(tx, vIn, nBad))
+    {
+    case COINS_FETCH_OK:
+        break;
+    case COINS_FETCH_RANGE:
+        return tx.DoS(100, LogError("ConnectInputs() : %s prevout.n out of range (input %u)", tx.GetHash().ToString().substr(0,10).c_str(), nBad));
+    case COINS_FETCH_SPENT:
+        return LogError("ConnectInputs() : %s prev tx already used (input %u)", tx.GetHash().ToString().substr(0,10).c_str(), nBad);
+    default:
+        return LogError("FetchInputs() : %s prev tx %s not in the unspent set", tx.GetHash().ToString().substr(0,10).c_str(), tx.vin[nBad].prevout.hash.ToString().substr(0,10).c_str());
+    }
+
+    // sigops of pay-to-script-hash inputs, counted before the expensive checks
+    fSigOpsOverflow = false;
+    if (fStrictPayToScriptHash)
+    {
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
+            if (vIn[i].txout.scriptPubKey.IsPayToScriptHash())
+                nSigOps += vIn[i].txout.scriptPubKey.GetSigOpCount(tx.vin[i].scriptSig);
+        if (nSigOps > MAX_BLOCK_SIGOPS)
+        {
+            fSigOpsOverflow = true;
+            return false;
+        }
+    }
+
+    int64 nValueIn = 0;
+    for (unsigned int i = 0; i < tx.vin.size(); i++)
+    {
+        // a coinbase output is spendable once it is COINBASE_MATURITY blocks deep
+        if (vIn[i].fCoinBase && pindex->nHeight - vIn[i].nHeight < COINBASE_MATURITY)
+            return LogError("ConnectInputs() : tried to spend coinbase at depth %d", pindex->nHeight - vIn[i].nHeight);
+        nValueIn += vIn[i].txout.nValue;
+        if (!MoneyRange(vIn[i].txout.nValue) || !MoneyRange(nValueIn))
+            return tx.DoS(100, LogError("ConnectInputs() : txin values out of range"));
+    }
+    nFees += nValueIn - tx.GetValueOut();
+
+    // signatures, only if all the cheap checks passed; not before the last checkpoint, as ConnectInputs does
+    if (!(nBestHeight < Checkpoints::GetTotalBlocksEstimate()))
+    {
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
+        {
+            const CScript& scriptPubKey = vIn[i].txout.scriptPubKey;
+            if (!VerifyScript(tx.vin[i].scriptSig, scriptPubKey, tx, i, fStrictPayToScriptHash, 0))
+            {
+                // only during transition phase for P2SH: do not invoke anti-DoS code for potentially old clients relaying bad P2SH transactions
+                if (fStrictPayToScriptHash && VerifyScript(tx.vin[i].scriptSig, scriptPubKey, tx, i, false, 0))
+                    return LogError("ConnectInputs() : %s P2SH VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str());
+                return tx.DoS(100, LogError("ConnectInputs() : %s VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str()));
+            }
+        }
+    }
+
+    if (nValueIn < tx.GetValueOut())
+        return tx.DoS(100, LogError("ConnectInputs() : %s value in < value out", tx.GetHash().ToString().substr(0,10).c_str()));
+    if (!MoneyRange(nValueIn - tx.GetValueOut()))
+        return tx.DoS(100, LogError("ConnectInputs() : nFees out of range"));
+
+    // the index still records what spends what (the wallet and getrawtransaction read it)
+    for (const CTxIn& txin : tx.vin)
+    {
+        CTxIndex txindex;
+        if (!view.Read(txin.prevout.hash, txindex) || txin.prevout.n >= txindex.vSpent.size() || !txindex.vSpent[txin.prevout.n].IsNull())
+            return LogError("ConnectInputs() : %s the index and the unspent set disagree about %s:%u", tx.GetHash().ToString().substr(0,10).c_str(),
+                            txin.prevout.hash.ToString().substr(0,10).c_str(), txin.prevout.n);
+        txindex.vSpent[txin.prevout.n] = posThisTx;
+        view.Write(txin.prevout.hash, txindex);
+    }
+    return true;
+}
+
 bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
     fConnectFailureMaybeLocal = false;
@@ -2042,11 +2123,22 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     CBlockUndo coinsUndo;       // what this block spends, for the unspent set beside the index
     int64 nFees = 0;
     unsigned int nSigOps = 0;
+
+    // -coinsvalidate: this block's inputs are checked against the unspent set. Only while the set is known to be the chain's.
+    const bool fFromCoins = GetBoolArg("-coinsvalidate", false) && CoinsUsable();
+    if (fFromCoins && fEnforceBIP30)
+    {
+        // BIP30 against the chain before this block: the set as it is now, before any transaction of this block is applied
+        for (const CTransaction& tx : vtx)
+            if (CoinsHaveUnspent(tx.GetHash()))
+                return false;
+    }
+
     for (CTransaction& tx : vtx)
     {
         uint256 hashTx = tx.GetHash();
 
-        if (fEnforceBIP30) {
+        if (fEnforceBIP30 && !fFromCoins) {
             CTxIndex txindexOld;
             if (view.ReadDb(hashTx, txindexOld)) {      // the database: earlier blocks, not this one
                 for (CDiskTxPos &pos : txindexOld.vSpent)
@@ -2063,7 +2155,13 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         nTxPos += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
 
         MapPrevTx mapInputs;
-        if (!tx.IsCoinBase())
+        if (!tx.IsCoinBase() && fFromCoins)
+        {
+            bool fSigOpsOverflow = false;
+            if (!ConnectTxFromCoins(tx, posThisTx, pindex, view, fStrictPayToScriptHash, nSigOps, nFees, fSigOpsOverflow))
+                return fSigOpsOverflow ? DoS(100, LogError("ConnectBlock() : too many sigops")) : false;
+        }
+        else if (!tx.IsCoinBase())
         {
             bool fInvalid;
             if (!tx.FetchInputs(txdb, mapQueuedChanges, true, false, mapInputs, fInvalid))

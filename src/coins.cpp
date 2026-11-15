@@ -31,6 +31,7 @@ std::set<uint256> setPendingUndoErase;
 uint256 hashPendingBest;
 bool fHavePendingBest = false;
 uint64 nCheckFailures = 0;
+bool fStale = false;                // a write failed: the set is behind the index until the next start rebuilds it
 bool fTxnBroken = false;            // a change in this transaction could not be applied: the set must be rebuilt once it commits
 
 std::string Key(char chType, const uint256& hash)
@@ -320,9 +321,47 @@ bool CoinsEnabled()
     return pdb != nullptr;
 }
 
+bool CoinsUsable()
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    return pdb != nullptr && !fStale && !fTxnBroken;
+}
+
+CoinsFetchResult CoinsFetchInputs(const CTransaction& tx, std::vector<CCoinInput>& vIn, unsigned int& nBad)
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    vIn.clear();
+    for (unsigned int i = 0; i < tx.vin.size(); i++)
+    {
+        const COutPoint& prevout = tx.vin[i].prevout;
+        CCoins coins;
+        nBad = i;
+        if (!GetCoins(prevout.hash, coins))
+            return COINS_FETCH_MISSING;             // never there, or every output of it is spent
+        if (prevout.n >= coins.vout.size())
+            return COINS_FETCH_RANGE;
+        if (!coins.IsAvailable(prevout.n))
+            return COINS_FETCH_SPENT;
+        CCoinInput in;
+        in.txout = coins.vout[prevout.n];
+        in.fCoinBase = coins.fCoinBase;
+        in.nHeight = coins.nHeight;
+        vIn.push_back(in);
+    }
+    return COINS_FETCH_OK;
+}
+
+bool CoinsHaveUnspent(const uint256& hash)
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    CCoins coins;
+    return GetCoins(hash, coins);
+}
+
 bool CoinsInit()
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
+    fStale = false;
     ClearPending();
     if (!OpenDb(false))
         return false;
@@ -385,7 +424,10 @@ void CoinsTxnCommit()
     if (!fBroken)
     {
         if (!WritePending(hashBest))
+        {
             LogPrintf("COINS: writing the unspent set failed; it will be rebuilt at the next start\n");
+            fStale = true;
+        }
         ClearPending();
         return;
     }
