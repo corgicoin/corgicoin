@@ -170,5 +170,6 @@ Value gettxoutsetinfo(const Array& params, bool fHelp)
     result.emplace_back("hash_serialized", hashSet.GetHex());
     result.emplace_back("bogus_spends", (int64_t)utxo.nBogusSpends);
     result.emplace_back("coins_check_failures", (int64_t)CoinsCheckFailures());
+    result.emplace_back("blocks_from_coins", (int64_t)CoinsBlocksFromSet());
     return result;
 }

@@ -31,6 +31,7 @@ std::set<uint256> setPendingUndoErase;
 uint256 hashPendingBest;
 bool fHavePendingBest = false;
 uint64 nCheckFailures = 0;
+uint64 nBlocksFromSet = 0;
 bool fStale = false;                // a write failed: the set is behind the index until the next start rebuilds it
 bool fTxnBroken = false;            // a change in this transaction could not be applied: the set must be rebuilt once it commits
 
@@ -451,6 +452,18 @@ void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo)
     if (!pdb || fTxnBroken)
         return;
     mapPendingUndo[pindex->GetBlockHash()] = undo;
+}
+
+void CoinsNoteBlockFromSet()
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    nBlocksFromSet++;
+}
+
+uint64 CoinsBlocksFromSet()
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    return nBlocksFromSet;
 }
 
 uint64 CoinsCheckFailures()
