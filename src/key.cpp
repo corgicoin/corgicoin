@@ -11,6 +11,9 @@
 #include <openssl/obj_mac.h>
 
 #include "key.h"
+#ifdef USE_LIBSECP256K1
+#include <secp256k1.h>
+#endif
 
 // Generate a private key from just the secret parameter
 int EC_KEY_regenerate_key(EC_KEY *eckey, BIGNUM *priv_key)
@@ -578,6 +581,27 @@ bool ParseSignatureLax(const std::vector<unsigned char>& vchSig, unsigned char* 
     return fOk;
 }
 
+#ifdef USE_LIBSECP256K1
+// The same question as CKey::Verify below, put to libsecp256k1: the signature read by the same lax rules, a high S accepted
+bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
+{
+    static secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    if (vchSig.empty() || !fSet)
+        return false;
+    const std::vector<unsigned char> pub = GetPubKey().Raw();
+    secp256k1_pubkey pk;
+    if (pub.empty() || !secp256k1_ec_pubkey_parse(ctx, &pk, &pub[0], pub.size()))
+        return false;
+    unsigned char compact[64];
+    if (!ParseSignatureLax(vchSig, compact))
+        return false;
+    secp256k1_ecdsa_signature sg;
+    if (!secp256k1_ecdsa_signature_parse_compact(ctx, &sg, compact))
+        return false;
+    secp256k1_ecdsa_signature_normalize(ctx, &sg, &sg);
+    return secp256k1_ecdsa_verify(ctx, &sg, (const unsigned char*)&hash, &pk) == 1;
+}
+#else
 bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
 {
     // Whether a signature is valid is consensus, so it must not depend on how strict the linked OpenSSL is about the
@@ -603,6 +627,7 @@ bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
     ECDSA_SIG_free(sig);
     return nResult == 1;
 }
+#endif
 
 bool CKey::VerifyCompact(uint256 hash, const std::vector<unsigned char>& vchSig)
 {

@@ -250,6 +250,17 @@ if(USE_ZMQ)
     endif()
 endif()
 
+# EXPERIMENTAL (8.3): verify signatures with libsecp256k1 instead of OpenSSL. Off, and not for release: it exists to replay the real chain
+# under the other verifier and compare (see doc/ in the review notes). The library is linked through ZMQ_LIBRARIES, which every target already uses.
+option(USE_LIBSECP256K1 "Verify signatures with libsecp256k1 (experimental; for replaying the chain)" OFF)
+if(USE_LIBSECP256K1)
+    find_library(SECP256K1_LIBRARY secp256k1 REQUIRED)
+    find_path(SECP256K1_INCLUDE_DIR secp256k1.h REQUIRED)
+    add_definitions(-DUSE_LIBSECP256K1)
+    include_directories(${SECP256K1_INCLUDE_DIR})
+    list(APPEND ZMQ_LIBRARIES ${SECP256K1_LIBRARY})
+endif()
+
 # LevelDB: the unspent-output set and the undo data of each block (src/coins.cpp, 8.1). contrib/build-leveldb.sh builds the pinned release.
 find_library(LEVELDB_LIBRARY leveldb)
 find_path(LEVELDB_INCLUDE_DIR leveldb/db.h)
