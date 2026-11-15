@@ -118,7 +118,7 @@ Value gettxoutsetinfo(const Array& params, bool fHelp)
     for (const auto& kv : utxo.mapCoins)
         vSorted.push_back(&kv);
     std::sort(vSorted.begin(), vSorted.end(), [](const std::pair<const OutKey, CTxOut>* a, const std::pair<const OutKey, CTxOut>* b) {
-        int c = memcmp(a->first.first.begin(), b->first.first.begin(), 32);
+        int c = memcmp(&a->first.first, &b->first.first, 32);
         return c != 0 ? c < 0 : a->first.second < b->first.second;
     });
 
