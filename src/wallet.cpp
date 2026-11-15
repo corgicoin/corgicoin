@@ -2272,6 +2272,10 @@ bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strEr
                 return false;
             const CKeyID keyid = key.GetPubKey().GetID();
             // a key that is already here (an earlier restore of the same phrase, or the key pool) is not an error
+                // a restored key may already have years of history: its birth is unknown (0), not today (which would start a later
+                // backup's rescan at today and miss everything before it). Set first: AddKey stamps "now" only on a key with no metadata,
+                // and this way each key costs one metadata write, not two.
+                SetKeyMetadata(key.GetPubKey(), CKeyMetadata(0));
             if (!HaveKey(keyid) && !AddKey(key))
                 return false;
             mapIndex[keyid] = nDerived;

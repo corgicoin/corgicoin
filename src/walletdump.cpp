@@ -578,6 +578,7 @@ bool ImportWalletFromFile(CWallet* pwallet, const std::filesystem::path& path, i
                 fLabel = true;
             }
         }
+        pwallet->SetKeyMetadata(key.GetPubKey(), CKeyMetadata(0));     // when the key was made is not known here: not the day of the import
         if (!pwallet->AddKey(key)) {
             fGood = false;
             continue;
@@ -631,6 +632,9 @@ bool ImportPrivateKey(CWallet* pwallet, const string& strSecret, const string& s
         fAlreadyHad = true;
         return true;
     }
+    // the key's own date, or 0 (unknown) if none was given: never the day it was imported, which a later backup would take for its birth
+    // (set before the key is added, which stamps "now" only on a key with no metadata)
+    pwallet->SetKeyMetadata(key.GetPubKey(), CKeyMetadata(nTimestamp > 0 ? nTimestamp : 0));
     if (!pwallet->AddKey(key)) {
         strError = "Error adding key to wallet";
         return false;
