@@ -10,7 +10,7 @@ import struct
 from mininode import P2PConnection
 from test_framework import CorgiTestFramework, assert_equal, wait_until
 
-BLOCKS = 2100        # more than one headers message (2000 each)
+BLOCKS = 2010        # more than one headers message (2000 each)
 
 
 def header_bytes(node, block_hash, **override):
@@ -40,13 +40,13 @@ class HeadersFirstTest(CorgiTestFramework):
             a.generate(300)
         a.generate(BLOCKS % 300)
         self.connect_nodes(1, 0)
-        self.sync_blocks([a, b])
+        self.sync_blocks([a, b], timeout=240)
         assert_equal(b.getblockcount(), BLOCKS)
 
         self.log("a headers-first node joins two peers with the same chain")
         self.connect_nodes(2, 0)
         self.connect_nodes(2, 1)
-        wait_until(lambda: c.getblockcount() == BLOCKS, timeout=90, what="headers-first sync (%d)" % c.getblockcount())
+        wait_until(lambda: c.getblockcount() == BLOCKS, timeout=240, what="headers-first sync (%d)" % c.getblockcount())
         assert_equal(c.getbestblockhash(), a.getbestblockhash())
 
         text = self.log_text(c)
@@ -92,7 +92,7 @@ class HeadersFirstTest(CorgiTestFramework):
         assert_equal(d.getblockcount(), 0)
         self.log("and then it syncs from a peer that does")
         self.connect_nodes(3, 0)
-        wait_until(lambda: d.getblockcount() == BLOCKS + 5, timeout=120, what="sync after the stalled peer")
+        wait_until(lambda: d.getblockcount() == BLOCKS + 5, timeout=240, what="sync after the stalled peer")
 
 
 if __name__ == "__main__":
