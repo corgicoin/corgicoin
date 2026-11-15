@@ -1406,7 +1406,7 @@ void CBlock::UpdateTime(const CBlockIndex* pindexPrev)
 
 
 
-bool CTransaction::DisconnectInputs(CTxDB& txdb)
+bool CTransaction::DisconnectInputs(CTxIndexCache& view)
 {
     // Relinquish previous transactions' spent pointers
     if (!IsCoinBase())
@@ -1417,7 +1417,7 @@ bool CTransaction::DisconnectInputs(CTxDB& txdb)
 
             // Get prev txindex from disk
             CTxIndex txindex;
-            if (!txdb.ReadTxIndex(prevout.hash, txindex))
+            if (!view.Read(prevout.hash, txindex))
                 return LogError("DisconnectInputs() : ReadTxIndex failed");
 
             if (prevout.n >= txindex.vSpent.size())
@@ -1427,8 +1427,7 @@ bool CTransaction::DisconnectInputs(CTxDB& txdb)
             txindex.vSpent[prevout.n].SetNull();
 
             // Write back
-            if (!txdb.UpdateTxIndex(prevout.hash, txindex))
-                return LogError("DisconnectInputs() : UpdateTxIndex failed");
+            view.Write(prevout.hash, txindex);
         }
     }
 
@@ -1436,7 +1435,7 @@ bool CTransaction::DisconnectInputs(CTxDB& txdb)
     // This can fail if a duplicate of this transaction was in a chain that got
     // reorganized away. This is only possible if this transaction was completely
     // spent, so erasing it would be a no-op anway.
-    txdb.EraseTxIndex(*this);
+    view.Erase(GetHash());
 
     return true;
 }
@@ -1697,10 +1696,13 @@ bool CTransaction::ClientConnectInputs()
 
 bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
-    // Disconnect in reverse order
+    // Disconnect in reverse order, through a cache that reaches the database once, below
+    CTxIndexCache view(txdb);
     for (int i = vtx.size()-1; i >= 0; i--)
-        if (!vtx[i].DisconnectInputs(txdb))
+        if (!vtx[i].DisconnectInputs(view))
             return false;
+    if (!view.Flush())
+        return LogError("DisconnectBlock() : UpdateTxIndex failed");
 
     // Update block index on disk without changing it in memory.
     // The memory index structure will be changed after the db commits.
@@ -1743,7 +1745,8 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     // position, so getrawtransaction failed for them and any spend of their outputs could not read the previous tx.
     unsigned int nTxPos = pindex->nBlockPos + ::GetSerializeSize(*this, SER_DISK | SER_BLOCKHEADERONLY, CLIENT_VERSION) + GetSizeOfCompactSize(vtx.size());
 
-    map<uint256, CTxIndex> mapQueuedChanges;
+    CTxIndexCache view(txdb);
+    map<uint256, CTxIndex>& mapQueuedChanges = view.Dirty();
     int64 nFees = 0;
     unsigned int nSigOps = 0;
     for (CTransaction& tx : vtx)
@@ -1752,7 +1755,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
         if (fEnforceBIP30) {
             CTxIndex txindexOld;
-            if (txdb.ReadTxIndex(hashTx, txindexOld)) {
+            if (view.ReadDb(hashTx, txindexOld)) {      // the database: earlier blocks, not this one
                 for (CDiskTxPos &pos : txindexOld.vSpent)
                     if (pos.IsNull())
                         return false;
@@ -1793,11 +1796,8 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     }
 
     // Write queued txindex changes
-    for (const auto& mi : mapQueuedChanges)
-    {
-        if (!txdb.UpdateTxIndex(mi.first, mi.second))
-            return LogError("ConnectBlock() : UpdateTxIndex failed");
-    }
+    if (!view.Flush())
+        return LogError("ConnectBlock() : UpdateTxIndex failed");
 
 	uint256 prevHash = 0;
 	if(pindex->pprev)

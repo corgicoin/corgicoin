@@ -14,6 +14,7 @@
 #include "key.h"
 #include "script.h"
 #include "db.h"
+#include "txindexcache.h"
 #include "scrypt.h"
 #include "logging.h"
 #include "auxpow.h"
@@ -688,7 +689,7 @@ public:
     bool ReadFromDisk(CTxDB& txdb, COutPoint prevout, CTxIndex& txindexRet);
     bool ReadFromDisk(CTxDB& txdb, COutPoint prevout);
     bool ReadFromDisk(COutPoint prevout);
-    bool DisconnectInputs(CTxDB& txdb);
+    bool DisconnectInputs(CTxIndexCache& view);
 
     /** Fetch from memory and/or disk. inputsRet keys are transaction hashes.
 
