@@ -4280,6 +4280,7 @@ Value bumpfee(const Array& params, bool fHelp)
     // Ask the pool first, as a dry run: if it would refuse the replacement, the wallet is left as it was
     {
         CTxDB txdb("r");
+        wtxNew.AddSupportingTransactions(txdb);        // as CreateTransaction does: the wallet needs them to see the change as confirmed
         CTxAcceptCheck check;
         check.fTestOnly = true;
         bool fMissing = false;
