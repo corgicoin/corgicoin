@@ -10,7 +10,7 @@ import struct
 from mininode import P2PConnection
 from test_framework import CorgiTestFramework, assert_equal, wait_until
 
-BLOCKS = 400
+BLOCKS = 2100        # more than one headers message (2000 each)
 
 
 def header_bytes(node, block_hash, **override):
@@ -27,15 +27,15 @@ def varint(n):
 
 
 class HeadersFirstTest(CorgiTestFramework):
-    num_nodes = 3
-    extra_args = [[], [], ["-headersfirst=1"]]
+    num_nodes = 4
+    extra_args = [[], [], ["-headersfirst=1"], ["-headersfirst=1", "-blocktimeout=5"]]
 
     def log_text(self, node):
         with open(node.debug_log, errors="replace") as f:
             return f.read()
 
     def run_test(self):
-        a, b, c = self.nodes
+        a, b, c, d = self.nodes
         a.generate(BLOCKS)
         self.connect_nodes(1, 0)
         self.sync_blocks([a, b])
@@ -52,7 +52,7 @@ class HeadersFirstTest(CorgiTestFramework):
         assert "headers-first: " in text and " headers from " in text
         askers = {l.split("asking ")[1].split(" for ")[0] for l in text.split("\n") if "headers-first: asking" in l and " blocks from height" in l}
         self.log("blocks were asked of: %s" % sorted(askers))
-        assert len(askers) >= 1
+        assert len(askers) >= 2, "blocks came from one peer only: %s" % sorted(askers)
         self.log("a node that is not headers-first never logs any of it")
         assert "headers-first:" not in self.log_text(a)
 
@@ -79,6 +79,18 @@ class HeadersFirstTest(CorgiTestFramework):
         peer.send("ping", b"\x00" * 8)
         wait_until(lambda: peer.counts.get("pong", 0) >= 1, what="a pong: the node carries on")
         assert_equal(c.getbestblockhash(), a.getbestblockhash())
+
+        self.log("a peer that gives headers but never the blocks is dropped, and the node does not wait on it for ever")
+        stall = P2PConnection(d.p2p_port, start_height=60)
+        wait_until(lambda: stall.counts.get("getheaders", 0) >= 1, what="the node to ask the peer for headers")
+        stall.send("headers", varint(60) + b"".join(header_bytes(a, a.getblockhash(i)) for i in range(1, 61)))
+        wait_until(lambda: stall.counts.get("getdata", 0) >= 1, what="the node to ask the peer for blocks")
+        wait_until(lambda: stall.closed, timeout=40, what="the node to drop the peer that sent no block")
+        assert "did not send block" in self.log_text(d)
+        assert_equal(d.getblockcount(), 0)
+        self.log("and then it syncs from a peer that does")
+        self.connect_nodes(3, 0)
+        wait_until(lambda: d.getblockcount() == BLOCKS + 5, timeout=120, what="sync after the stalled peer")
 
 
 if __name__ == "__main__":
