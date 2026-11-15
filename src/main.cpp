@@ -1559,6 +1559,107 @@ unsigned int CTransaction::GetP2SHSigOpCount(const MapPrevTx& inputs) const
     return nSigOps;
 }
 
+// ---- The script checks of a block: collected while the block's other checks are made, then run together, on several threads if
+// there are enough of them (-par), or not at all for a block that lies under the assumed-valid block (-assumevalid). They are what the
+// block's signatures cost, and the one thing in connecting a block that does not depend on the order of its transactions.
+// A check that fails fails the block; the block is then connected again the plain way, one check at a time, so that the error, the
+// log and the penalty for the peer are exactly what they always were.
+namespace {
+struct CScriptCheck
+{
+    CScript scriptPubKey;           // what the output being spent requires (a copy: the transaction it came from is not kept)
+    const CTransaction* ptx;        // the spending transaction, one of the block's own
+    unsigned int nIn;
+    bool fStrictPayToScriptHash;
+
+    bool operator()() const
+    {
+        try
+        {
+            return VerifyScript(ptx->vin[nIn].scriptSig, scriptPubKey, *ptx, nIn, fStrictPayToScriptHash, 0);
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+};
+
+class CScriptCheckBatch
+{
+public:
+    void Add(const CScript& scriptPubKey, const CTransaction* ptx, unsigned int nIn, bool fStrict)
+    {
+        vChecks.push_back({scriptPubKey, ptx, nIn, fStrict});
+    }
+    size_t Size() const { return vChecks.size(); }
+
+    // true if every check passes
+    bool Run(int nThreads) const
+    {
+        const size_t n = vChecks.size();
+        if (n == 0)
+            return true;
+        if (nThreads <= 1 || n < MIN_FOR_THREADS)
+        {
+            for (const CScriptCheck& c : vChecks)
+                if (!c())
+                    return false;
+            return true;
+        }
+        std::atomic<size_t> nNext(0);
+        std::atomic<bool> fFailed(false);
+        auto worker = [&]() {
+            for (;;)
+            {
+                if (fFailed.load())
+                    return;
+                const size_t i = nNext.fetch_add(1);
+                if (i >= n)
+                    return;
+                if (!vChecks[i]())
+                {
+                    fFailed = true;
+                    return;
+                }
+            }
+        };
+        const int nWorkers = (int)std::min<size_t>((size_t)nThreads, n / MIN_FOR_THREADS + 1);
+        std::vector<std::thread> vThreads;
+        vThreads.reserve(nWorkers - 1);
+        for (int k = 1; k < nWorkers; k++)
+            vThreads.emplace_back(worker);
+        worker();
+        for (std::thread& t : vThreads)
+            t.join();
+        return !fFailed.load();
+    }
+
+private:
+    static constexpr size_t MIN_FOR_THREADS = 8;        // fewer than this is faster done here than handed to threads
+    std::vector<CScriptCheck> vChecks;
+};
+
+// set by CBlock::ConnectBlockWith for the block it is connecting on this thread: where its script checks go, or that they are not made
+thread_local CScriptCheckBatch* pScriptBatch = nullptr;
+thread_local bool fScriptsAssumedValid = false;
+}
+
+std::atomic<uint64_t> nBlocksScriptsAssumed(0);     // blocks connected without script checks (-assumevalid)
+std::atomic<uint64_t> nBlocksScriptsParallel(0);    // blocks whose script checks ran on more than one thread
+uint256 hashAssumeValid = 0;
+
+int ScriptCheckThreads()
+{
+    static const int nThreads = [] {
+        int64 n = GetArg("-par", 0);
+        if (n <= 0)
+            n = (int64)std::thread::hardware_concurrency();
+        return (int)std::max<int64>(1, std::min<int64>(n, 16));
+    }();
+    return nThreads;
+}
+
 bool CTransaction::ConnectInputs(MapPrevTx inputs,
                                  map<uint256, CTxIndex>& mapTestPool, const CDiskTxPos& posThisTx,
                                  const CBlockIndex* pindexBlock, bool fBlock, bool fMiner, bool fStrictPayToScriptHash)
@@ -1612,7 +1713,15 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
             // Skip ECDSA signature verification when connecting blocks (fBlock=true)
             // before the last blockchain checkpoint. This is safe because block merkle hashes are
             // still computed and checked, and any change will be caught at the next checkpoint.
-            if (!(fBlock && (nBestHeight < Checkpoints::GetTotalBlocksEstimate())))
+            if (fBlock && fScriptsAssumedValid)
+            {
+                // under the assumed-valid block (-assumevalid): not checked
+            }
+            else if (fBlock && pScriptBatch && !(nBestHeight < Checkpoints::GetTotalBlocksEstimate()))
+            {
+                pScriptBatch->Add(txPrev.vout[prevout.n].scriptPubKey, this, i, fStrictPayToScriptHash);       // checked with the rest of the block
+            }
+            else if (!(fBlock && (nBestHeight < Checkpoints::GetTotalBlocksEstimate())))
             {
                 // Verify signature
                 if (!VerifySignature(txPrev, *this, i, fStrictPayToScriptHash, 0))
@@ -1767,11 +1876,16 @@ static bool ConnectTxFromCoins(CTransaction& tx, const CDiskTxPos& posThisTx, co
     nFees += nValueIn - tx.GetValueOut();
 
     // signatures, only if all the cheap checks passed; not before the last checkpoint, as ConnectInputs does
-    if (!(nBestHeight < Checkpoints::GetTotalBlocksEstimate()))
+    if (!fScriptsAssumedValid && !(nBestHeight < Checkpoints::GetTotalBlocksEstimate()))
     {
         for (unsigned int i = 0; i < tx.vin.size(); i++)
         {
             const CScript& scriptPubKey = vIn[i].txout.scriptPubKey;
+            if (pScriptBatch)
+            {
+                pScriptBatch->Add(scriptPubKey, &tx, i, fStrictPayToScriptHash);        // checked with the rest of the block
+                continue;
+            }
             if (!VerifyScript(tx.vin[i].scriptSig, scriptPubKey, tx, i, fStrictPayToScriptHash, 0))
             {
                 // only during transition phase for P2SH: do not invoke anti-DoS code for potentially old clients relaying bad P2SH transactions
@@ -1801,6 +1915,27 @@ static bool ConnectTxFromCoins(CTransaction& tx, const CDiskTxPos& posThisTx, co
 }
 
 bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
+{
+    bool fUsedCoins = false, fBatched = false;
+    if (ConnectBlockWith(txdb, pindex, true, true, fUsedCoins, fBatched))
+    if (!fUsedCoins && !fBatched)
+    // refused by the set, or by script checks run together: once more the plain way (the index, one check at a time), which gives the
+    // error, the log and the peer penalty that it always did. The set has had this block's changes applied, so it is rebuilt if the block is
+    // good after all (if it is bad the transaction is dropped and nothing is kept).
+    LogPrintf("ConnectBlock(): block %s refused (%s); checking it again against the index, one script at a time\n",
+              pindex->GetBlockHash().ToString().substr(0, 20).c_str(), fUsedCoins ? "from the set" : "by the batched script checks");
+    CoinsMarkBroken("a block was refused and is checked again");
+    bool fUnused1 = false, fUnused2 = false;
+    return ConnectBlockWith(txdb, pindex, false, false, fUnused1, fUnused2);
+namespace {
+// where this block's script checks go while it is being connected on this thread (see CScriptCheckBatch)
+struct CScriptCheckScope
+    CScriptCheckScope(CScriptCheckBatch* pBatch, bool fAssumed) { pScriptBatch = pBatch; fScriptsAssumedValid = fAssumed; }
+    ~CScriptCheckScope() { pScriptBatch = nullptr; fScriptsAssumedValid = false; }
+};
+}
+
+bool CBlock::ConnectBlockWith(CTxDB& txdb, CBlockIndex* pindex, bool fMayUseCoins, bool fMayBatch, bool& fUsedCoins, bool& fBatched)
 {
     // Check it again in case a previous version let a bad block in
     if (!CheckBlock())
@@ -1835,6 +1970,13 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     unsigned int nSigOps = 0;
 
     // -coinsvalidate: this block's inputs are checked against the unspent set. Only while the set is known to be the chain's.
+
+    // the script checks: not made (under the assumed-valid block), collected to be run together, or made one by one as they come
+    CScriptCheckBatch scriptBatch;
+    const bool fAssumed = HeadersAssumeValid(pindex);
+    const int nScriptThreads = ScriptCheckThreads();
+    fBatched = fMayBatch && !fAssumed && nScriptThreads > 1;
+    CScriptCheckScope scriptScope(fBatched ? &scriptBatch : nullptr, fAssumed);
     const bool fFromCoins = GetBoolArg("-coinsvalidate", true) && CoinsUsable();
     if (fFromCoins && fEnforceBIP30)
     {
@@ -1898,6 +2040,18 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         CoinsConnectTx(tx, pindex->nHeight, coinsUndo);
     }
 
+    // The script checks of the whole block, before anything is written: a block whose scripts fail leaves no trace in the index
+    if (fBatched)
+    {
+        if (nScriptThreads > 1 && scriptBatch.Size() >= 8)
+            nBlocksScriptsParallel++;
+        if (!scriptBatch.Run(nScriptThreads))
+        {
+            LogPrintf("ConnectBlock() : a script check of block %s failed\n", pindex->GetBlockHash().ToString().substr(0, 20).c_str());
+            return false;
+        }
+    }
+
     // Write queued txindex changes
     if (!view.Flush())
         return LogError("ConnectBlock() : UpdateTxIndex failed");
@@ -1929,6 +2083,8 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     CoinsEndBlock(pindex, coinsUndo);
     if (fFromCoins)
         CoinsNoteBlockFromSet();
+    if (fAssumed)
+        nBlocksScriptsAssumed++;
 
     // Watch for transactions paying to me
     for (CTransaction& tx : vtx)

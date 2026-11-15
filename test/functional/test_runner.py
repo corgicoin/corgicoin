@@ -33,6 +33,7 @@ TESTS = [
     "p2p_headers_first_reorg.py",
     "p2p_headers_first_oldpeer.py",
     "p2p_headers_first_latepeer.py",
+    "feature_script_checks.py",
     "feature_chainstate_catchup.py",
     "rpc_createauxblock.py",
     "feature_auxpow.py",

@@ -9,6 +9,8 @@
 #ifndef BITCOIN_MAIN_H
 #define BITCOIN_MAIN_H
 
+#include <atomic>
+#include <thread>
 #include "bignum.h"
 #include "net.h"
 #include "key.h"
@@ -115,6 +117,17 @@ void HeadersFirstSendMessages(CNode* pto);
 void HeadersFirstBlockArrived(const uint256& hash);
 bool IsOrphanBlock(const uint256& hash);
 unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock);
+
+/** -assumevalid=<hash>: the block with that hash is taken to be valid, and so is everything under it on the best header chain, so those
+ *  blocks are connected without their script checks (the proof of work, the merkle root, the amounts and the unspent set are still checked).
+ *  Only with headers-first, only when the assumed block is in the best header chain, which is at least 2 weeks of blocks past the block
+ *  asked about, and (if -minimumchainwork is set) has at least that work. False when -assumevalid is not given: nothing is assumed by default. */
+bool HeadersAssumeValid(const CBlockIndex* pindex);
+extern uint256 hashAssumeValid;                         // 0: none
+extern std::atomic<uint64_t> nBlocksScriptsAssumed;     // blocks connected without script checks
+extern std::atomic<uint64_t> nBlocksScriptsParallel;    // blocks whose script checks ran on several threads
+/** Threads for the script checks of a block (-par; 0 or not given: one per core, at most 16). 1 means one at a time, in order. */
+int ScriptCheckThreads();
 void AddOrphanBlock(const std::shared_ptr<CBlock>& pblock);
 unsigned int LimitOrphanBlocks(unsigned int nMaxBlocks, unsigned int nMaxBytes);
 uint64 GetOrphanBlockBytes();
@@ -1124,6 +1137,8 @@ public:
     bool DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex);
     bool ConnectBlock(CTxDB& txdb, CBlockIndex* pindex);
     bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true, bool fCheckPoW=true);
+    bool ConnectBlockWith(CTxDB& txdb, CBlockIndex* pindex, bool fMayUseCoins, bool fMayBatch, bool& fUsedCoins, bool& fBatched);
+    bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true);
     bool SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew);
     bool AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos);
     bool CheckBlock() const;

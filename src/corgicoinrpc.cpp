@@ -3042,6 +3042,10 @@ Value getblockchaininfo(const Array& params, bool fHelp)
     }
     obj.emplace_back("initialblockdownload", IsInitialBlockDownload());
     obj.emplace_back("header_only_entries", (int64_t)HeaderOnlyCount());   // headers held that are not blocks yet (headers-first)
+    obj.emplace_back("assumevalid", hashAssumeValid == 0 ? string() : hashAssumeValid.GetHex());
+    obj.emplace_back("script_check_threads", ScriptCheckThreads());
+    obj.emplace_back("blocks_scripts_assumed", (int64_t)nBlocksScriptsAssumed.load());     // connected without script checks (-assumevalid)
+    obj.emplace_back("blocks_scripts_parallel", (int64_t)nBlocksScriptsParallel.load());   // script checks run on several threads
 
     Object softforks;
     softforks.emplace_back("lwma", SoftForkStatus(GetLwmaForkHeight()));

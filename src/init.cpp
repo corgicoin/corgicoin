@@ -283,6 +283,8 @@ std::string HelpMessage()
         "  -headersfirst          " + _("Download the block headers first, check them, then fetch the blocks from several peers at once (default: 1; -noheadersfirst for the old one-peer getblocks sync)") + "\n" +
         "  -blocktimeout=<n>      " + _("Seconds a peer may hold a requested block before it is dropped (headers-first sync; default: 120)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (default: 0; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
+        "  -assumevalid=<hash>    " + _("Take the block with this hash, and everything under it, to be valid: those blocks are connected without checking their scripts. Only if its header is on the best header chain, 2 weeks of blocks or more behind its tip (default: nothing is assumed; 0 turns it off)") + "\n" +
+        "  -par=<n>               " + _("Threads for the script checks of a block (0 = one per core, at most 16; 1 = one at a time; default: 0)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (default: 1; -nocoinsvalidate reads them from the block files as before; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
@@ -443,6 +445,26 @@ bool AppInit2()
             return InitError(strprintf(_("Invalid amount for -paytxfee=<amount>: '%s'"), mapArgs["-paytxfee"].c_str()));
         if (nTransactionFee > 25.0 * COIN)
             InitWarning(_("Warning: -paytxfee is set very high. This is the transaction fee you will pay if you send a transaction."));
+    }
+
+    if (mapArgs.count("-assumevalid"))
+    {
+        const std::string strHash = mapArgs["-assumevalid"];
+        if (strHash.empty() || strHash == "0")
+            hashAssumeValid = 0;
+        else
+        {
+            if (strHash.size() != 64 || strHash.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+                return InitError(strprintf(_("Invalid -assumevalid=<hash>: '%s' (64 hexadecimal digits, or 0)"), strHash.c_str()));
+            hashAssumeValid.SetHex(strHash);
+            LogPrintf("assumevalid: the block %s, and what is under it on the best header chain, is taken to be valid (its scripts are not checked)\n", strHash.c_str());
+        }
+    }
+    if (mapArgs.count("-par"))
+    {
+        const int64 nPar = GetArg("-par", 0);
+        if (nPar < 0 || nPar > 16)
+            return InitError(_("Invalid -par=<n>: 0 to 16"));
     }
 
     if (mapArgs.count("-mininput"))
