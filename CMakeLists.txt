@@ -238,6 +238,7 @@ set(DAEMON_SOURCES
     src/rpcnet.cpp
     src/rpcrawtransaction.cpp
     src/utxoset.cpp
+    src/txindexcache.cpp
     src/bech32.cpp
     src/bip32.cpp
     src/bip39.cpp

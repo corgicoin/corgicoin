@@ -8,10 +8,13 @@
 #ifndef CORGICOIN_TXINDEXCACHE_H
 #define CORGICOIN_TXINDEXCACHE_H
 
-#include "db.h"
+#include "uint256.h"
 
 #include <map>
 #include <set>
+
+class CTxDB;
+class CTxIndex;
 
 class CTxIndexCache
 {
@@ -19,49 +22,19 @@ public:
     explicit CTxIndexCache(CTxDB& txdbIn) : txdb(txdbIn) {}
 
     // The record as it is now: changed in the cache, else in the database. False if erased or not there.
-    bool Read(const uint256& hash, CTxIndex& txindex)
-    {
-        auto it = mapDirty.find(hash);
-        if (it != mapDirty.end())
-        {
-            txindex = it->second;
-            return true;
-        }
-        if (setErased.count(hash))
-            return false;
-        return txdb.ReadTxIndex(hash, txindex);
-    }
+    bool Read(const uint256& hash, CTxIndex& txindex);
 
     // The record in the database only, ignoring what this cache holds (the BIP30 check asks about earlier blocks, not this one).
-    bool ReadDb(const uint256& hash, CTxIndex& txindex) { return txdb.ReadTxIndex(hash, txindex); }
+    bool ReadDb(const uint256& hash, CTxIndex& txindex);
 
-    void Write(const uint256& hash, const CTxIndex& txindex)
-    {
-        setErased.erase(hash);
-        mapDirty[hash] = txindex;
-    }
-
-    void Erase(const uint256& hash)
-    {
-        mapDirty.erase(hash);
-        setErased.insert(hash);
-    }
+    void Write(const uint256& hash, const CTxIndex& txindex);
+    void Erase(const uint256& hash);
 
     // What FetchInputs and ConnectInputs take as the changes proposed so far.
     std::map<uint256, CTxIndex>& Dirty() { return mapDirty; }
 
     // Write the changes to the database; false if one fails. The cache is empty after.
-    bool Flush()
-    {
-        for (const auto& mi : mapDirty)
-            if (!txdb.UpdateTxIndex(mi.first, mi.second))
-                return false;
-        for (const uint256& hash : setErased)
-            txdb.EraseTxIndexByHash(hash);      // as before: an absent record is not an error
-        mapDirty.clear();
-        setErased.clear();
-        return true;
-    }
+    bool Flush();
 
 private:
     CTxDB& txdb;
