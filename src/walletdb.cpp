@@ -20,6 +20,12 @@ static uint64 nAccountingEntryNumber = 0;
 // CWalletDB
 //
 
+bool CWalletDB::WriteKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("keymeta"), vchPubKey.Raw()), meta, true);
+}
+
 bool CWalletDB::WriteName(const string& strAddress, const string& strName)
 {
     nWalletDBUpdated++;
