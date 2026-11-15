@@ -915,17 +915,32 @@ void ThreadSocketHandler2(void* parg)
                 if (!addr.SetSockAddr((const struct sockaddr*)&sockaddr))
                     LogPrintf("warning: unknown socket family\n");
 
+            int nInGroup = 0;       // inbound peers already connected from this address's network group
             {
                 LOCK(cs_vNodes);
+                const std::vector<unsigned char> vchGroup = addr.GetGroup();
                 for (CNode* pnode : vNodes)
                     if (pnode->fInbound)
+                    {
                         nInbound++;
+                        if (!pnode->fDisconnect && pnode->addr.GetGroup() == vchGroup)
+                            nInGroup++;
+                    }
             }
+            // -maxinboundpergroup: one address range may not hold more than this many of the inbound slots (0: no limit). A peer on
+            // this machine is not counted, except under the regtest hook that lets a test see the rule at work.
+            const int nMaxPerGroup = (int)GetArg("-maxinboundpergroup", 0);
+            const bool fGroupFull = nMaxPerGroup > 0 && nInGroup >= nMaxPerGroup && (!addr.IsLocal() || (fRegTest && GetBoolArg("-testgrouplocal", false)));
 
             if (hSocket == INVALID_SOCKET)
             {
                 if (WSAGetLastError() != WSAEWOULDBLOCK)
                     LogPrintf("socket error accept failed: %d\n", WSAGetLastError());
+            }
+            else if (fGroupFull)
+            {
+                LogPrintf("connection from %s dropped (already %d inbound from its network group)\n", addr.ToString().c_str(), nInGroup);
+                closesocket(hSocket);
             }
             else if (nInbound >= GetMaxConnections() - MAX_OUTBOUND_CONNECTIONS)
             {
