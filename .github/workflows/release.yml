@@ -33,10 +33,13 @@ jobs:
       - name: Build LevelDB (the pinned release, static, the same on every platform)
         run: contrib/build-leveldb.sh "$HOME/leveldb"
 
+      - name: Build libsecp256k1 (the pinned release, static, the same on every platform)
+        run: contrib/build-secp256k1.sh "$HOME/secp"
+
       - name: Build daemon
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a -DSECP256K1_INCLUDE_DIR=$HOME/secp/include -DSECP256K1_LIBRARY=$HOME/secp/lib/libsecp256k1.a
           make -j$(nproc)
 
       - name: Run tests
@@ -63,6 +66,9 @@ jobs:
       - name: Build LevelDB (the pinned release, static, the same on every platform)
         run: contrib/build-leveldb.sh "$HOME/leveldb"
 
+      - name: Build libsecp256k1 (the pinned release, static, the same on every platform)
+        run: contrib/build-secp256k1.sh "$HOME/secp"
+
       - name: Build daemon
         run: |
           mkdir build && cd build
@@ -73,6 +79,8 @@ jobs:
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
             -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include \
             -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a \
+            -DSECP256K1_INCLUDE_DIR=$HOME/secp/include \
+            -DSECP256K1_LIBRARY=$HOME/secp/lib/libsecp256k1.a \
             -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
           make -j$(sysctl -n hw.logicalcpu)
 
@@ -111,6 +119,9 @@ jobs:
       - name: Build LevelDB (the pinned release, static, the same on every platform)
         run: contrib/build-leveldb.sh "$HOME/leveldb"
 
+      - name: Build libsecp256k1 (the pinned release, static, the same on every platform)
+        run: contrib/build-secp256k1.sh "$HOME/secp"
+
       - name: Build Qt wallet
         run: |
           mkdir build && cd build
@@ -121,6 +132,8 @@ jobs:
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
             -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include \
             -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a \
+            -DSECP256K1_INCLUDE_DIR=$HOME/secp/include \
+            -DSECP256K1_LIBRARY=$HOME/secp/lib/libsecp256k1.a \
             -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
           make -j$(sysctl -n hw.logicalcpu) corgicoin-qt
 
@@ -217,6 +230,13 @@ jobs:
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
             -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
 
+      - name: Build libsecp256k1 for Windows (the pinned release, cross-compiled)
+        run: |
+          contrib/build-secp256k1.sh /tmp/deps/install \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
+
       - name: Build CorgiCoin for Windows
         run: |
           export PREFIX=/tmp/deps/install
@@ -237,6 +257,8 @@ jobs:
             -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx.a \
             -DLEVELDB_INCLUDE_DIR=$PREFIX/include \
             -DLEVELDB_LIBRARY=$PREFIX/lib/libleveldb.a \
+            -DSECP256K1_INCLUDE_DIR=$PREFIX/include \
+            -DSECP256K1_LIBRARY=$PREFIX/lib/libsecp256k1.a \
             -DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$PREFIX/include \
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
@@ -276,6 +298,9 @@ jobs:
       - name: Build LevelDB (the pinned release, static)
         run: contrib/build-leveldb.sh "$HOME/leveldb" -G "MSYS Makefiles"
 
+      - name: Build libsecp256k1 (the pinned release, static)
+        run: contrib/build-secp256k1.sh "$HOME/secp" -G "MSYS Makefiles"
+
       - name: Build daemon and Qt wallet
         run: |
           mkdir build && cd build
@@ -286,7 +311,9 @@ jobs:
             -DBUILD_TESTS=OFF \
             -DUSE_UPNP=OFF \
             -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include \
-            -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a
+            -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a \
+            -DSECP256K1_INCLUDE_DIR=$HOME/secp/include \
+            -DSECP256K1_LIBRARY=$HOME/secp/lib/libsecp256k1.a
           make -j$(nproc)
 
       - name: Bundle Qt wallet with runtime DLLs

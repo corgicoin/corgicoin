@@ -250,12 +250,19 @@ if(USE_ZMQ)
     endif()
 endif()
 
-# EXPERIMENTAL (8.3): verify signatures with libsecp256k1 instead of OpenSSL. Off, and not for release: it exists to replay the real chain
-# under the other verifier and compare (see doc/ in the review notes). The library is linked through ZMQ_LIBRARIES, which every target already uses.
-option(USE_LIBSECP256K1 "Verify signatures with libsecp256k1 (experimental; for replaying the chain)" OFF)
+# Signature verification (8.3): libsecp256k1, the library Bitcoin Core uses, instead of OpenSSL. Consensus code, so every platform links the same
+# pinned release (contrib/build-secp256k1.sh builds it; the CI jobs and release builds do). The two verifiers were compared on 4,000,000 damaged and
+# odd signatures (src/fuzz/secp_diff.cpp) and on a replay of the whole chain, with no difference. -DUSE_LIBSECP256K1=OFF keeps the OpenSSL path
+# (the same results; kept for a build that cannot have the library). The library is linked through ZMQ_LIBRARIES, which every target already uses.
+option(USE_LIBSECP256K1 "Verify signatures with libsecp256k1" ON)
 if(USE_LIBSECP256K1)
-    find_library(SECP256K1_LIBRARY secp256k1 REQUIRED)
-    find_path(SECP256K1_INCLUDE_DIR secp256k1.h REQUIRED)
+    find_library(SECP256K1_LIBRARY secp256k1)
+    find_path(SECP256K1_INCLUDE_DIR secp256k1.h)
+    if(NOT SECP256K1_LIBRARY OR NOT SECP256K1_INCLUDE_DIR)
+        message(FATAL_ERROR "libsecp256k1 not found. Build the pinned release with contrib/build-secp256k1.sh <prefix> and pass "
+                            "-DSECP256K1_INCLUDE_DIR=<prefix>/include -DSECP256K1_LIBRARY=<prefix>/lib/libsecp256k1.a, or install "
+                            "libsecp256k1-dev, or use -DUSE_LIBSECP256K1=OFF for the OpenSSL verifier.")
+    endif()
     add_definitions(-DUSE_LIBSECP256K1)
     include_directories(${SECP256K1_INCLUDE_DIR})
     list(APPEND ZMQ_LIBRARIES ${SECP256K1_LIBRARY})
