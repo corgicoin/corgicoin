@@ -2011,6 +2011,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
     CTxIndexCache view(txdb);
     map<uint256, CTxIndex>& mapQueuedChanges = view.Dirty();
+    CBlockUndo coinsUndo;       // what this block spends, for the unspent set beside the index
     int64 nFees = 0;
     unsigned int nSigOps = 0;
     for (CTransaction& tx : vtx)
@@ -2057,9 +2058,11 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
             if (!tx.ConnectInputs(mapInputs, mapQueuedChanges, posThisTx, pindex, true, false, fStrictPayToScriptHash))
                 return false;
+            CoinsCheckInputs(tx, mapInputs, pindex);
         }
 
         mapQueuedChanges[hashTx] = CTxIndex(posThisTx, tx.vout.size());
+        CoinsConnectTx(tx, pindex->nHeight, coinsUndo);
     }
 
     // Write queued txindex changes
@@ -2114,6 +2117,7 @@ void CBlock::NotifyConnected() const
     const bool fNotifyZMQ = !IsInitialBlockDownload();
     for (const CTransaction& tx : vtx)
     CoinsConnectBlock(*this, pindex);
+    CoinsEndBlock(pindex, coinsUndo);
 
     // Watch for transactions paying to me
     for (CTransaction& tx : vtx)
