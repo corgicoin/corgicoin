@@ -4283,7 +4283,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         // it goes to the oldest, biggest-valued coins (priority), whatever they pay; the rest goes to whoever pays the most per byte.
         const uint64 nBlockMaxSize = (uint64)std::min<int64>(MAX_BLOCK_SIZE_GEN, std::max<int64>(1000, GetArg("-blockmaxsize", MAX_BLOCK_SIZE_GEN)));
         const uint64 nBlockPrioritySize = (uint64)std::min<int64>((int64)nBlockMaxSize, std::max<int64>(0, GetArg("-blockprioritysize", 27000)));
-        bool fByFee = (nBlockPrioritySize == 0);
+        bool fByFee = false;        // set below once the priority part is full: at once, when -blockprioritysize is 0
         map<const CTransaction*, double> mapPrioOf;     // the priority of each queued transaction
 
         // Priority order to process transactions
