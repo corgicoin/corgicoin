@@ -132,7 +132,7 @@ static bool SecpAccepts(const secp256k1_context* ctx, const Bytes& pub, const ui
     if (!secp256k1_ecdsa_signature_parse_compact(ctx, &sg, compact))
         return false;                           // r or s is not below the group order
     secp256k1_ecdsa_signature_normalize(ctx, &sg, &sg);     // OpenSSL does not insist on a low S; the library does until told
-    return secp256k1_ecdsa_verify(ctx, &sg, hash.begin(), &pk) == 1;
+    return secp256k1_ecdsa_verify(ctx, &sg, (const unsigned char*)&hash, &pk) == 1;
 }
 
 int main(int argc, char** argv)
