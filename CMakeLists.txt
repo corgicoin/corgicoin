@@ -131,6 +131,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-stringop-truncation> $<$<COMPILE_LANGUAGE:CXX>:-Wno-deprecated-copy>)
     endif()
 
+    # Reproducible builds: the directory the source is in must not end up in the binary (__FILE__, assert messages, debug info)
+    if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
+       (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10.0))
+        add_compile_options(-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.)
+    endif()
+
     # Security hardening flags
     if(ENABLE_HARDENING)
         add_compile_options(
