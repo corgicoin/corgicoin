@@ -3644,7 +3644,7 @@ bool ProcessMessages(CNode* pfrom)
         vRecv >> hdr;
         if (!hdr.IsValid())
         {
-            LogPrintf("\n\nPROCESSMESSAGE: ERRORS IN HEADER %s\n\n\n", hdr.GetCommand().c_str());
+            LogPrintf("\n\nPROCESSMESSAGE: ERRORS IN HEADER %s\n\n\n", SanitizeString(hdr.GetCommand(), 12).c_str());      // what a peer sent: no control characters into the log
             continue;
         }
         string strCommand = hdr.GetCommand();

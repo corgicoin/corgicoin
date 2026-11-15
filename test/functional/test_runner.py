@@ -30,6 +30,7 @@ TESTS = [
     "p2p_ping_timeout.py",
     "p2p_resource_limits.py",
     "p2p_bad_subver.py",
+    "p2p_log_injection.py",
     "rpc_createauxblock.py",
     "feature_auxpow.py",
     "rpc_mempool_verify.py",
