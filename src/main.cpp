@@ -1835,7 +1835,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     unsigned int nSigOps = 0;
 
     // -coinsvalidate: this block's inputs are checked against the unspent set. Only while the set is known to be the chain's.
-    const bool fFromCoins = GetBoolArg("-coinsvalidate", false) && CoinsUsable();
+    const bool fFromCoins = GetBoolArg("-coinsvalidate", true) && CoinsUsable();
     if (fFromCoins && fEnforceBIP30)
     {
         // BIP30 against the chain before this block: the set as it is now, before any transaction of this block is applied

@@ -283,6 +283,7 @@ std::string HelpMessage()
         "  -headersfirst          " + _("Download the block headers first, check them, then fetch the blocks from several peers at once (default: 1; -noheadersfirst for the old one-peer getblocks sync)") + "\n" +
         "  -blocktimeout=<n>      " + _("Seconds a peer may hold a requested block before it is dropped (headers-first sync; default: 120)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (default: 0; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
+        "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (default: 1; -nocoinsvalidate reads them from the block files as before; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -zmqpubhashblock=<address> " + _("Publish the hash of each new best block on a ZeroMQ socket, e.g. tcp://127.0.0.1:28332") + "\n" +
