@@ -304,6 +304,7 @@ std::string HelpMessage()
         "  -maxinboundpergroup=<n> " + _("Accept at most n inbound connections from one network group (the /16 of an IPv4 address); 0: no limit (default: 0)") + "\n" +
         "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
         "  -maxuploadtarget=<MiB> " + _("Try to keep what the node sends in 24 hours under this many MiB: past 90% it stops serving old blocks (and lets the peers that ask go), past all of it, blocks (default: 0, no limit)") + "\n" +
+        "  -feefilter=<n>         " + _("Ask peers (protocol 70013) not to announce transactions that pay less than n satoshi per kB; 0 asks nothing (default: 0)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +

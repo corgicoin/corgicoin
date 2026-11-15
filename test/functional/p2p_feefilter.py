@@ -13,6 +13,7 @@ from test_framework import CorgiTestFramework, assert_equal, wait_until
 
 class FeeFilterTest(CorgiTestFramework):
     num_nodes = 1
+    extra_args = [["-feefilter=100000000"]]
 
     def spend(self, node, coin, fee):
         raw = node.createrawtransaction([{"txid": coin["txid"], "vout": coin["vout"]}], {node.getnewaddress(): coin["amount"] - Decimal(fee)})
@@ -25,12 +26,12 @@ class FeeFilterTest(CorgiTestFramework):
         node.generate(110)
         coins = [c for c in node.listunspent() if c["amount"] > 100]
 
-        self.log("a peer at 70013 is sent the node's own minimum; an older peer is sent nothing")
+        self.log("a peer at 70013 is sent what -feefilter says; an older peer is sent nothing")
         new = P2PConnection(node.p2p_port)
         old = P2PConnection(node.p2p_port, protocol_version=70001)
         wait_until(lambda: new.got_verack and old.got_verack)
         wait_until(lambda: new.feefilter is not None)
-        assert new.feefilter > 0
+        assert_equal(new.feefilter, 100000000)
         assert_equal(old.counts.get("feefilter", 0), 0)
 
         self.log("the peer asks for 10 coins per kB: a transaction paying about 5 is not announced to it, one paying far more is")
