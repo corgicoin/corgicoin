@@ -13,7 +13,7 @@ from auxpow_builder import compact_to_target, dsha256
 from mininode import P2PConnection
 from test_framework import CorgiTestFramework, assert_equal, wait_until
 
-BLOCKS = 45         # mature coinbases (maturity is 30), and under the merged-mining fork height (200), so a header is 80 bytes
+BLOCKS = 65         # coins the wallet spends (it waits 50 blocks), and under the merged-mining fork height (200), so a header is 80 bytes
 INPUTS = 10         # at least 8, which is where the checks are handed to threads
 
 
@@ -95,7 +95,7 @@ class ScriptChecksTest(CorgiTestFramework):
         self.sync_blocks([n0, n1])
 
         self.log("one transaction with %d inputs, signed, and the same one with the signature of one input changed" % INPUTS)
-        unspent = [u for u in n0.listunspent() if u["confirmations"] >= 35][:INPUTS]
+        unspent = [u for u in n0.listunspent() if u["confirmations"] >= 51][:INPUTS]
         assert_equal(len(unspent), INPUTS)
         total = sum(u["amount"] for u in unspent)
         raw = n0.createrawtransaction([{"txid": u["txid"], "vout": u["vout"]} for u in unspent], {n0.getnewaddress(): total})
