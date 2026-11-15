@@ -143,7 +143,26 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             add_link_options(
                 -Wl,-z,relro
                 -Wl,-z,now
+                -Wl,-z,noexecstack
             )
+
+            # _FORTIFY_SOURCE=3 (GCC 12+; on an older glibc it behaves as 2) and control-flow protection (x86 only)
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
+                add_compile_options(-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3)
+            endif()
+            if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$" AND
+               ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
+                (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 7.0)))
+                add_compile_options(-fcf-protection=full)
+            endif()
+        endif()
+
+        # Windows (MinGW): address space randomisation and no-execute data
+        if(WINDOWS AND MINGW)
+            add_link_options(-Wl,--dynamicbase -Wl,--nxcompat)
+            if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+                add_link_options(-Wl,--high-entropy-va -Wl,--image-base,0x140000000)
+            endif()
         endif()
     endif()
 endif()
