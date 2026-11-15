@@ -3210,9 +3210,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         // Change version
         pfrom->PushMessage("verack");
-        // tell a peer that understands it what fee rate we want announced: our own relay minimum (BIP 133)
-        if (pfrom->nVersion >= FEEFILTER_VERSION)
-            pfrom->PushMessage("feefilter", (int64)MIN_RELAY_TX_FEE);
+        // tell a peer that understands it what fee rate we want announced (BIP 133), if we want any: -feefilter, in satoshi per kB.
+        // Not the relay minimum by default: this node also takes in free transactions of high priority, and a peer must not hide those.
+        if (pfrom->nVersion >= FEEFILTER_VERSION && GetArg("-feefilter", 0) > 0)
+            pfrom->PushMessage("feefilter", (int64)GetArg("-feefilter", 0));
         pfrom->vSend.SetVersion(min(pfrom->nVersion, PROTOCOL_VERSION));
 
         if (!pfrom->fInbound)
