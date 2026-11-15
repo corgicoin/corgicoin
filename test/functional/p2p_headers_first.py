@@ -36,7 +36,9 @@ class HeadersFirstTest(CorgiTestFramework):
 
     def run_test(self):
         a, b, c, d = self.nodes
-        a.generate(BLOCKS)
+        for _ in range(BLOCKS // 300):          # in batches: one RPC call has two minutes, and a loaded machine needs more for 2100 blocks
+            a.generate(300)
+        a.generate(BLOCKS % 300)
         self.connect_nodes(1, 0)
         self.sync_blocks([a, b])
         assert_equal(b.getblockcount(), BLOCKS)
