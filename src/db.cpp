@@ -9,6 +9,7 @@
 #include "db.h"
 #include "util.h"
 #include "main.h"
+#include "prune.h"
 #include "logging.h"
 #include <cerrno>
 #include <memory>
@@ -591,6 +592,8 @@ bool CTxDB::LoadBlockIndex()
     {
         if (fRequestShutdown || pindex->nHeight < nBestHeight-nCheckDepth)
             break;
+        if (IsBlockPruned(pindex))
+            break;              // -prune: files go oldest first, so nothing under this block can be read either
         CBlock block;
         if (!block.ReadFromDisk(pindex))
             return LogError("LoadBlockIndex() : block.ReadFromDisk failed");
