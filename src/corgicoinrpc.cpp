@@ -7,6 +7,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "main.h"
+#include "prune.h"
 #include "wallet.h"
 #include "db.h"
 #include "walletdb.h"
@@ -2932,6 +2933,7 @@ Value getblock(const Array& params, bool fHelp)
 
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
+        throw JSONRPCError(-1, IsBlockPruned(pblockindex) ? "Block not available (pruned data)" : "Block not found on disk");
     block.ReadFromDisk(pblockindex, true);
 
     if (!fVerbose)
@@ -3042,6 +3044,12 @@ Value getblockchaininfo(const Array& params, bool fHelp)
     }
     obj.emplace_back("initialblockdownload", IsInitialBlockDownload());
     obj.emplace_back("header_only_entries", (int64_t)HeaderOnlyCount());   // headers held that are not blocks yet (headers-first)
+    obj.emplace_back("pruned", fPruneMode);
+    if (fPruneMode)
+    {
+        obj.emplace_back("pruneheight", PruneHeight());              // the lowest block whose data is still on disk
+        obj.emplace_back("pruned_files", (int)PrunedFileCount());
+    }
     obj.emplace_back("assumevalid", hashAssumeValid == 0 ? string() : hashAssumeValid.GetHex());
     obj.emplace_back("script_check_threads", ScriptCheckThreads());
     obj.emplace_back("blocks_scripts_assumed", (int64_t)nBlocksScriptsAssumed.load());     // connected without script checks (-assumevalid)

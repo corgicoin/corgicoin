@@ -7,6 +7,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "wallet.h"
+#include "prune.h"
 #include "coincontrol.h"
 #include "walletdb.h"
 #include "crypter.h"
@@ -1099,8 +1100,16 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
     CBlockIndex* pindex = pindexStart;
     {
         LOCK(cs_wallet);
+        int nPruned = 0;
         while (pindex)
         {
+            if (IsBlockPruned(pindex))
+            {
+                // the block's data is gone (-prune): what it holds for this wallet cannot be found, and an empty read must not pass for "nothing"
+                nPruned++;
+                pindex = pindex->pnext;
+                continue;
+            }
             CBlock block;
             block.ReadFromDisk(pindex, true);
             for (CTransaction& tx : block.vtx)
@@ -1109,6 +1118,11 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
                     ret++;
             }
             pindex = pindex->pnext;
+        }
+        if (nPruned)
+        {
+            LogPrintf("ERROR: wallet scan skipped %d blocks whose data was pruned: transactions in them are not found\n", nPruned);
+            strMiscWarning = strprintf("A wallet scan could not read %d pruned blocks; wallet transactions in them are not shown", nPruned);
         }
     }
     return ret;

@@ -105,6 +105,9 @@ void CoinsDisconnectBlock(const CBlock& block, const CBlockIndex* pindex);
  *  to it has failed, and nothing in the open index transaction has put it out of step. */
 bool CoinsUsable();
 
+/** The unspent outputs of a transaction as the set has them (a spent one is a null output); false if it has none left or the set is not open. */
+bool CoinsLookup(const uint256& txid, CCoins& coins);
+
 /** One input of a transaction, as the set has it. */
 struct CCoinInput
 {

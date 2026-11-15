@@ -14,6 +14,8 @@
 #include "coins.h"
 #include "util.h"
 #include "main.h"
+#include "prune.h"
+#include "coins.h"
 #include "ui_interface.h"
 #include "compat_openssl.h"
 #include "compat_boost.h"
@@ -284,6 +286,7 @@ std::string HelpMessage()
         "  -blocktimeout=<n>      " + _("Seconds a peer may hold a requested block before it is dropped (headers-first sync; default: 120)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (default: 0; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
         "  -assumevalid=<hash>    " + _("Take the block with this hash, and everything under it, to be valid: those blocks are connected without checking their scripts. Only if its header is on the best header chain, 2 weeks of blocks or more behind its tip (default: nothing is assumed; 0 turns it off)") + "\n" +
+        "  -prune=<MiB>           " + _("Keep about this much of the block files (at least 128), deleting the oldest; the last 2880 blocks are always kept. A pruned node validates from the unspent set, but cannot serve old blocks, rescan its wallet over the deleted part, or rebuild the set (default: 0, keep everything)") + "\n" +
         "  -par=<n>               " + _("Threads for the script checks of a block (0 = one per core, at most 16; 1 = one at a time; default: 0)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (default: 1; -nocoinsvalidate reads them from the block files as before; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
@@ -644,6 +647,15 @@ bool AppInit2()
         return false;
     }
 
+    {
+        // -prune: the options that fit it, the list of block files already deleted; a pruned node does not offer old blocks
+        std::string strPruneError;
+        if (!PruneInit(strPruneError))
+            return InitError(strPruneError);
+        if (fPruneMode)
+            nLocalServices &= ~(uint64)NODE_NETWORK;
+    }
+
     uiInterface.InitMessage(_("Loading block index..."));
     LogPrintf("Loading block index...\n");
     nStart = GetTimeMillis();
@@ -654,6 +666,9 @@ bool AppInit2()
         LOCK(cs_main);
         if (!RecoverInvalidatedTip())
             strErrors << _("Error rolling back an invalidated block (see debug.log)") << "\n";
+        // a pruned node validates from the unspent set alone: if the set cannot be had (it needs every block to rebuild), it cannot run
+        else if (fPruneMode && !CoinsUsable())
+            strErrors << _("The unspent-output set (chainstate) is missing or out of step, and a pruned node cannot rebuild it: it needs every block. Remove the data directory except wallet.dat and sync again.") << "\n";
     }
 
     // as LoadBlockIndex can take several minutes, it's possible the user

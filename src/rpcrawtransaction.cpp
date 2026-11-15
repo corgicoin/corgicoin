@@ -10,6 +10,8 @@
 #include "db.h"
 #include "init.h"
 #include "main.h"
+#include "prune.h"
+#include "coins.h"
 #include "net.h"
 #include "wallet.h"
 
@@ -173,20 +175,35 @@ Value gettxout(const Array& params, bool fHelp)
     {
         CTxDB txdb("r");
         CTxIndex txindex;
-        if (!tx.ReadFromDisk(txdb, COutPoint(hash, 0), txindex))
-            return Value::null;
-        if (static_cast<unsigned int>(n) >= tx.vout.size() || static_cast<unsigned int>(n) >= txindex.vSpent.size())
-            return Value::null;
-        if (!txindex.vSpent[n].IsNull())
-            return Value::null;                 // spent in the chain
+        if (txdb.ReadTxIndex(hash, txindex) && IsBlockFilePruned(txindex.pos.nFile))
+        {
+            // the transaction's block file was pruned: the unspent set holds what is left of it
+            CCoins coins;
+            if (!CoinsLookup(hash, coins) || !coins.IsAvailable(n))
+                return Value::null;
+            tx.SetNull();
+            tx.vout = coins.vout;
+            if (coins.fCoinBase)
+                tx.vin.resize(1);
+            nConfirmations = 1 + nBestHeight - coins.nHeight;
+        }
+        else
+        {
+            if (!tx.ReadFromDisk(txdb, COutPoint(hash, 0), txindex))
+                return Value::null;
+            if (static_cast<unsigned int>(n) >= tx.vout.size() || static_cast<unsigned int>(n) >= txindex.vSpent.size())
+                return Value::null;
+            if (!txindex.vSpent[n].IsNull())
+                return Value::null;                 // spent in the chain
 
-        CBlock block;
-        if (!block.ReadFromDisk(txindex.pos.nFile, txindex.pos.nBlockPos, false))
-            return Value::null;
-        auto mi = mapBlockIndex.find(block.GetHash());
-        if (mi == mapBlockIndex.end() || !mi->second || !mi->second->IsInMainChain())
-            return Value::null;
-        nConfirmations = 1 + nBestHeight - mi->second->nHeight;
+            CBlock block;
+            if (!block.ReadFromDisk(txindex.pos.nFile, txindex.pos.nBlockPos, false))
+                return Value::null;
+            auto mi = mapBlockIndex.find(block.GetHash());
+            if (mi == mapBlockIndex.end() || !mi->second || !mi->second->IsInMainChain())
+                return Value::null;
+            nConfirmations = 1 + nBestHeight - mi->second->nHeight;
+        }
     }
     if (static_cast<unsigned int>(n) >= tx.vout.size())
         return Value::null;

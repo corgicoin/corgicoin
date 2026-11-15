@@ -140,6 +140,8 @@ bool RecoverInvalidatedTip();
 bool CheckDiskSpace(uint64 nAdditionalBytes=0);
 FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
 FILE* AppendBlockFile(unsigned int& nFileRet);
+/** The number of the block file blocks are being added to. */
+unsigned int CurrentBlockFile();
 bool LoadBlockIndex(bool fAllowNew=true);
 void PrintBlockTree();
 bool ProcessMessages(CNode* pfrom);

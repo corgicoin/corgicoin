@@ -620,6 +620,8 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
                   bool fValidatePayToScriptHash, int nHashType, unsigned int flags);
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType);
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType, unsigned int flags);
+/** The same for an output that is already in hand (the transaction it belongs to may be only an outline of it, built from the unspent set). */
+bool VerifyInput(const CTxOut& txout, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType, unsigned int flags = SCRIPT_VERIFY_NONE);
 
 // Given two sets of signatures for scriptPubKey, possibly with OP_0 placeholders,
 // combine them intelligently and return the result.

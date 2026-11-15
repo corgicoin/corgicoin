@@ -352,6 +352,14 @@ CoinsFetchResult CoinsFetchInputs(const CTransaction& tx, std::vector<CCoinInput
     return COINS_FETCH_OK;
 }
 
+bool CoinsLookup(const uint256& hash, CCoins& coins)
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    if (!pdb || fStale || fTxnBroken)
+        return false;           // a set that is behind the chain, or out of step in this transaction, is not an answer
+    return GetCoins(hash, coins);
+}
+
 bool CoinsHaveUnspent(const uint256& hash)
 {
     std::lock_guard<std::mutex> lock(mutexCoins);

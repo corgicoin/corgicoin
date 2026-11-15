@@ -1976,3 +1976,9 @@ void CScript::SetMultisig(int nRequired, const std::vector<CKey>& keys)
         *this << key.GetPubKey();
     *this << EncodeOP_N(keys.size()) << OP_CHECKMULTISIG;
 }
+
+bool VerifyInput(const CTxOut& txout, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType, unsigned int flags)
+{
+    assert(nIn < txTo.vin.size());
+    return VerifyScript(txTo.vin[nIn].scriptSig, txout.scriptPubKey, txTo, nIn, fValidatePayToScriptHash, nHashType, flags);
+}

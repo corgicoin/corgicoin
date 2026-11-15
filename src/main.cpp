@@ -8,6 +8,7 @@
 
 #include "checkpoints.h"
 #include "coins.h"
+#include "prune.h"
 #include "db.h"
 #include "net.h"
 #include "init.h"
@@ -274,6 +275,27 @@ bool CTransaction::ReadFromDisk(COutPoint prevout)
     CTxDB txdb("r");
     CTxIndex txindex;
     return ReadFromDisk(txdb, prevout, txindex);
+}
+
+// The transaction an input spends, as the checks of the input need it. From the block files; if its block file has been pruned (-prune),
+// an outline of it built from the unspent set: its outputs (a spent one is null) and whether it is a coinbase, which is all that the value,
+// script, standardness and maturity checks read. Not for anything that wants the whole transaction.
+static bool ReadPrevTx(const uint256& hash, const CTxIndex& txindex, CTransaction& txPrev)
+{
+    if (!IsBlockFilePruned(txindex.pos.nFile))
+    {
+        if (!txPrev.ReadFromDisk(txindex.pos))
+            return false;
+        return txPrev.GetHash() == hash;        // the index pointed at the transaction it should
+    }
+    CCoins coins;
+    if (!CoinsLookup(hash, coins))
+        return false;
+    txPrev.SetNull();
+    txPrev.vout = coins.vout;
+    if (coins.fCoinBase)
+        txPrev.vin.resize(1);                   // a null previous output: IsCoinBase()
+    return true;
 }
 
 bool CTransaction::IsStandard() const
@@ -638,7 +660,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             for (unsigned int i = 0; i < tx.vin.size(); i++)
             {
                 const CTransaction& txPrev = mapInputs[tx.vin[i].prevout.hash].second;
-                if (!VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
+                if (!VerifyInput(txPrev.vout[tx.vin[i].prevout.n], tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
                     return LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str());
             }
         }
@@ -1492,8 +1514,8 @@ bool CTransaction::FetchInputs(CTxDB& txdb, const map<uint256, CTxIndex>& mapTes
         }
         else
         {
-            // Get prev tx from disk
-            if (!txPrev.ReadFromDisk(txindex.pos))
+            // Get prev tx from disk, or an outline of it from the unspent set if its block file was pruned
+            if (!ReadPrevTx(prevout.hash, txindex, txPrev))
                 return LogError("FetchInputs() : %s ReadFromDisk prev tx %s failed", GetHash().ToString().substr(0,10).c_str(),  prevout.hash.ToString().substr(0,10).c_str());
         }
     }
@@ -1724,11 +1746,11 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
             else if (!(fBlock && (nBestHeight < Checkpoints::GetTotalBlocksEstimate())))
             {
                 // Verify signature
-                if (!VerifySignature(txPrev, *this, i, fStrictPayToScriptHash, 0))
+                if (!VerifyInput(txPrev.vout[prevout.n], *this, i, fStrictPayToScriptHash, 0, SCRIPT_VERIFY_NONE))
                 {
                     // only during transition phase for P2SH: do not invoke anti-DoS code for
                     // potentially old clients relaying bad P2SH transactions
-                    if (fStrictPayToScriptHash && VerifySignature(txPrev, *this, i, false, 0))
+                    if (fStrictPayToScriptHash && VerifyInput(txPrev.vout[prevout.n], *this, i, false, 0, SCRIPT_VERIFY_NONE))
                         return LogError("ConnectInputs() : %s P2SH VerifySignature failed", GetHash().ToString().substr(0,10).c_str());
 
                     return DoS(100,LogError("ConnectInputs() : %s VerifySignature failed", GetHash().ToString().substr(0,10).c_str()));
@@ -2302,6 +2324,8 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
       hashBestChain.ToString().substr(0,20).c_str(), nBestHeight, bnBestChainWork.ToString().c_str(),
       DateTimeStrFormat("%x %H:%M:%S", pindexBest->GetBlockTime()).c_str());
 
+    PruneBlockFiles();      // -prune: the old block files that are no longer needed (a no-op without it, and cheap with it)
+
     // Check the version of the last 100 blocks to see if we need to upgrade:
     if (!fIsInitialDownload)
     {
@@ -2817,6 +2841,11 @@ FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszM
 
 static unsigned int nCurrentBlockFile = 1;
 
+unsigned int CurrentBlockFile()
+{
+    return nCurrentBlockFile;
+}
+
 FILE* AppendBlockFile(unsigned int& nFileRet)
 {
     nFileRet = 0;
@@ -2828,7 +2857,7 @@ FILE* AppendBlockFile(unsigned int& nFileRet)
         if (fseek(file, 0, SEEK_END) != 0)
             return nullptr;
         // FAT32 filesize max 4GB, fseek and ftell max 2GB, so we must stay under 2GB
-        if (ftell(file) < 0x7F000000 - MAX_SIZE)
+        if ((uint64)ftell(file) < BlockFileThreshold())
         {
             nFileRet = nCurrentBlockFile;
             return file;
@@ -3294,6 +3323,12 @@ static void ProcessGetData(CNode* pfrom)
     }
 }
 
+                if (!block.ReadFromDisk((*mi).second, true, false))
+                {
+                    // pruned, or the file is damaged: say nothing for it (an empty block would be taken for a bad one), and carry on
+                    LogPrintf("getdata : block %s is not available%s\n", inv.hash.ToString().substr(0,20).c_str(), IsBlockPruned((*mi).second) ? " (pruned)" : "");
+                    continue;
+                }
 bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<CService, CPubKey> mapReuseKey;
@@ -4357,7 +4392,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                 // Read prev transaction
                 CTransaction txPrev;
                 CTxIndex txindex;
-                if (!txPrev.ReadFromDisk(txdb, txin.prevout, txindex))
+                if (!(txdb.ReadTxIndex(txin.prevout.hash, txindex) && ReadPrevTx(txin.prevout.hash, txindex, txPrev) && txin.prevout.n < txPrev.vout.size()))
                 {
                     // Has to wait for dependencies
                     if (!porphan)
