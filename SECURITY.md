@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 4.8.x   | :white_check_mark: |
-| < 4.8   | :x:                |
+| 4.9.x   | :white_check_mark: |
+| < 4.9   | :x:                |
 
 Only the latest release receives security fixes; there is no long-term support branch. Upgrade to it. In particular,
 v4.5–v4.7 have a wallet bug that leaves HD-wallet coins unspendable and, in encrypted HD wallets, private keys
