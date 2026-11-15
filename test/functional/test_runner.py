@@ -49,6 +49,7 @@ TESTS = [
     "feature_chainstate_catchup.py",
     "feature_chainstate_stale.py",
     "p2p_headers_first.py",
+    "p2p_headers_first_reorg.py",
     "rpc_createauxblock.py",
     "rpc_createauxblock_cache.py",
     "feature_auxpow.py",
