@@ -462,6 +462,12 @@ bool CTxDB::EraseTxIndex(const CTransaction& tx)
     return Erase(std::make_pair(string("tx"), hash));
 }
 
+bool CTxDB::EraseTxIndexByHash(const uint256& hash)
+{
+    assert(!fClient);
+    return Erase(std::make_pair(string("tx"), hash));
+}
+
 bool CTxDB::ContainsTx(uint256 hash)
 {
     assert(!fClient);

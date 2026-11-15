@@ -373,6 +373,7 @@ public:
     bool UpdateTxIndex(uint256 hash, const CTxIndex& txindex);
     bool AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeight);
     bool EraseTxIndex(const CTransaction& tx);
+    bool EraseTxIndexByHash(const uint256& hash);
     bool ContainsTx(uint256 hash);
     bool ReadDiskTx(uint256 hash, CTransaction& tx, CTxIndex& txindex);
     bool ReadDiskTx(uint256 hash, CTransaction& tx);
