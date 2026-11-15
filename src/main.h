@@ -14,7 +14,6 @@
 #include "key.h"
 #include "script.h"
 #include "db.h"
-#include "txindexcache.h"
 #include "scrypt.h"
 #include "logging.h"
 #include "auxpow.h"
@@ -92,6 +91,7 @@ constexpr uint64 nMinDiskSpace = 52428800;
 class CReserveKey;
 class CTxDB;
 class CTxIndex;
+class CTxIndexCache;
 struct CTxAcceptCheck;
 
 void RegisterWallet(CWallet* pwalletIn);
@@ -1749,5 +1749,8 @@ public:
 };
 
 extern CTxMemPool mempool;
+
+// after CTxIndex, which it holds
+#include "txindexcache.h"
 
 #endif
