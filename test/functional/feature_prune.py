@@ -34,8 +34,8 @@ class PruneTest(CorgiTestFramework):
         self.log("old block files are gone, the list of them is kept, and the node says so")
         info = pruned.getblockchaininfo()
         assert info["pruned"] and info["pruned_files"] >= 1 and info["pruneheight"] > 1, info
-        files = [f for f in os.listdir(self.datadir_of(pruned)) if f.startswith("blk") and f.endswith(".dat") and f != "blkindex.dat"]
-        full_files = [f for f in os.listdir(self.datadir_of(full)) if f.startswith("blk") and f.endswith(".dat") and f != "blkindex.dat"]
+        files = [f for f in os.listdir(self.datadir_of(pruned)) if f.startswith("blk") and f.endswith(".dat") and f not in ("blkindex.dat", "blkpruned.dat")]
+        full_files = [f for f in os.listdir(self.datadir_of(full)) if f.startswith("blk") and f.endswith(".dat") and f not in ("blkindex.dat", "blkpruned.dat")]
         assert len(files) < len(full_files), (files, full_files)
         assert os.path.exists(self.datadir_of(pruned) + "/blkpruned.dat")
         assert_equal(full.getblockchaininfo()["pruned"], False)
