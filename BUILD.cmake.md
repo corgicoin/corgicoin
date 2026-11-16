@@ -10,7 +10,7 @@
 - **CMake** 3.10+
 - **OpenSSL** 3.x
 - **Boost** 1.55+ (program_options, thread)
-- **Berkeley DB** 5.3+ (C++ bindings required)
+- **Berkeley DB** 5.3.28 (C++ bindings; built by `contrib/build-bdb53.sh`, see doc/berkeley-db.md)
 
 ### Optional Dependencies
 
@@ -24,12 +24,16 @@
 
 ```bash
 # Install dependencies
-sudo apt-get install build-essential cmake libboost-all-dev libssl-dev \
-  libdb++-dev libminiupnpc-dev
+sudo apt-get install build-essential cmake curl libboost-all-dev libssl-dev \
+  libminiupnpc-dev
+
+# Berkeley DB 5.3.28 (pinned, checked by checksum), into $HOME/bdb53
+contrib/build-bdb53.sh $HOME/bdb53
 
 # Build daemon + tests
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON \
+  -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
 make -j$(nproc)
 
 # Run tests
@@ -40,13 +44,14 @@ make -j$(nproc)
 
 ```bash
 # Install dependencies
-brew install boost openssl@3 berkeley-db miniupnpc cmake
+brew install boost openssl@3 miniupnpc cmake
+contrib/build-bdb53.sh $HOME/bdb53
 
 # Build daemon
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF \
   -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-  -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
+  -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
 make -j$(sysctl -n hw.logicalcpu)
 ```
 
@@ -58,7 +63,7 @@ brew install qt
 mkdir build-qt && cd build-qt
 cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=ON \
   -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-  -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db) \
+  -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a \
   -DCMAKE_PREFIX_PATH=$(brew --prefix qt)
 make -j$(sysctl -n hw.logicalcpu)
 ```
@@ -98,7 +103,7 @@ cmake .. -DBUILD_QT_GUI=ON -DUSE_UPNP=ON -DUSE_QRCODE=ON
 # Custom dependency paths
 cmake .. \
   -DOPENSSL_ROOT_DIR=/path/to/openssl \
-  -DBerkeleyDB_ROOT=/path/to/berkeleydb \
+  -DBERKELEYDB_INCLUDE_DIR=/path/to/bdb/include -DBERKELEYDB_LIBRARY=/path/to/bdb/lib/libdb_cxx.a \
   -DCMAKE_PREFIX_PATH=/path/to/qt
 ```
 
@@ -118,12 +123,13 @@ make all                 # Everything
 ## Troubleshooting
 
 ### "Could NOT find BerkeleyDB"
-Install Berkeley DB with C++ bindings, or specify the path:
+Build the pinned Berkeley DB (5.3.28) and say where it is:
 ```bash
-cmake .. -DBerkeleyDB_ROOT=/path/to/berkeleydb
+contrib/build-bdb53.sh $HOME/bdb53
+cmake .. -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
 ```
 
-On Ubuntu, `libdb++-dev` provides this. On macOS, `brew install berkeley-db`.
+All platforms use this one version so that a `wallet.dat` opens on every one of them (see doc/berkeley-db.md).
 
 ### "Could NOT find OpenSSL"
 ```bash

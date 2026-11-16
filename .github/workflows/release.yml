@@ -27,13 +27,15 @@ jobs:
             cmake \
             libboost-all-dev \
             libssl-dev \
-            libdb++-dev \
             libminiupnpc-dev
+
+      - name: Build Berkeley DB 5.3 (the one version every platform's wallet.dat uses)
+        run: contrib/build-bdb53.sh "$HOME/bdb53"
 
       - name: Build daemon
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
           make -j$(nproc)
 
       - name: Run tests
@@ -55,7 +57,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install boost openssl@3 berkeley-db miniupnpc cmake
+          brew install boost openssl@3 miniupnpc cmake
+
+      - name: Build Berkeley DB 5.3 (the one version every platform's wallet.dat uses)
+        run: contrib/build-bdb53.sh "$HOME/bdb53"
 
       - name: Build daemon
         run: |
@@ -65,7 +70,7 @@ jobs:
             -DBUILD_QT_GUI=OFF \
             -DBUILD_TESTS=ON \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-            -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
+            -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
           make -j$(sysctl -n hw.logicalcpu)
 
       - name: Run tests
@@ -98,7 +103,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install boost openssl@3 berkeley-db miniupnpc cmake qt
+          brew install boost openssl@3 miniupnpc cmake qt
+
+      - name: Build Berkeley DB 5.3 (the one version every platform's wallet.dat uses)
+        run: contrib/build-bdb53.sh "$HOME/bdb53"
 
       - name: Build Qt wallet
         run: |
@@ -108,7 +116,7 @@ jobs:
             -DBUILD_QT_GUI=ON \
             -DBUILD_TESTS=OFF \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-            -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
+            -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
           make -j$(sysctl -n hw.logicalcpu) corgicoin-qt
 
       - name: Bundle Qt and every library into the app
@@ -181,19 +189,22 @@ jobs:
           make -j$(nproc) 2>&1 | tail -3
           make install_sw 2>&1 | tail -3
 
-          # Berkeley DB 4.8 (cross-compiles cleanly with MinGW, unlike 5.3)
+          # Berkeley DB 5.3 (the same version as every other platform)
           cd /tmp/deps
-          curl -sL https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz | tar xz
-          cd db-4.8.30/build_unix
-          sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h 2>/dev/null || true
-          ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-replication --prefix=$PREFIX
-          make -j$(nproc) || true
+          curl -fsSL https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz -o db.tar.gz
+          echo "e0a992d740709892e81f9d93f06daf305cf73fb81b545afe72478043172c3628  db.tar.gz" | sha256sum -c -
+          tar xzf db.tar.gz
+          cd db-5.3.28/build_unix
+          # Patch: fix WinIoCtl.h case sensitivity for MinGW
+          sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h
+          ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-shared --disable-replication --prefix=$PREFIX
+          # just the libraries (the utilities do not cross-compile, and are not needed)
+          make -j$(nproc) libdb-5.3.a libdb_cxx-5.3.a
           mkdir -p $PREFIX/include $PREFIX/lib
           cp db.h db_cxx.h db_config.h $PREFIX/include/
-          cp .libs/libdb-4.8.a $PREFIX/lib/
-          cp .libs/libdb_cxx-4.8.a $PREFIX/lib/
-          ln -sf libdb_cxx-4.8.a $PREFIX/lib/libdb_cxx.a
-          ln -sf libdb-4.8.a $PREFIX/lib/libdb.a
+          cp libdb-5.3.a libdb_cxx-5.3.a $PREFIX/lib/
+          ln -sf libdb_cxx-5.3.a $PREFIX/lib/libdb_cxx.a
+          ln -sf libdb-5.3.a $PREFIX/lib/libdb.a
           ls -la $PREFIX/include/db_cxx.h || (echo "FATAL: db_cxx.h not found!" && exit 1)
           ls -la $PREFIX/lib/libdb_cxx*.a || (echo "FATAL: libdb_cxx not found!" && exit 1)
 
@@ -246,10 +257,12 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-boost
             mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-db
             mingw-w64-x86_64-qt6-base
             mingw-w64-x86_64-miniupnpc
             make
+
+      - name: Build Berkeley DB 5.3 (the one version every platform's wallet.dat uses)
+        run: contrib/build-bdb53.sh "$HOME/bdb53"
 
       - name: Build daemon and Qt wallet
         run: |
@@ -259,7 +272,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_QT_GUI=ON \
             -DBUILD_TESTS=OFF \
-            -DUSE_UPNP=OFF
+            -DUSE_UPNP=OFF \
+            -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
           make -j$(nproc)
 
       - name: Bundle Qt wallet with runtime DLLs

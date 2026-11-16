@@ -70,7 +70,8 @@ written up as a reusable playbook:
 - **C++17 compiler**: GCC 9+, Clang 10+, or MSVC 2019+
 - **OpenSSL** 1.1.0+ (3.x recommended)
 - **Boost** 1.65+
-- **Berkeley DB** 5.3+
+- **Berkeley DB 5.3.28**: the one version every platform's `wallet.dat` uses (a database environment made by a newer version cannot be
+  opened by an older one). Built from source by `contrib/build-bdb53.sh`; see [doc/berkeley-db.md](doc/berkeley-db.md)
 - **Qt 5.15+** (for GUI wallet, optional)
 - **CMake** 3.10+
 
@@ -79,27 +80,31 @@ written up as a reusable playbook:
 ```bash
 # Install dependencies (Ubuntu/Debian)
 sudo apt-get install build-essential libboost-all-dev libssl-dev \
-  libdb++-dev libminiupnpc-dev cmake
+  libminiupnpc-dev cmake curl
+
+# Berkeley DB 5.3.28 (pinned, checked by checksum)
+contrib/build-bdb53.sh $HOME/bdb53
 
 # Build daemon
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF \
+  -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
 make -j$(nproc)
 
-# Build with Qt wallet
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=ON
-make -j$(nproc)
+# Build with Qt wallet: the same, with -DBUILD_QT_GUI=ON
 ```
 
 #### macOS
 
 ```bash
-brew install boost openssl@3 berkeley-db@5 miniupnpc cmake qt@5
+brew install boost openssl@3 miniupnpc cmake qt@5
+
+contrib/build-bdb53.sh $HOME/bdb53
 
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release \
   -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-  -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db@5)
+  -DBERKELEYDB_INCLUDE_DIR=$HOME/bdb53/include -DBERKELEYDB_LIBRARY=$HOME/bdb53/lib/libdb_cxx.a
 make -j$(sysctl -n hw.logicalcpu)
 ```
 
