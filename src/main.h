@@ -1711,11 +1711,17 @@ public:
     struct PoolEntry { int64 nFee; unsigned int nSize; int64 nTime; };
     std::map<uint256, PoolEntry> mapEntry;
     size_t nPoolBytes = 0;
-    /** The lowest fee per byte among the entries nothing in the pool spends from (the first to go when it is full), kept so that the
-     *  question "would this be dropped" is not a scan of the whole pool each time. Invalid after any entry leaves; a new entry can only lower it. */
-    double dFloorRate = -1;
-    bool fFloorValid = false;
-    double LowestLeafRate();        // cs held; -1 if there is no such entry
+    /** The entries nothing in the pool spends from ("leaves"), by fee per byte, lowest first: the first to go when the pool is full, and what
+     *  "would this be dropped" is asked of. Kept in step as entries come and go, so neither is a scan of the whole pool. (A parent is not
+     *  taken out before its children, which may pay more.) Held under cs. */
+    std::set<std::pair<double, uint256> > setLeaves;
+    void LeafInsert(const uint256& hash);
+    void LeafErase(const uint256& hash);
+    bool HasChild(const uint256& hash) const;
+    /** Work the set out again from the pool: a safety net if it is ever found empty while the pool is over its limit. */
+    void RebuildLeaves();
+    /** True if the set is what a scan of the pool gives (for getmempoolinfo and the tests; it is a scan). */
+    bool LeavesConsistent() const;
 
     /** Drop entries older than -mempoolexpiry hours (default 72) with whatever spends them, then, while the pool holds more
      *  than -maxmempoolkb (default 100000), the leaf entry with the lowest fee per byte. Returns how many were dropped. */

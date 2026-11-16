@@ -687,8 +687,10 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime() };
         mapEntry[hash] = entry;
         nPoolBytes += entry.nSize;
-        if (fFloorValid && (double)entry.nFee / std::max(1u, entry.nSize) < dFloorRate)
-            dFloorRate = (double)entry.nFee / std::max(1u, entry.nSize);       // it is a leaf, and lower
+        // what it spends from is no longer a leaf; it is one itself, as nothing spends from it yet
+        for (const CTxIn& txin : tx.vin)
+            LeafErase(txin.prevout.hash);
+        LeafInsert(hash);
         Trim();
         if (!mapTx.count(hash))
             return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s had the lowest fee rate", hash.ToString().substr(0,10).c_str()));
@@ -733,6 +735,7 @@ bool CTxMemPool::remove(CTransaction &tx)
         uint256 hash = tx.GetHash();
         if (mapTx.count(hash))
         {
+            LeafErase(hash);                    // while its entry is still there: the set is keyed by its fee rate
             for (const CTxIn& txin : tx.vin)
                 mapNextTx.erase(txin.prevout);
             mapTx.erase(hash);
@@ -742,8 +745,11 @@ bool CTxMemPool::remove(CTransaction &tx)
             {
                 nPoolBytes -= std::min<size_t>(nPoolBytes, itEntry->second.nSize);
                 mapEntry.erase(itEntry);
-                fFloorValid = false;            // it may have been the lowest, or its parent may now be a leaf
             }
+            // what it spent from may have nothing else spending from it now
+            for (const CTxIn& txin : tx.vin)
+                if (mapTx.count(txin.prevout.hash) && !HasChild(txin.prevout.hash))
+                    LeafInsert(txin.prevout.hash);
             nTransactionsUpdated++;
         }
     }
@@ -797,72 +803,80 @@ unsigned int CTxMemPool::Trim()
     }
 
     const size_t nMaxBytes = (size_t)std::max<int64>(1, GetArg("-maxmempoolkb", 100000)) * 1000;
-    if (nPoolBytes > nMaxBytes)
+    bool fRebuilt = false;
+    while (nPoolBytes > nMaxBytes && !mapEntry.empty())
     {
-        // Over the limit: drop down to nine tenths of it, not just under, so that the transactions that follow do not each find the pool
-        // over the limit and make a scan of all of it (a flood of transactions at the limit would otherwise cost a scan apiece).
-        const size_t nTarget = nMaxBytes - nMaxBytes / 10;
-        while (nPoolBytes > nTarget && !mapEntry.empty())
+        if (setLeaves.empty())
         {
-            // one pass over the pool: the entries nothing in it spends from (taking a parent out would take its children, which may
-            // pay more), lowest fee per byte first. Dropping a leaf can make its parent one, so the pass is repeated if that is not enough.
-            std::vector<std::pair<double, uint256> > vLeaves;
-            for (const auto& item : mapEntry)
-            {
-                auto itTx = mapTx.find(item.first);
-                if (itTx == mapTx.end())
-                    continue;
-                bool fHasChild = false;
-                for (unsigned int n = 0; n < itTx->second.vout.size() && !fHasChild; n++)
-                    fHasChild = mapNextTx.count(COutPoint(item.first, n)) != 0;
-                if (!fHasChild)
-                    vLeaves.push_back(std::make_pair((double)item.second.nFee / std::max(1u, item.second.nSize), item.first));
-            }
-            if (vLeaves.empty())
+            // Over the limit with no leaf to drop is not possible for a pool in order (the entry no one spends from always exists), so
+            // the set has gone wrong: work it out again from the pool, once, rather than let the pool grow past its limit.
+            if (fRebuilt)
                 break;
-            std::sort(vLeaves.begin(), vLeaves.end());
-            bool fDropped = false;
-            for (const auto& leaf : vLeaves)
-            {
-                if (nPoolBytes <= nTarget)
-                    break;
-                if (!mapEntry.count(leaf.second))
-                    continue;
-                LogPrintf("CTxMemPool::Trim() : pool is %u bytes, over the limit of %u: dropping %s (%.1f sat/byte)\n",
-                          (unsigned int)nPoolBytes, (unsigned int)nMaxBytes, leaf.second.ToString().substr(0,10).c_str(), leaf.first);
-                RemoveRecursive(leaf.second);
-                nDropped++;
-                fDropped = true;
-            }
-            if (!fDropped)
-                break;
+            LogPrintf("CTxMemPool::Trim() : the set of leaf entries was empty with the pool over its limit; rebuilding it\n");
+            RebuildLeaves();
+            fRebuilt = true;
+            continue;
         }
+        // the lowest fee per byte among the entries nothing in the pool spends from (taking a parent out would take its
+        // children, which may pay more)
+        const std::pair<double, uint256> worst = *setLeaves.begin();
+        LogPrintf("CTxMemPool::Trim() : pool is %u bytes, over the limit of %u: dropping %s (%.1f sat/byte)\n",
+                  (unsigned int)nPoolBytes, (unsigned int)nMaxBytes, worst.second.ToString().substr(0,10).c_str(), worst.first);
+        const size_t nBefore = mapEntry.size();
+        RemoveRecursive(worst.second);
+        if (mapEntry.size() == nBefore)
+        {
+            // nothing came out (the set named an entry that is not in the pool): forget it, so that this cannot go round for ever
+            setLeaves.erase(setLeaves.begin());
+            continue;
+        }
+        nDropped++;
     }
     return nDropped;
 }
 
-double CTxMemPool::LowestLeafRate()
+// ---- the leaf index of the pool (see setLeaves); all of these are called with cs held
+
+bool CTxMemPool::HasChild(const uint256& hash) const
 {
-    if (fFloorValid)
-        return dFloorRate;
-    double dLowest = -1;
+    auto itTx = mapTx.find(hash);
+    if (itTx == mapTx.end())
+        return false;
+    for (unsigned int n = 0; n < itTx->second.vout.size(); n++)
+        if (mapNextTx.count(COutPoint(hash, n)))
+            return true;
+    return false;
+}
+
+void CTxMemPool::LeafInsert(const uint256& hash)
+{
+    auto it = mapEntry.find(hash);
+    if (it != mapEntry.end())
+        setLeaves.insert(std::make_pair((double)it->second.nFee / std::max(1u, it->second.nSize), hash));
+}
+
+void CTxMemPool::LeafErase(const uint256& hash)
+{
+    auto it = mapEntry.find(hash);
+    if (it != mapEntry.end())
+        setLeaves.erase(std::make_pair((double)it->second.nFee / std::max(1u, it->second.nSize), hash));
+}
+
+void CTxMemPool::RebuildLeaves()
+{
+    setLeaves.clear();
     for (const auto& item : mapEntry)
-    {
-        auto itTx = mapTx.find(item.first);
-        if (itTx == mapTx.end())
-            continue;
-        bool fHasChild = false;
-        for (unsigned int n = 0; n < itTx->second.vout.size() && !fHasChild; n++)
-            fHasChild = mapNextTx.count(COutPoint(item.first, n)) != 0;
-        if (fHasChild)
-            continue;
-        const double dRate = (double)item.second.nFee / std::max(1u, item.second.nSize);
-        if (dLowest < 0 || dRate < dLowest)
-            dLowest = dRate;
-    }
-    dFloorRate = dLowest;
-    fFloorValid = true;
-    return dLowest;
+        if (mapTx.count(item.first) && !HasChild(item.first))
+            setLeaves.insert(std::make_pair((double)item.second.nFee / std::max(1u, item.second.nSize), item.first));
+}
+
+bool CTxMemPool::LeavesConsistent() const
+{
+    std::set<std::pair<double, uint256> > setNow;
+    for (const auto& item : mapEntry)
+        if (mapTx.count(item.first) && !HasChild(item.first))
+            setNow.insert(std::make_pair((double)item.second.nFee / std::max(1u, item.second.nSize), item.first));
+    return setNow == setLeaves;
 }
 
 bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize)
@@ -871,10 +885,11 @@ bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize)
     const size_t nMaxBytes = (size_t)std::max<int64>(1, GetArg("-maxmempoolkb", 100000)) * 1000;
     if (nPoolBytes + nSize <= nMaxBytes || mapEntry.empty())
         return false;
-    // the same candidates Trim() looks at: entries nothing in the pool spends from (the lowest of them is kept, not looked for each time)
-    const double dLowest = LowestLeafRate();
+    // the same candidates Trim() looks at: entries nothing in the pool spends from, the lowest first
+    if (setLeaves.empty())
+        RebuildLeaves();
     // strictly lower than every candidate: it goes first (a tie is left to the real thing)
-    return dLowest >= 0 && (double)nFee / std::max(1u, nSize) < dLowest;
+    return !setLeaves.empty() && (double)nFee / std::max(1u, nSize) < setLeaves.begin()->first;
 }
 
 void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)

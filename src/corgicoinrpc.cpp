@@ -2794,8 +2794,12 @@ Value getmempoolinfo(const Array& params, bool fHelp)
 
     int64_t nTxs = 0;
     int64_t nBytes = 0;
+    int64_t nLeaves = 0;
+    bool fLeavesOk = true;
     {
         LOCK(mempool.cs);
+        nLeaves = (int64_t)mempool.setLeaves.size();
+        fLeavesOk = mempool.LeavesConsistent();
         nTxs = (int64_t)mempool.mapTx.size();
         for (const auto& item : mempool.mapTx)
             nBytes += (int64_t)::GetSerializeSize(item.second, SER_NETWORK, PROTOCOL_VERSION);
@@ -2804,6 +2808,8 @@ Value getmempoolinfo(const Array& params, bool fHelp)
     Object obj;
     obj.emplace_back("size", nTxs);
     obj.emplace_back("bytes", nBytes);
+    obj.emplace_back("leaves", nLeaves);                  // entries nothing in the pool spends from: what goes first when it is full
+    obj.emplace_back("leaves_consistent", fLeavesOk);     // the index of them is what a scan of the pool gives
     obj.emplace_back("maxmempoolbytes", (int64_t)std::max<int64>(1, GetArg("-maxmempoolkb", 100000)) * 1000);
     obj.emplace_back("minrelaytxfee", ValueFromAmount(MIN_RELAY_TX_FEE));
     return obj;
