@@ -10,7 +10,8 @@
 - **CMake** 3.10+
 - **OpenSSL** 3.x
 - **Boost** 1.55+ (program_options, thread)
-- **Berkeley DB** 5.3+ (C++ bindings required)
+- **Berkeley DB** 5.3+ (C++ bindings required). Never open a data directory with an older Berkeley DB than the one that wrote it: the
+  releases do not all link the same version (see doc/berkeley-db.md)
 
 ### Optional Dependencies
 
