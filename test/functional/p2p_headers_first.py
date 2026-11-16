@@ -48,6 +48,8 @@ class HeadersFirstTest(CorgiTestFramework):
         self.connect_nodes(2, 1)
         wait_until(lambda: c.getblockcount() == BLOCKS, timeout=240, what="headers-first sync (%d)" % c.getblockcount())
         assert_equal(c.getbestblockhash(), a.getbestblockhash())
+        # each header became the entry of its block: none is held twice (before, the 2010 header entries stayed beside the 2010 blocks)
+        assert_equal(c.getblockchaininfo()["header_only_entries"], 0)
 
         text = self.log_text(c)
         assert "headers-first: asking" in text and "for headers" in text, "no header request in the log"

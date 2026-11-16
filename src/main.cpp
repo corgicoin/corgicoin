@@ -2248,7 +2248,14 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
         return LogError("AddToBlockIndex() : %s already exists", hash.ToString().substr(0,20).c_str());
 
     // Construct new block index object
-    CBlockIndex* pindexNew = new CBlockIndex(nFile, nBlockPos, *this);
+    CBlockIndex* pindexNew = HeadersTakeIndexFor(hash);     // headers-first held its header: the same entry, now with its data
+    if (pindexNew)
+    {
+        pindexNew->nFile = nFile;
+        pindexNew->nBlockPos = nBlockPos;
+    }
+    else
+        pindexNew = new CBlockIndex(nFile, nBlockPos, *this);
     if (!pindexNew)
         return LogError("AddToBlockIndex() : new CBlockIndex failed");
     auto mi = mapBlockIndex.insert({hash, pindexNew}).first;
