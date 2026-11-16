@@ -111,6 +111,13 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock);
 bool HeadersFirstEnabled();
 /** Headers-first with this peer: enabled, and the peer speaks 70014 (has the getheaders fix). Never ask any other peer for headers. */
 bool HeadersFirstWith(const CNode* pnode);
+
+/** The block's entry in the header index, taken out of it (nullptr if there is none): when a block whose header was taken before arrives,
+ *  that same entry becomes its block index entry, so every block is held once, not once as a header and once as a block, and every
+ *  pointer to the header (the header chain, a peer's best known block, the entries above it) is still the block's. */
+CBlockIndex* HeadersTakeIndexFor(const uint256& hash);
+/** How many headers are held that are not (yet) blocks. */
+size_t HeaderOnlyCount();
 bool HaveHeaderFor(const uint256& hash);
 bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv);
 void HeadersFirstSendMessages(CNode* pto);

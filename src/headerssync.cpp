@@ -184,6 +184,21 @@ bool HeadersFirstWith(const CNode* pnode)
     return pnode && HeadersFirstEnabled() && pnode->nVersion >= HEADERSFIRST_VERSION;
 }
 
+size_t HeaderOnlyCount()
+{
+    return mapHeaderIndex.size();
+}
+
+CBlockIndex* HeadersTakeIndexFor(const uint256& hash)
+{
+    auto mh = mapHeaderIndex.find(hash);
+    if (mh == mapHeaderIndex.end())
+        return nullptr;
+    CBlockIndex* pindex = mh->second;
+    mapHeaderIndex.erase(mh);
+    return pindex;
+}
+
 bool HaveHeaderFor(const uint256& hash)
 {
     return mapHeaderIndex.count(hash) != 0;
