@@ -127,7 +127,7 @@ class PruneTest(CorgiTestFramework):
             assert "was pruned" in f.read(), "the refusal does not say why"
         pruned.extra_args = PRUNE_ARGS
         pruned.start()
-        assert_equal(pruned.getblockcount(), BLOCKS + 6)
+        assert_equal(pruned.getblockcount(), full.getblockcount())
 
 
 if __name__ == "__main__":
