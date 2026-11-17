@@ -21,6 +21,7 @@ TESTS = [
     "feature_zmq.py",
     "wallet_send.py",
     "wallet_listtransactions.py",
+    "wallet_sendmany_total.py",
     "wallet_lockunspent.py",
     "wallet_abandon.py",
     "wallet_dump.py",
@@ -70,6 +71,7 @@ TESTS = [
     "rpc_config_hardening.py",
     "rpc_failed_block.py",
     "rpc_mempool_cap.py",
+    "wallet_maxtxfee.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 

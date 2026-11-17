@@ -82,6 +82,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
 | `wallet_listtransactions.py` | `listtransactions`: paging, and count/from as large as an int (their sum used to overflow) |
+| `wallet_sendmany_total.py` | sendmany with a total beyond the possible amount of money is an amount error |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_rewrite_safety.py` | a failing wallet rewrite leaves wallet.dat and its keys alone; a start with only wallet.dat.bak refuses to run |
 | `wallet_relock_during_topup.py` | a wallet that relocks in the middle of a key-pool top-up keeps the node up; dumpwallet leaves no temporary file |

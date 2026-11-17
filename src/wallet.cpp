@@ -1562,9 +1562,13 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
     int64 nValue = 0;
     for (const std::pair<CScript, int64>& s : vecSend)
     {
-        if (nValue < 0)
+        // Every amount, and every running total, must be a possible amount of money: a signed sum that wraps is
+        // undefined behaviour, and a negative one used to be noticed only by looking at the total afterwards
+        if (s.second < 0 || !MoneyRange(s.second))
             return false;
         nValue += s.second;
+        if (!MoneyRange(nValue))
+            return false;
     }
     if (vecSend.empty() || nValue < 0)
         return false;
@@ -1667,6 +1671,11 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                     nFeeRet = max(nPayFee, nMinFee);
                     continue;
                 }
+                if (nFeeRet > nMaxTxFee)
+                {
+                    LogPrintf("CreateTransaction() : the fee of %s is over -maxtxfee (%s)\n", FormatMoney(nFeeRet).c_str(), FormatMoney(nMaxTxFee).c_str());
+                    return false;
+                }
 
                 // Fill vtxPrev by copying from previous transactions vtxPrev
                 wtxNew.AddSupportingTransactions(txdb);
@@ -1751,7 +1760,9 @@ string CWallet::SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew,
     if (!CreateTransaction(scriptPubKey, nValue, wtxNew, reservekey, nFeeRequired))
     {
         string strError;
-        if (nValue + nFeeRequired > GetBalance())
+        if (nFeeRequired > nMaxTxFee)
+            strError = strprintf(_("Error: The fee for this transaction, %s, is more than -maxtxfee (%s). Send less in one transaction, or raise -maxtxfee.  "), FormatMoney(nFeeRequired).c_str(), FormatMoney(nMaxTxFee).c_str());
+        else if (nValue + nFeeRequired > GetBalance())
             strError = strprintf(_("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds  "), FormatMoney(nFeeRequired).c_str());
         else
             strError = _("Error: Transaction creation failed  ");

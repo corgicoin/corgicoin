@@ -298,6 +298,7 @@ std::string HelpMessage()
         "  -maxmempoolkb=<n>      " + _("Keep the transaction memory pool under <n> kB, dropping the lowest fee rate first (default: 100000)") + "\n" +
         "  -mempoolexpiry=<n>     " + _("Drop transactions that have waited <n> hours in the memory pool (default: 72)") + "\n" +
         "  -walletcompat          " + _("Record the old low minimum version in HD wallets so releases from before HD wallets can open them (they ignore the HD seed: use only on purpose)") + "\n" +
+        "  -maxtxfee=<amt>        " + _("Refuse to make a transaction that pays more than <amt> in fees (default: 1000)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
         "  -checkblocks=<n>       " + _("How many blocks to check at startup (default: 2500, 0 = all)") + "\n" +
         "  -checklevel=<n>        " + _("How thorough the block verification is (0-6, default: 1)") + "\n" +
@@ -453,6 +454,16 @@ bool AppInit2()
             return InitError(strprintf(_("Invalid amount for -paytxfee=<amount>: '%s'"), mapArgs["-paytxfee"].c_str()));
         if (nTransactionFee > 25.0 * COIN)
             InitWarning(_("Warning: -paytxfee is set very high. This is the transaction fee you will pay if you send a transaction."));
+    }
+
+    if (mapArgs.count("-maxtxfee"))
+    {
+        int64 nMax = 0;
+        if (!ParseMoney(mapArgs["-maxtxfee"], nMax) || nMax <= 0)
+            return InitError(strprintf(_("Invalid amount for -maxtxfee=<amount>: '%s'"), mapArgs["-maxtxfee"].c_str()));
+        nMaxTxFee = nMax;
+        if (nTransactionFee > nMaxTxFee)
+            return InitError(_("-paytxfee is more than -maxtxfee. Lower one of them."));
     }
 
     if (mapArgs.count("-mininput"))

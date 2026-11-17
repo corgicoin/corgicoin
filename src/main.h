@@ -82,6 +82,9 @@ extern unsigned char pchMessageStart[4];
 
 // Settings
 extern int64 nTransactionFee;
+/** The wallet refuses to make a transaction that pays more fee than this (-maxtxfee). It is a guard against a fee
+ *  that was set, or computed from a very large transaction, far beyond what was meant. */
+extern int64 nMaxTxFee;
 extern int64 nMinimumInputValue;
 
 constexpr int DEFAULT_CONNECT_TIMEOUT_MS = 5000;
