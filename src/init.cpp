@@ -299,7 +299,7 @@ std::string HelpMessage()
         "  -maxmempoolkb=<n>      " + _("Keep the transaction memory pool under <n> kB, dropping the lowest fee rate first (default: 100000)") + "\n" +
         "  -mempoolexpiry=<n>     " + _("Drop transactions that have waited <n> hours in the memory pool (default: 72)") + "\n" +
         "  -walletcompat          " + _("Record the old low minimum version in HD wallets so releases from before HD wallets can open them (they ignore the HD seed: use only on purpose)") + "\n" +
-        "  -maxtxfee=<amt>        " + _("Refuse to make a transaction that pays more than <amt> in fees (default: 1000)") + "\n" +
+        "  -maxtxfee=<amt>        " + _("Refuse to make a transaction that pays more than <amt> in fees (default: 10000)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
         "  -checkblocks=<n>       " + _("How many blocks to check at startup (default: 2500, 0 = all)") + "\n" +
         "  -checklevel=<n>        " + _("How thorough the block verification is (0-6, default: 1)") + "\n" +

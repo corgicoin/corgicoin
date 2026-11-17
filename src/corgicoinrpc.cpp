@@ -845,6 +845,9 @@ Value settxfee(const Array& params, bool fHelp)
     if (params[0].get_real() != 0.0)
         nAmount = AmountFromValue(params[0]);        // rejects 0.0 amounts
 
+    // every send would then fail on the -maxtxfee check: refuse it here, as -paytxfee is refused at startup
+    if (nAmount > nMaxTxFee)
+        throw JSONRPCError(-8, strprintf("The fee is more than -maxtxfee (%s)", FormatMoney(nMaxTxFee).c_str()));
     nTransactionFee = nAmount;
     return true;
 }

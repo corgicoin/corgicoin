@@ -23,12 +23,16 @@ class MaxTxFeeTest(CorgiTestFramework):
         node.stop()
         node.start(["-maxtxfee=0.00000001"])
         try:
-            node.sendtoaddress(addr, 1)
+            # under 1 CORG: the dust rule adds MIN_TX_FEE whatever the inputs, so the fee cannot be the free 0
+            node.sendtoaddress(addr, 0.5)
         except Exception as e:
             assert "maxtxfee" in str(e), str(e)
         else:
             raise AssertionError("a transaction was made with a fee over -maxtxfee")
         assert_equal(node.getmempoolinfo()["size"], 0)
+
+        self.log("settxfee over the limit is refused")
+        assert_raises_rpc_error(-8, "maxtxfee", node.settxfee, 1)
 
         self.log("and without the limit again it works")
         node.stop()

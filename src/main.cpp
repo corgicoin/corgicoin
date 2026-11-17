@@ -66,7 +66,7 @@ int64 nHPSTimerStart;
 
 // Settings
 int64 nTransactionFee = 0;
-int64 nMaxTxFee = 1000 * COIN;
+int64 nMaxTxFee = 10000 * COIN;
 int64 nMinimumInputValue = CENT;
 
 
