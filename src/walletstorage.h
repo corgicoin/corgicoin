@@ -57,6 +57,26 @@ public:
  *  space that is no longer used. Nothing else may have the storage open. False if it failed (the old file is then as it was). */
 bool RewriteWalletStorage(const std::string& strFile, const char* pszSkip = nullptr);
 
+/** Which kind of storage a wallet file name selects: a name that ends in ".sqlite" is a SQLite wallet, anything else (wallet.dat) a Berkeley DB file. */
+bool IsSqliteWalletFile(const std::string& strFile);
+
+/** False for a SQLite wallet in a build that has no SQLite (-DUSE_SQLITE=ON): there is nothing to open it with. */
+bool WalletStorageAvailable(const std::string& strFile);
+
+/** Put a copy of the wallet, as it is now, at strDest (a directory: the file goes in it under its own name; a file: replaced). The copy is a wallet
+ *  of its own, one file, that opens by itself. False if it could not be made (or the node is shutting down). */
+bool BackupWalletStorage(const std::string& strFile, const std::string& strDest);
+
+/** Copy all the records of the wallet strFrom into a new wallet strTo (a SQLite wallet; both in the data directory), then read both back and compare.
+ *  strFrom is only read. strTo must not exist; if the copy fails or does not compare equal it is removed again. On false strError says what went wrong. */
+bool MigrateWalletStorage(const std::string& strFrom, const std::string& strTo, std::string& strError);
+
+// What the SQLite backend supplies (walletstorage_sqlite.cpp; without SQLite in the build they fail or return null)
+bool SqliteWalletAvailable();
+std::unique_ptr<CWalletStorage> OpenSqliteWalletStorage(const std::string& strFile, const char* pszMode);
+bool RewriteSqliteWallet(const std::string& strFile, const char* pszSkip);
+bool BackupSqliteWallet(const std::string& strFile, const std::string& strDest);
+
 /** The wallet's storage in the file strFile of the data directory. pszMode is as CDB takes it: "r" read only, "r+" read and write, "c" may create,
  *  as in "cr+". If the file cannot be opened the storage is still returned, and every call on it fails (as an unopened CDB always did). */
 std::unique_ptr<CWalletStorage> OpenWalletStorage(const std::string& strFile, const char* pszMode);

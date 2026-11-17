@@ -83,6 +83,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
 | `wallet_accounting.py` | `move` between accounts: balances, each account's entries in order, `listtransactions "*"`, still there after a restart (the wallet's one read by key order from a chosen start) |
+| `wallet_sqlite.py` | a node on a SQLite wallet (`-wallet=wallet.sqlite`): sends, accounts, restart, `backupwallet`, encryption leaves no unencrypted key in the file or its log; `-migratewallet` writes the same wallet from a used, encrypted wallet.dat without changing it, and never overwrites. Skipped by a build without SQLite (`-DUSE_SQLITE=ON`) |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |
 | `wallet_abandon.py` | `abandontransaction`: coins and balance restored, descendants abandoned with it, survives a restart, a mined copy is tracked again |
 | `wallet_upgrade_fixtures.py` | wallets made by the real v4.7.0.0 binary (`data/wallets/`: HD, HD encrypted, PBKDF2 encrypted) load, unlock, keep their addresses, export correct keys, restore from the phrase, and spend coins on an old address |

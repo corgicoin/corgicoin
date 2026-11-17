@@ -35,6 +35,7 @@ option(BUILD_QT_GUI "Build Qt GUI wallet" ON)
 option(USE_UPNP "Enable UPnP support" ON)
 option(USE_QRCODE "Enable QR code support" OFF)
 option(USE_ZMQ "Enable ZeroMQ notifications (-zmqpub*); needs libzmq. Off by default so release binaries never pick up an accidental libzmq dependency" OFF)
+option(USE_SQLITE "Enable SQLite wallets (-wallet=<name>.sqlite, -migratewallet); needs libsqlite3. Off by default so release binaries never pick up an accidental libsqlite3 dependency" OFF)
 option(USE_DBUS "Enable D-Bus support for desktop notifications" OFF)
 option(BUILD_TESTS "Build test suite" OFF)
 option(ENABLE_HARDENING "Enable security hardening flags" ON)
@@ -209,6 +210,7 @@ set(DAEMON_SOURCES
     src/wallet.cpp
     src/walletdb.cpp
     src/walletstorage.cpp
+    src/walletstorage_sqlite.cpp
     src/noui.cpp
 )
 
@@ -246,6 +248,21 @@ if(USE_ZMQ)
     endif()
 endif()
 
+# Optional SQLite wallets
+set(SQLITE_LIBRARIES "")
+if(USE_SQLITE)
+    find_path(SQLITE_INCLUDE_DIR sqlite3.h)
+    find_library(SQLITE_LIBRARY NAMES sqlite3 libsqlite3)
+    if(SQLITE_INCLUDE_DIR AND SQLITE_LIBRARY)
+        message(STATUS "SQLite found: ${SQLITE_LIBRARY} (SQLite wallets enabled)")
+        add_definitions(-DENABLE_SQLITE)
+        include_directories(${SQLITE_INCLUDE_DIR})
+        set(SQLITE_LIBRARIES ${SQLITE_LIBRARY})
+    else()
+        message(STATUS "SQLite not found: SQLite wallets disabled")
+    endif()
+endif()
+
 # Daemon executable
 add_executable(corgicoind ${DAEMON_SOURCES} ${JSON_SOURCES})
 add_dependencies(corgicoind generate_build_info)
@@ -256,6 +273,7 @@ target_link_libraries(corgicoind
     ${BERKELEYDB_LIBRARY}
     ${Boost_LIBRARIES}
     ${ZMQ_LIBRARIES}
+    ${SQLITE_LIBRARIES}
     Threads::Threads
     ${CMAKE_DL_LIBS}
 )
@@ -489,6 +507,7 @@ if(BUILD_QT_GUI)
         ${OPENSSL_LIBRARIES}
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
+        ${SQLITE_LIBRARIES}
         Threads::Threads
         ${CMAKE_DL_LIBS}
     )
@@ -570,6 +589,7 @@ if(BUILD_TESTS)
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
         ${ZMQ_LIBRARIES}
+        ${SQLITE_LIBRARIES}
         Threads::Threads
         ${CMAKE_DL_LIBS}
     )

@@ -364,6 +364,10 @@ void ThreadFlushWalletDB(void* parg)
     fOneThread = true;
     if (!GetBoolArg("-flushwallet", true))
         return;
+    // Berkeley DB keeps changes in its log until they are flushed into the file, and that is what the loop below does. A SQLite wallet has nothing
+    // to flush: every commit that returned is in the file already.
+    if (IsSqliteWalletFile(strFile))
+        return;
 
     unsigned int nLastSeen = nWalletDBUpdated;
     unsigned int nLastFlushed = nWalletDBUpdated;
@@ -418,34 +422,5 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
 {
     if (!wallet.fFileBacked)
         return false;
-    while (!fShutdown)
-    {
-        {
-            LOCK(bitdb.cs_db);
-            if (!bitdb.mapFileUseCount.count(wallet.strWalletFile) || bitdb.mapFileUseCount[wallet.strWalletFile] == 0)
-            {
-                // Flush log data to the dat file
-                bitdb.CloseDb(wallet.strWalletFile);
-                bitdb.CheckpointLSN(wallet.strWalletFile);
-                bitdb.mapFileUseCount.erase(wallet.strWalletFile);
-
-                // Copy wallet.dat
-                std::filesystem::path pathSrc = GetDataDir() / wallet.strWalletFile;
-                std::filesystem::path pathDest(strDest);
-                if (std::filesystem::is_directory(pathDest))
-                    pathDest /= wallet.strWalletFile;
-
-                try {
-                    std::filesystem::copy_file(pathSrc, pathDest, std::filesystem::copy_options::overwrite_existing);
-                    LogPrintf("copied wallet.dat to %s\n", pathDest.string().c_str());
-                    return true;
-                } catch(const std::filesystem::filesystem_error &e) {
-                    LogPrintf("error copying wallet.dat to %s - %s\n", pathDest.string().c_str(), e.what());
-                    return false;
-                }
-            }
-        }
-        Sleep(100);
-    }
-    return false;
+    return BackupWalletStorage(wallet.strWalletFile, strDest);
 }
