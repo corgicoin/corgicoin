@@ -18,6 +18,9 @@
 json_spirit::Object JSONRPCError(int code, const std::string& message);
 
 void ThreadRPCServer(void* parg);
+#include <boost/asio/ip/address.hpp>
+/** Is the address inside the subnet written "a.b.c.d/n" or "x::/n"? (-rpcallowip accepts these as well as wildcards.) */
+bool AddressInSubnet(const boost::asio::ip::address& address, const std::string& strSubnet);
 int CommandLineRPC(int argc, char *argv[]);
 
 /** Convert parameter values for RPC call from strings to command-specific JSON objects. */

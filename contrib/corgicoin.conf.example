@@ -5,13 +5,17 @@
 #   Windows: %APPDATA%\CorgiCoin\corgicoin.conf
 
 # RPC credentials — required to use corgicoind as a server.
-# CHANGE THE PASSWORD. Anyone with these credentials controls your wallet.
+# Anyone with these credentials controls your wallet. Set your own password, long and random, and do not use
+# '#' in it (it starts a comment). corgicoind refuses to run with the example value below.
 rpcuser=corgirpc
-rpcpassword=CHANGE_THIS_PASSWORD
+#rpcpassword=CHANGE_THIS_PASSWORD
 
-# RPC port (default 62555). Only listen locally unless you know what you're doing.
+# RPC port (default 62555). RPC listens on the loopback addresses only, unless rpcallowip is set, which opens
+# the port on every network interface (and serves only the allowed addresses). Add rpcbind to listen on one
+# address instead. rpcallowip takes an address, a wildcard (192.168.*) or a subnet (172.16.0.0/12).
 #rpcport=62555
-#rpcallowip=127.0.0.1
+#rpcbind=127.0.0.1
+#rpcallowip=172.16.0.0/12
 
 # P2P port (default 62556)
 #port=62556
