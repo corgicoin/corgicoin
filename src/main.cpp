@@ -2304,7 +2304,10 @@ bool CBlock::CheckBlock() const
     // Check proof of work matches claimed amount (AuxPoW-aware: for a merged
     // block the parent header carries the work; see doc/auxpow-spec.md)
     if (!CheckAuxProofOfWork(*this, nBits))
+    {
+        fBadAuxProof = IsAuxPow();
         return DoS(50, LogError("CheckBlock() : proof of work failed"));
+    }
 
     // Check timestamp
     if (GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
@@ -3449,6 +3452,31 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         if (ProcessBlock(pfrom, &block))
             mapAlreadyAskedFor.erase(inv);
+        else if (block.fBadAuxProof)
+        {
+            // The merged-mining proof was bad, but the hash does not cover the proof: a copy of this block with a good one may
+            // exist. Do not sit out the two-minute retry delay for a block this peer spoiled: ask the next peer that told us of it.
+            mapAlreadyAskedFor.erase(inv);
+            LOCK(cs_vNodes);
+            for (CNode* pnode : vNodes)
+            {
+                if (pnode == pfrom)
+                    continue;
+                bool fQueued = false;
+                for (auto it = pnode->mapAskFor.begin(); it != pnode->mapAskFor.end(); )
+                {
+                    if (!(it->second < inv) && !(inv < it->second))   // CInv has only operator<
+                    {
+                        it = pnode->mapAskFor.erase(it);
+                        fQueued = true;
+                    }
+                    else
+                        ++it;
+                }
+                if (fQueued)
+                    pnode->AskFor(inv);
+            }
+        }
         if (block.nDoS) pfrom->Misbehaving(block.nDoS);
     }
 

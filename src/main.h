@@ -891,6 +891,9 @@ public:
 
     // memory only
     mutable std::vector<uint256> vMerkleTree;
+    /** Set by CheckBlock when the merged-mining proof is what failed. The block hash does not cover the proof, so another
+     *  copy of the same block (same hash, a good proof) may exist: do not treat the hash as spoiled. */
+    mutable bool fBadAuxProof = false;
 
     // Denial-of-service detection:
     mutable int nDoS;
@@ -951,6 +954,7 @@ public:
         vtx.clear();
         auxpow.reset();
         vMerkleTree.clear();
+        fBadAuxProof = false;
         nDoS = 0;
     }
 
