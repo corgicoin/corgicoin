@@ -329,10 +329,18 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                     // The original is kept under another name until the copy is in place, never removed first: a
                     // crash between a remove and a rename used to leave only <file>.rewrite, and the next start
                     // then created a fresh empty wallet.dat beside it. Now there is always a complete file under
-                    // one of the two names, and startup refuses to run when only the .bak is there (init.cpp).
-                    const string strBackup = strFile + ".bak";
+                    // one of the two names, and startup refuses to run when only the original is there (init.cpp).
+                    // Not <file>.bak: users keep their own backups under that name, and the rename refuses a target
+                    // that exists, so every rewrite (the one after encryption included) would fail.
+                    const string strBackup = strFile + ".rewrite-orig";
+                    std::error_code ecExists;
                     Db dbA(&bitdb.dbenv, 0);
-                    if (dbA.rename(strFile.c_str(), nullptr, strBackup.c_str(), 0))
+                    if (std::filesystem::exists(GetDataDir() / strBackup, ecExists))
+                    {
+                        LogPrintf("Rewrite: %s is left over from an earlier rewrite; remove it (it is the wallet as it was before that rewrite)\n", strBackup.c_str());
+                        fSuccess = false;
+                    }
+                    else if (dbA.rename(strFile.c_str(), nullptr, strBackup.c_str(), 0))
                         fSuccess = false;
                     else
                     {
@@ -346,8 +354,10 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                         }
                         else
                         {
+                            // the original still holds whatever the rewrite was meant to remove (after encryption: plaintext key slack)
                             Db dbRemove(&bitdb.dbenv, 0);
-                            dbRemove.remove(strBackup.c_str(), nullptr, 0);
+                            if (dbRemove.remove(strBackup.c_str(), nullptr, 0))
+                                LogPrintf("Rewrite: could not remove %s; delete it by hand\n", strBackup.c_str());
                         }
                     }
                 }

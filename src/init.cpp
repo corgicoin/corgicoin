@@ -702,14 +702,14 @@ bool AppInit2()
     nStart = GetTimeMillis();
     bool fFirstRun;
     {
-        // A wallet rewrite keeps the original as wallet.dat.bak until the new file is in place (and builds the new one
+        // A wallet rewrite keeps the original as wallet.dat.rewrite-orig until the new file is in place (and builds the new one
         // as wallet.dat.rewrite). If wallet.dat is missing but one of those is there, the process stopped in the
         // middle of a rewrite: starting now would create a new, empty wallet.dat next to the real one, and the
         // user would see an empty wallet. Stop and say where the wallet is.
         const std::filesystem::path pathWallet = GetDataDir() / "wallet.dat";
         std::error_code ec;
         if (!std::filesystem::exists(pathWallet, ec))
-            for (const char* pszSuffix : {".bak", ".rewrite"})
+            for (const char* pszSuffix : {".rewrite-orig", ".rewrite"})
             {
                 const std::filesystem::path pathOther = pathWallet.string() + pszSuffix;
                 if (std::filesystem::exists(pathOther, ec))
