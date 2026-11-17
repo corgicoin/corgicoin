@@ -29,6 +29,7 @@ TESTS = [
     "p2p_network_rpcs.py",
     "p2p_ping_timeout.py",
     "rpc_createauxblock.py",
+    "rpc_createauxblock_cache.py",
     "feature_auxpow.py",
     "rpc_mempool_verify.py",
     "rpc_gettxout.py",

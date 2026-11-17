@@ -2577,7 +2577,23 @@ static std::map<uint256, CBlock*> mapAuxBlocks;
 static std::vector<CBlock*> vAuxBlocks;
 static CBlockIndex* pindexPrevAux = nullptr;
 
+// Work already handed out, per payout script. A pool asks for work every few seconds on each parent pool it is merged into,
+// and every call built a whole block (the memory pool is walked under cs_main and cs_wallet) and kept it until the tip
+// moved: on a chain that is stuck or slow, memory grew with every call. The same work is handed out again while the tip
+// and the memory pool are as they were and it is less than a minute old (Namecoin and Dogecoin do the same).
+struct CAuxTemplate
+{
+    uint256 hash;                       // key into mapAuxBlocks
+    unsigned int nTransactionsUpdated;
+    int64 nTime;
+};
+static std::map<CScript, CAuxTemplate> mapAuxTemplates;
+static const size_t MAX_AUX_BLOCKS = 1000;          // work kept for submission at one time
+static const int64 AUX_TEMPLATE_SECONDS = 60;
+
 // Build a merged-mining block paying scriptPubKey and return its work.
+static Object AuxWorkObject(const CBlock* pblock);
+
 static Object AuxMiningCreateBlock(const CScript& scriptPubKey)
 {
     // Regtest mines without peers, like generate
@@ -2594,10 +2610,34 @@ static Object AuxMiningCreateBlock(const CScript& scriptPubKey)
     if (pindexPrevAux != pindexBest)
     {
         mapAuxBlocks.clear();
+        mapAuxTemplates.clear();
         for (CBlock* p : vAuxBlocks)
             delete p;
         vAuxBlocks.clear();
         pindexPrevAux = pindexBest;
+    }
+
+    // The same work again, if nothing it was built from has changed
+    auto itCached = mapAuxTemplates.find(scriptPubKey);
+    if (itCached != mapAuxTemplates.end())
+    {
+        const CAuxTemplate& cached = itCached->second;
+        auto itBlock = mapAuxBlocks.find(cached.hash);
+        if (itBlock != mapAuxBlocks.end() && cached.nTransactionsUpdated == nTransactionsUpdated &&
+            GetTime() - cached.nTime < AUX_TEMPLATE_SECONDS)
+            return AuxWorkObject(itBlock->second);
+        mapAuxTemplates.erase(itCached);
+    }
+
+    // Bound what is kept: past the limit the oldest work is dropped (a pool does not submit work that old)
+    while (vAuxBlocks.size() >= MAX_AUX_BLOCKS)
+    {
+        CBlock* pOld = vAuxBlocks.front();
+        vAuxBlocks.erase(vAuxBlocks.begin());
+        mapAuxBlocks.erase(pOld->GetHash());
+        for (auto it = mapAuxTemplates.begin(); it != mapAuxTemplates.end(); )
+            it = (it->second.hash == pOld->GetHash()) ? mapAuxTemplates.erase(it) : std::next(it);
+        delete pOld;
     }
 
     CBlock* pblock = CreateNewBlock(reservekey);
@@ -2620,7 +2660,15 @@ static Object AuxMiningCreateBlock(const CScript& scriptPubKey)
 
     uint256 hash = pblock->GetHash();
     mapAuxBlocks[hash] = pblock;
+    mapAuxTemplates[scriptPubKey] = CAuxTemplate{hash, nTransactionsUpdated, GetTime()};
 
+    return AuxWorkObject(pblock);
+}
+
+// The reply for a block of aux work, new or handed out again
+static Object AuxWorkObject(const CBlock* pblock)
+{
+    uint256 hash = pblock->GetHash();
     uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
     Object result;

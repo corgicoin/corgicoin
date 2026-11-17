@@ -91,6 +91,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `feature_cross_binary.py` | two different builds (e.g. against different OpenSSL versions) interoperate: blocks and signatures accepted both ways, `wallet.dat` and encrypted wallets open in either. Needs `--alt-corgicoind` or `$CORGICOIND_ALT`, otherwise it is shown as SKIP. Against a v4.2–v4.7 build the "encrypted by the main build, unlocked by the alternate one" check fails by design (v4.7 cannot unlock a v4.8-encrypted wallet) |
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `getnodeaddresses`, `disconnectnode` |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
+| `rpc_createauxblock_cache.py` | createauxblock hands the same work out again while the tip and memory pool are unchanged, per payout script |
 | `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |
 | `feature_auxpow.py` | merged mining as pools do it: multi-chain proofs, legacy commitment, one rejection per AuxPoW rule (checked against its exact error), stale work, pre-fork guard, `getauxblock`. Proofs come from `auxpow_builder.py` |
 | `rpc_gettxout.py` | `gettxout`: confirmed, unconfirmed and spent outputs, with and without the memory pool |
