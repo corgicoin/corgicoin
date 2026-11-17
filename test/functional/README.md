@@ -116,6 +116,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_mining_info.py` | `getnetworkhashps`/`getmininginfo` with no usable time span; `getnetworkinfo.relayfee` |
 | `rpc_gettxout.py` | `gettxout`: confirmed, unconfirmed and spent outputs, with and without the memory pool |
 | `rpc_getblock_verbose.py` | `getblock <hash> [verbose]`: JSON by default; hex (false or 0) is the network serialization, with the AuxPoW proof of a merged-mined block |
+| `rpc_getblocktemplate.py` | `getblocktemplate` with no argument and on regtest without peers; submit answers duplicate, rejected and undecodable data with -22 |
 | `rpc_rawtransaction.py` | `signrawtransaction` with unknown inputs, output numbers out of range, and variants with different input counts: no crash |
 | `rpc_submitblock.py` | `submitblock`: accepted, duplicate, orphan, rejected and undecodable blocks |
 | `rpc_testmempoolaccept.py` | `testmempoolaccept`: dry-run acceptance and reject reasons, with no change to the pool or wallet |

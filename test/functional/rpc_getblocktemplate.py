@@ -18,17 +18,16 @@ class GetBlockTemplateTest(CorgiTestFramework):
         t = node.getblocktemplate()
         assert_equal(t["height"], 1)
         assert_equal(t["previousblockhash"], node.getbestblockhash())
-        for key in ("version", "bits", "target", "coinbasevalue", "curtime", "mintime", "longpollid"):
+        for key in ("version", "bits", "target", "coinbasevalue", "curtime", "mintime"):
             assert key in t, key
 
         self.log("an empty object works too, and a non-object is refused")
         assert_equal(node.getblocktemplate({})["height"], 1)
         assert_raises_rpc_error(-8, None, node.getblocktemplate, "template")
 
-        self.log("longpollid changes when the tip moves")
-        old = t["longpollid"]
-        node.generate(1)
-        assert node.getblocktemplate()["longpollid"] != old
+        # no longpollid: under BIP 22 a client that sees one sends it back and expects the call to wait, and this one
+        # cannot (it would hold cs_main for the whole poll), so those clients would busy-loop on it
+        assert "longpollid" not in t
 
         self.log("submit: duplicate, undecodable data, rejected")
         raw = []

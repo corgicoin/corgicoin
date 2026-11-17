@@ -2562,7 +2562,6 @@ Value getblocktemplate(const Array& params, bool fHelp)
             "  \"sizelimit\" : limit of block size\n"
             "  \"bits\" : compressed target of next block\n"
             "  \"height\" : height of the next block\n"
-            "  \"longpollid\" : changes when the chain tip or the mempool contents change (the call does not wait: poll it)\n"
             "If [params] does contain a \"data\" key, tries to solve the block and returns null if it was successful (and \"rejected\" if not)\n"
             "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.");
 
@@ -2691,7 +2690,6 @@ Value getblocktemplate(const Array& params, bool fHelp)
         result.emplace_back("curtime", (int64_t)pblock->nTime);
         result.emplace_back("bits", HexBits(pblock->nBits));
         result.emplace_back("height", (int64_t)(pindexPrev->nHeight+1));
-        result.emplace_back("longpollid", pindexPrev->GetBlockHash().GetHex() + strprintf("%u", nTransactionsUpdatedLast));
 
         return result;
     }
