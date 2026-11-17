@@ -488,6 +488,7 @@ if(BUILD_QT_GUI)
         ${OPENSSL_LIBRARIES}
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
+        ${ZMQ_LIBRARIES}
         Threads::Threads
         ${CMAKE_DL_LIBS}
     )
