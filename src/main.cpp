@@ -1119,8 +1119,13 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     {
         // Maximum 400% adjustment...
         bnResult *= 4;
-        // ... in best-case exactly 4-times-normal target time
-        nTime -= nTargetTimespan*4;
+        // ... in best-case exactly 4-times-normal target time. That was written for the 4-hour retarget (4 times per 16
+        // hours). LWMA eases every block, and the easing compounds: if blocks take s = W*T each, the target grows by a
+        // factor e^x per window of N blocks where (1-e^-x)/x = 1/W (about 4.9 for W=2, 17 for W=3, 330 at the cap of
+        // W=6). Per unit of time the fastest is around W=4 to 6, about 1.8e-4 per second: 4 times in 2 hours. A step of
+        // 2 hours is a little above that. With the old 16 hours a node banned the honest peers relaying the honest chain
+        // after a hashrate crash, because the real target had fallen faster than this allowed.
+        nTime -= 2 * 60 * 60;
     }
     if (bnResult > bnProofOfWorkLimit)
         bnResult = bnProofOfWorkLimit;
