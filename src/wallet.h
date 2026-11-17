@@ -33,10 +33,24 @@ enum class WalletFeature
 
     FEATURE_WALLETCRYPT = 40000, // wallet encryption
     FEATURE_COMPRPUBKEY = 60000, // compressed public keys
-    FEATURE_HD = 130000,         // BIP32/39 hierarchical deterministic keys
+    // BIP32/39 hierarchical deterministic keys. This is the client version that first had them (4.5.0.0): the
+    // wallet's minimum version is compared with CLIENT_VERSION, so a number below the client versions of the 4.x
+    // releases that predate HD (130000 was) let those releases open an HD wallet. They skip the HD records and top
+    // the key pool up with random keys that the recovery phrase does not cover.
+    FEATURE_HD = 4050000,
 
-    FEATURE_LATEST = 130000
+    // What releases before this gate recorded for an HD wallet. Only used with -walletcompat.
+    FEATURE_HD_LEGACY = 130000,
+
+    FEATURE_LATEST = 4050000
 };
+
+/** The minimum version to record for an HD wallet, and for a wallet made or upgraded to the latest format. With
+ *  -walletcompat the old, low number: any 4.x release then opens the wallet, as before. Those that predate HD skip the HD
+ *  records and top the key pool up with random keys that the recovery phrase does not cover, so use it only to open a
+ *  wallet in an old release on purpose. */
+WalletFeature HDWalletFeature();
+WalletFeature LatestWalletFeature();
 
 // BIP44 coin type for CorgiCoin HD derivation: m/44'/HD_COIN_TYPE'/0'/0/index.
 // Wallet-local only (not consensus); fixed so a seed always maps to the same

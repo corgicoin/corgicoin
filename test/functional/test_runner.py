@@ -58,6 +58,7 @@ TESTS = [
     "rpc_multisig_limits.py",
     "rpc_hostile_inputs.py",
     "wallet_hd_phrase.py",
+    "wallet_hd_version_gate.py",
     "rpc_http_auth.py",
     "rpc_http_limits.py",
     "rpc_shutdown_keepalive.py",
