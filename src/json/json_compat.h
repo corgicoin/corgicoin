@@ -9,6 +9,9 @@
 
 #include "nlohmann_json.hpp"
 #include <climits>
+#include <cstdint>
+#include <limits>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -16,6 +19,14 @@
 
 namespace json_spirit
 {
+
+// An ordered JSON object keeps keys in the order they were written or received (request order matters to callers
+// such as sendmany and createrawtransaction), where a plain nlohmann::json sorts them.
+using Json = nlohmann::ordered_json;
+
+// Deepest nesting a request may have. The parser is iterative, but copying, printing and destroying a value are
+// not guaranteed to be, and no RPC takes more than a few levels.
+static constexpr int MAX_JSON_DEPTH = 64;
 
 enum Value_type {
     obj_type, array_type, str_type, bool_type, int_type, real_type, null_type
@@ -30,7 +41,7 @@ using Object = std::vector<Pair>;
 
 class Value {
 public:
-    nlohmann::json data;
+    Json data;
     static const Value null;
 
     Value() : data(nullptr) {}
@@ -43,7 +54,7 @@ public:
     Value(uint64_t i) : data(i) {}
     Value(double d) : data(d) {}
     Value(bool b) : data(b) {}
-    Value(const nlohmann::json& j) : data(j) {}
+    Value(const Json& j) : data(j) {}
     // Object/Array constructors - defined after Pair
     inline Value(const Object& obj);
     inline Value(const std::vector<Value>& arr);
@@ -59,21 +70,43 @@ public:
     }
 
     std::string get_str() const { return data.get<std::string>(); }
-    // nlohmann's get<int>() casts, so 2^32+1 would come back as 1: refuse anything that doesn't fit instead
-    int get_int() const {
-        int64_t n = get_int64();
-        if (n < INT_MIN || n > INT_MAX)
+    // The integer getters take JSON integers only, as json_spirit did: not true/false, not 1.9, and nothing outside
+    // the range of the C++ type (a bare static_cast wraps, and from a float outside the range it is undefined)
+    int get_int() const
+    {
+        const int64_t n = get_int64();
+        if (n < std::numeric_limits<int>::min() || n > std::numeric_limits<int>::max())
             throw std::runtime_error("JSON integer out of range");
-        return (int)n;
+        return static_cast<int>(n);
     }
-    int64_t get_int64() const {
-        if (data.is_number_unsigned() && data.get<uint64_t>() > (uint64_t)INT64_MAX)
+    int64_t get_int64() const
+    {
+        if (!data.is_number_integer())
+            throw std::runtime_error("JSON value is not an integer as expected");
+        if (data.is_number_unsigned() && data.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
             throw std::runtime_error("JSON integer out of range");
         return data.get<int64_t>();
     }
-    uint64_t get_uint64() const { return data.get<uint64_t>(); }
-    double get_real() const { return data.get<double>(); }
-    bool get_bool() const { return data.get<bool>(); }
+    uint64_t get_uint64() const
+    {
+        if (!data.is_number_integer())
+            throw std::runtime_error("JSON value is not an integer as expected");
+        if (!data.is_number_unsigned() && data.get<int64_t>() < 0)
+            throw std::runtime_error("JSON integer out of range");
+        return data.get<uint64_t>();
+    }
+    double get_real() const
+    {
+        if (!data.is_number())
+            throw std::runtime_error("JSON value is not a number as expected");
+        return data.get<double>();
+    }
+    bool get_bool() const
+    {
+        if (!data.is_boolean())
+            throw std::runtime_error("JSON value is not a boolean as expected");
+        return data.get<bool>();
+    }
     inline Object get_obj() const;
     inline std::vector<Value> get_array() const;
 
@@ -97,13 +130,13 @@ struct Pair {
 // --- Deferred inline implementations ---
 
 inline Value::Value(const Object& obj) {
-    data = nlohmann::json::object();
+    data = Json::object();
     for (const auto& p : obj)
         data[p.name_] = p.value_.data;
 }
 
 inline Value::Value(const std::vector<Value>& arr) {
-    data = nlohmann::json::array();
+    data = Json::array();
     for (const auto& v : arr)
         data.push_back(v.data);
 }
@@ -143,13 +176,32 @@ inline const Value& find_value(const Object& obj, const std::string& name) {
     return Value::null;
 }
 
-inline bool read_string(const std::string& s, Value& value) {
+// Parse with the limits above, and refuse an object that names the same key twice: which of the two values wins is
+// not defined by JSON, and "pay A 1 and pay A 100" must not quietly turn into one payment.
+template <typename Input>
+inline bool parse_limited(Input&& in, Value& value) {
     try {
-        value.data = nlohmann::json::parse(s);
+        std::vector<std::set<std::string> > keys;
+        auto cb = [&keys](int depth, Json::parse_event_t event, Json& parsed) {
+            if (depth > MAX_JSON_DEPTH)
+                throw std::runtime_error("JSON nested too deeply");
+            if (event == Json::parse_event_t::object_start)
+                keys.emplace_back();
+            else if (event == Json::parse_event_t::object_end)
+                keys.pop_back();
+            else if (event == Json::parse_event_t::key && !keys.back().insert(parsed.template get<std::string>()).second)
+                throw std::runtime_error("duplicate key in JSON object");
+            return true;
+        };
+        value.data = Json::parse(in, cb);
         return true;
     } catch (...) {
         return false;
     }
+}
+
+inline bool read_string(const std::string& s, Value& value) {
+    return parse_limited(s, value);
 }
 
 inline std::string write_string(const Value& value, bool pretty) {
@@ -158,12 +210,7 @@ inline std::string write_string(const Value& value, bool pretty) {
 }
 
 inline bool read_stream(std::istream& is, Value& value) {
-    try {
-        value.data = nlohmann::json::parse(is);
-        return true;
-    } catch (...) {
-        return false;
-    }
+    return parse_limited(is, value);
 }
 
 } // namespace json_spirit
