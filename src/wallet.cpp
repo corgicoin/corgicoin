@@ -130,7 +130,6 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& 
         return false;
     }
     nHDExternalIndex = (fSameSeed && hdSeedId == idBefore) ? nIndexBefore : 0;
-    SetMinVersion(HDWalletFeature());
 
     if (fFileBacked)
     {
@@ -161,7 +160,7 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& 
         else if (fOk)
             fOk = walletdb.WriteHDMnemonic(mnemonic);
         if (fOk)
-            fOk = SetMinVersion(WalletFeature::FEATURE_HD, &walletdb);
+            fOk = SetMinVersion(HDWalletFeature(), &walletdb);
         if (fRegTest && GetArg("-testwalletwritefault", "") == "hdseed")
             fOk = false; // test hook (regtest only): fail the write so the rollback can be checked
         if (!fOk)
@@ -179,7 +178,7 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& 
         }
     }
     else
-        SetMinVersion(WalletFeature::FEATURE_HD);
+        SetMinVersion(HDWalletFeature());
     return true;
 }
 
@@ -1487,6 +1486,8 @@ static void ApproximateBestSubset(vector<pair<int64, pair<const CWalletTx*,unsig
                                   vector<char>& vfBest, int64& nBest, int iterations = 1000)
 {
     vector<char> vfIncluded;
+    // one draw from the system RNG per call, not one per coin per pass: this runs up to 1000 times over every coin, under cs_main
+    std::mt19937 rng{static_cast<std::mt19937::result_type>(GetRandInt(std::numeric_limits<int>::max()))};
 
     vfBest.assign(vValue.size(), true);
     nBest = nTotalLower;
@@ -1500,7 +1501,7 @@ static void ApproximateBestSubset(vector<pair<int64, pair<const CWalletTx*,unsig
         {
             for (unsigned int i = 0; i < vValue.size(); i++)
             {
-                if (nPass == 0 ? GetRandInt(2) : !vfIncluded[i])
+                if (nPass == 0 ? (rng() & 1) : !vfIncluded[i])
                 {
                     nTotal += vValue[i].first;
                     vfIncluded[i] = true;

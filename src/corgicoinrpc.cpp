@@ -3353,6 +3353,11 @@ Value sethdseed(const Array& params, bool fHelp)
     if (params.size() == 0 && mnemonic.empty())
         throw JSONRPCError(-4, "Could not generate a recovery phrase: the random number generator failed");
 
+    // The phrase the wallet already uses: keep its key pool. Rebuilding it would skip a pool's worth of indices, and a later
+    // restore, which only looks a key pool ahead of the last used key, would not find addresses past the gap.
+    const bool fSameSeed = params.size() >= 1 && pwalletMain->IsHDEnabled() && !pwalletMain->IsLocked() &&
+                           pwalletMain->GetHDMnemonic() == bip39::NormaliseMnemonic(mnemonic);
+
     std::string strError;
     if (!pwalletMain->SetHDSeedFromMnemonic(mnemonic, strError))
         throw JSONRPCError(-4, strError);
@@ -3368,7 +3373,8 @@ Value sethdseed(const Array& params, bool fHelp)
     }
 
     // Rebuild the keypool so new addresses come from the HD seed.
-    pwalletMain->NewKeyPool();
+    if (!fSameSeed)
+        pwalletMain->NewKeyPool();
 
     Object r;
     if (params.size() >= 1 && fRescan)
