@@ -3072,7 +3072,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (!vRecv.empty())
             vRecv >> addrFrom >> nNonce;
         if (!vRecv.empty())
+        {
             vRecv >> pfrom->strSubVer;
+            // from an unauthenticated peer: it goes into getpeerinfo and the log, and a byte that is not valid
+            // UTF-8 used to make every getpeerinfo fail for as long as the peer stayed connected
+            pfrom->strSubVer = SanitizeString(pfrom->strSubVer);
+        }
         if (!vRecv.empty())
             vRecv >> pfrom->nStartingHeight;
 

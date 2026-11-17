@@ -379,6 +379,20 @@ bool TimingResistantEqual(const std::string& a, const std::string& b)
     return diff == 0;
 }
 
+std::string SanitizeString(const std::string& str, std::size_t nMaxLength)
+{
+    std::string out;
+    out.reserve(std::min(str.size(), nMaxLength));
+    for (unsigned char c : str)
+    {
+        if (out.size() >= nMaxLength)
+            break;
+        if (c >= 0x20 && c <= 0x7e)
+            out += static_cast<char>(c);
+    }
+    return out;
+}
+
 std::string TrimString(const std::string& str)
 {
     std::string::size_type b = str.find_first_not_of(" \t\r\n");

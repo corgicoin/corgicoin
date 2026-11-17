@@ -205,8 +205,10 @@ inline bool read_string(const std::string& s, Value& value) {
 }
 
 inline std::string write_string(const Value& value, bool pretty) {
-    if (pretty) return value.data.dump(4);
-    return value.data.dump();
+    // Invalid UTF-8 in a string (anything that reached a reply from outside) is replaced, not thrown on: one bad
+    // byte must not turn a whole RPC reply into an error
+    if (pretty) return value.data.dump(4, ' ', false, nlohmann::json::error_handler_t::replace);
+    return value.data.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 inline bool read_stream(std::istream& is, Value& value) {
