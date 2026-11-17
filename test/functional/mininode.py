@@ -44,6 +44,7 @@ class P2PConnection:
         self.answer_pings = answer_pings
         self.got_verack = False
         self.pings_received = 0
+        self.counts = {}            # how many messages of each command arrived
         self.closed = False
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
         self.sock.settimeout(None)
@@ -56,6 +57,19 @@ class P2PConnection:
                    + ser_varstr("/corgi-mininode:0.1/")
                    + struct.pack("<i", start_height))
         self.send("version", payload)
+
+    def send_inv(self, items, command="inv"):
+        """inv or getdata for items = [(type, hash_as_32_bytes), ...]: type 1 is a transaction, 2 a block."""
+        n = len(items)
+        count = bytes([n]) if n < 0xfd else bytes([0xfd]) + struct.pack("<H", n)
+        self.send(command, count + b"".join(struct.pack("<I", t) + h for t, h in items))
+
+    def send_addrs(self, addrs):
+        """addr message for addrs = [(ipv4 string, port), ...]."""
+        n = len(addrs)
+        count = bytes([n]) if n < 0xfd else bytes([0xfd]) + struct.pack("<H", n)
+        now = int(time.time())
+        self.send("addr", count + b"".join(struct.pack("<I", now) + ser_addr(h, p) for h, p in addrs))
 
     def send(self, command, payload=b""):
         header = (REGTEST_MAGIC + command.encode().ljust(12, b"\x00")
@@ -90,6 +104,7 @@ class P2PConnection:
             self.closed = True
 
     def _on_message(self, command, payload):
+        self.counts[command] = self.counts.get(command, 0) + 1
         if command == "version":
             self.send("verack")
         elif command == "verack":
