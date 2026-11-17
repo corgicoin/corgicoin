@@ -202,6 +202,63 @@ protected:
         return (ret == 0);
     }
 
+    // The same four operations on a key and a value that are already serialized (the wallet storage backend uses these); like the templates,
+    // they wipe the key and value buffers they were given. The templates above are unchanged.
+    bool ReadRaw(CDataStream& ssKey, CDataStream& ssValue)
+    {
+        if (!pdb)
+            return false;
+        Dbt datKey(&ssKey[0], ssKey.size());
+        Dbt datValue;
+        datValue.set_flags(DB_DBT_MALLOC);
+        int ret = pdb->get(activeTxn, &datKey, &datValue, 0);
+        memset(datKey.get_data(), 0, datKey.get_size());
+        if (datValue.get_data() == nullptr)
+            return false;
+        ssValue.SetType(SER_DISK);
+        ssValue.clear();
+        ssValue.write(reinterpret_cast<char*>(datValue.get_data()), datValue.get_size());
+        memset(datValue.get_data(), 0, datValue.get_size());
+        free(datValue.get_data());
+        return (ret == 0);
+    }
+
+    bool WriteRaw(CDataStream& ssKey, CDataStream& ssValue, bool fOverwrite)
+    {
+        if (!pdb)
+            return false;
+        if (fReadOnly)
+            assert(!"Write called on database in read-only mode");
+        Dbt datKey(&ssKey[0], ssKey.size());
+        Dbt datValue(&ssValue[0], ssValue.size());
+        int ret = pdb->put(activeTxn, &datKey, &datValue, (fOverwrite ? 0 : DB_NOOVERWRITE));
+        memset(datKey.get_data(), 0, datKey.get_size());
+        memset(datValue.get_data(), 0, datValue.get_size());
+        return (ret == 0);
+    }
+
+    bool EraseRaw(CDataStream& ssKey)
+    {
+        if (!pdb)
+            return false;
+        if (fReadOnly)
+            assert(!"Erase called on database in read-only mode");
+        Dbt datKey(&ssKey[0], ssKey.size());
+        int ret = pdb->del(activeTxn, &datKey, 0);
+        memset(datKey.get_data(), 0, datKey.get_size());
+        return (ret == 0 || ret == DB_NOTFOUND);
+    }
+
+    bool ExistsRaw(CDataStream& ssKey)
+    {
+        if (!pdb)
+            return false;
+        Dbt datKey(&ssKey[0], ssKey.size());
+        int ret = pdb->exists(activeTxn, &datKey, 0);
+        memset(datKey.get_data(), 0, datKey.get_size());
+        return (ret == 0);
+    }
+
     Dbc* GetCursor()
     {
         if (!pdb)

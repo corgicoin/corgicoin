@@ -217,6 +217,7 @@ set(DAEMON_SOURCES
     src/util.cpp
     src/wallet.cpp
     src/walletdb.cpp
+    src/walletstorage.cpp
     src/noui.cpp
 )
 
