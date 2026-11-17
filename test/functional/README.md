@@ -101,6 +101,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_standard_signatures.py` | the low-S / strict-DER relay policy: wallet signatures, a refused high-S twin, `-standardsigs=0`, and a block carrying a twin |
 | `rpc_mempool_verify.py` | `getmempoolinfo`; `verifychain` on a healthy chain and over a deliberately corrupted block |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
+| `wallet_hd_version_gate.py` | an HD wallet records 4.5.0.0 as its minimum client version, so releases before HD refuse it |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |
 | `rpc_multisig_limits.py` | `addmultisigaddress`: 15 compressed keys work and the coins can be spent; 16 keys by size, 17 keys by count, and 8 uncompressed keys are refused with an error instead of an assert or an unspendable address |
 | `rpc_hostile_inputs.py` | wrong types, integers too large for their argument, empty or odd hex, oversized multisig and malformed or look-alike-Unicode recovery phrases: each is refused and the node keeps answering; messily spaced valid phrases are stored canonically |
