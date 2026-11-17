@@ -101,6 +101,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `p2p_resource_limits.py` | what a peer can make the node remember (announced items, known addresses) or queue (getdata) is bounded |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
 | `p2p_getheaders_auxpow.py` | `getheaders` across a merged-mined block: the node stays up and returns one header with its real AuxPoW proof attached |
+| `rpc_createauxblock_cache.py` | createauxblock hands the same work out again while the tip and memory pool are unchanged, per payout script |
 | `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |
 | `feature_auxpow.py` | merged mining as pools do it: multi-chain proofs, legacy commitment, one rejection per AuxPoW rule (checked against its exact error), stale work, pre-fork guard, `getauxblock`. Proofs come from `auxpow_builder.py` |
 | `rpc_small_fixes.py` | gettxout validates the transaction id |

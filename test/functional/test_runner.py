@@ -36,6 +36,7 @@ TESTS = [
     "p2p_maxconnections.py",
     "p2p_resource_limits.py",
     "rpc_createauxblock.py",
+    "rpc_createauxblock_cache.py",
     "feature_auxpow.py",
     "rpc_mempool_verify.py",
     "rpc_gettxout.py",
