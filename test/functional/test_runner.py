@@ -45,6 +45,7 @@ TESTS = [
     "rpc_small_fixes.py",
     "rpc_mining_info.py",
     "rpc_submitblock.py",
+    "rpc_getblocktemplate.py",
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",
     "rpc_mempool_policy.py",
