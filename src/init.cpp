@@ -688,6 +688,23 @@ bool AppInit2()
     LogPrintf("Loading wallet...\n");
     nStart = GetTimeMillis();
     bool fFirstRun;
+    {
+        // A wallet rewrite keeps the original as wallet.dat.bak until the new file is in place (and builds the new one
+        // as wallet.dat.rewrite). If wallet.dat is missing but one of those is there, the process stopped in the
+        // middle of a rewrite: starting now would create a new, empty wallet.dat next to the real one, and the
+        // user would see an empty wallet. Stop and say where the wallet is.
+        const std::filesystem::path pathWallet = GetDataDir() / "wallet.dat";
+        std::error_code ec;
+        if (!std::filesystem::exists(pathWallet, ec))
+            for (const char* pszSuffix : {".bak", ".rewrite"})
+            {
+                const std::filesystem::path pathOther = pathWallet.string() + pszSuffix;
+                if (std::filesystem::exists(pathOther, ec))
+                    return InitError(strprintf(_("wallet.dat is missing, but %s exists: CorgiCoin stopped in the middle of rewriting the wallet. "
+                                                 "Your keys are in that file. Stop CorgiCoin, copy it to wallet.dat, and start again. "
+                                                 "(Not starting, so that a new empty wallet does not hide it.)"), pathOther.string().c_str()));
+            }
+    }
     pwalletMain = std::make_unique<CWallet>("wallet.dat");
     int nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
     if (nLoadWalletRet != DB_LOAD_OK)
