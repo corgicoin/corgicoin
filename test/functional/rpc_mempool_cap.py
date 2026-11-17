@@ -6,7 +6,7 @@ paying 5 coins each fill it, one paying 50 pushes one of them out, and one payin
 """
 from decimal import Decimal
 
-from test_framework import CorgiTestFramework, assert_equal
+from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_error
 
 CAP = 10000
 
@@ -47,12 +47,9 @@ class MempoolCapTest(CorgiTestFramework):
         assert_equal(info["size"], full)
 
         self.log("one that pays the least that relays is turned away")
-        try:
-            node.sendrawtransaction(self.spend(node, utxos[81], dest, 2))
-        except Exception as e:
-            assert "mempool" in str(e).lower() or "reject" in str(e).lower() or "-" in str(e), str(e)
-        else:
-            raise AssertionError("a transaction at the lowest fee rate was accepted into a full pool")
+        assert_raises_rpc_error(-22, None, node.sendrawtransaction, self.spend(node, utxos[81], dest, 2))
+        with open(node.debug_log, errors="replace") as f:
+            assert "mempool full" in f.read(), "rejected, but not because the pool was full"
         assert node.getmempoolinfo()["bytes"] <= CAP
 
         self.log("a block takes them and the pool empties")

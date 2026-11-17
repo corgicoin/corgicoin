@@ -1724,13 +1724,15 @@ public:
     std::map<uint256, std::pair<double, int64> > mapDeltas;
     /** What the size limit and the expiry need to know about each entry: its fee (before any prioritisetransaction
      *  delta), size in bytes and the time it was accepted. */
-    struct PoolEntry { int64 nFee; unsigned int nSize; int64 nTime; };
+    struct PoolEntry { int64 nFee; unsigned int nSize; int64 nTime; bool fFeeKnown; };
     std::map<uint256, PoolEntry> mapEntry;
     size_t nPoolBytes = 0;
 
     /** Drop entries older than -mempoolexpiry hours (default 72) with whatever spends them, then, while the pool holds more
      *  than -maxmempoolkb (default 100000), the leaf entry with the lowest fee per byte. Returns how many were dropped. */
     unsigned int Trim();
+    /** Trim() candidates, lowest fee per byte first. Needs cs. */
+    std::vector<std::pair<double, uint256> > EvictionCandidates() const;
     /** Would a transaction of this size and fee be the first one dropped if it were added now? (No side effects: a dry
      *  run asks this, because the cap is only applied after a transaction is stored.) */
     bool WouldBeDropped(int64 nFee, unsigned int nSize);

@@ -685,7 +685,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             remove(*ptxOld);
         }
         addUnchecked(hash, tx);
-        PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime() };
+        PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime(), fCheckInputs };
         mapEntry[hash] = entry;
         nPoolBytes += entry.nSize;
         Trim();
@@ -770,6 +770,36 @@ void CTxMemPool::RemoveRecursive(const uint256& hash)
     }
 }
 
+// -maxmempoolkb in bytes, clamped so that absurd values cannot overflow the multiplication
+static size_t MaxMempoolBytes()
+{
+    return (size_t)std::min<int64>(std::max<int64>(1, GetArg("-maxmempoolkb", 100000)), 100000000) * 1000;
+}
+
+// The entries Trim() may drop, lowest fee per byte first: those nothing in the pool spends from (taking a parent out would
+// take its children, which may pay more), and whose fee is known (one put back after a reorganisation was not computed,
+// and is not the cheapest just because it reads 0)
+std::vector<std::pair<double, uint256> > CTxMemPool::EvictionCandidates() const
+{
+    std::vector<std::pair<double, uint256> > v;
+    v.reserve(mapEntry.size());
+    for (const auto& item : mapEntry)
+    {
+        if (!item.second.fFeeKnown)
+            continue;
+        auto itTx = mapTx.find(item.first);
+        if (itTx == mapTx.end())
+            continue;
+        bool fHasChild = false;
+        for (unsigned int n = 0; n < itTx->second.vout.size() && !fHasChild; n++)
+            fHasChild = mapNextTx.count(COutPoint(item.first, n)) != 0;
+        if (!fHasChild)
+            v.emplace_back((double)item.second.nFee / std::max(1u, item.second.nSize), item.first);
+    }
+    std::sort(v.begin(), v.end());
+    return v;
+}
+
 unsigned int CTxMemPool::Trim()
 {
     LOCK(cs);
@@ -794,37 +824,26 @@ unsigned int CTxMemPool::Trim()
         }
     }
 
-    const size_t nMaxBytes = (size_t)std::max<int64>(1, GetArg("-maxmempoolkb", 100000)) * 1000;
+    // One sorted pass over the candidates, not a scan of the whole pool for every entry dropped (one big transaction into a
+    // full pool can push out hundreds, and this runs under cs_main). Dropping a leaf can make its parent one: that only
+    // matters if the pass ran out of candidates while still over the limit, and then it goes round again.
+    const size_t nMaxBytes = MaxMempoolBytes();
     while (nPoolBytes > nMaxBytes && !mapEntry.empty())
     {
-        // the lowest fee per byte among the entries nothing in the pool spends from (taking a parent out would take its
-        // children, which may pay more)
-        const uint256* pWorst = nullptr;
-        double dWorst = 0;
-        for (const auto& item : mapEntry)
-        {
-            auto itTx = mapTx.find(item.first);
-            if (itTx == mapTx.end())
-                continue;
-            bool fHasChild = false;
-            for (unsigned int n = 0; n < itTx->second.vout.size() && !fHasChild; n++)
-                fHasChild = mapNextTx.count(COutPoint(item.first, n)) != 0;
-            if (fHasChild)
-                continue;
-            const double dRate = (double)item.second.nFee / std::max(1u, item.second.nSize);
-            if (!pWorst || dRate < dWorst)
-            {
-                pWorst = &item.first;
-                dWorst = dRate;
-            }
-        }
-        if (!pWorst)
+        const std::vector<std::pair<double, uint256> > vCandidates = EvictionCandidates();
+        if (vCandidates.empty())
             break;
-        const uint256 hashWorst = *pWorst;
-        LogPrintf("CTxMemPool::Trim() : pool is %u bytes, over the limit of %u: dropping %s (%.1f sat/byte)\n",
-                  (unsigned int)nPoolBytes, (unsigned int)nMaxBytes, hashWorst.ToString().substr(0,10).c_str(), dWorst);
-        RemoveRecursive(hashWorst);
-        nDropped++;
+        for (const auto& candidate : vCandidates)
+        {
+            if (nPoolBytes <= nMaxBytes)
+                break;
+            if (!mapTx.count(candidate.second))
+                continue;
+            LogPrintf("CTxMemPool::Trim() : pool is %u bytes, over the limit of %u: dropping %s (%.1f sat/byte)\n",
+                      (unsigned int)nPoolBytes, (unsigned int)nMaxBytes, candidate.second.ToString().substr(0,10).c_str(), candidate.first);
+            RemoveRecursive(candidate.second);
+            nDropped++;
+        }
     }
     return nDropped;
 }
@@ -832,27 +851,11 @@ unsigned int CTxMemPool::Trim()
 bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize)
 {
     LOCK(cs);
-    const size_t nMaxBytes = (size_t)std::max<int64>(1, GetArg("-maxmempoolkb", 100000)) * 1000;
-    if (nPoolBytes + nSize <= nMaxBytes || mapEntry.empty())
+    if (nPoolBytes + nSize <= MaxMempoolBytes() || mapEntry.empty())
         return false;
-    // the same candidates Trim() looks at: entries nothing in the pool spends from
-    double dLowest = -1;
-    for (const auto& item : mapEntry)
-    {
-        auto itTx = mapTx.find(item.first);
-        if (itTx == mapTx.end())
-            continue;
-        bool fHasChild = false;
-        for (unsigned int n = 0; n < itTx->second.vout.size() && !fHasChild; n++)
-            fHasChild = mapNextTx.count(COutPoint(item.first, n)) != 0;
-        if (fHasChild)
-            continue;
-        const double dRate = (double)item.second.nFee / std::max(1u, item.second.nSize);
-        if (dLowest < 0 || dRate < dLowest)
-            dLowest = dRate;
-    }
+    const std::vector<std::pair<double, uint256> > vCandidates = EvictionCandidates();
     // strictly lower than every candidate: it goes first (a tie is left to the real thing)
-    return dLowest >= 0 && (double)nFee / std::max(1u, nSize) < dLowest;
+    return !vCandidates.empty() && (double)nFee / std::max(1u, nSize) < vCandidates.front().first;
 }
 
 void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)
