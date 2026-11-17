@@ -358,9 +358,8 @@ bool CWallet::UnlockWithMasterKey(const SecureString& strWalletPassphrase, const
 
 bool CWallet::Unlock(const SecureString& strWalletPassphrase)
 {
-    if (!IsLocked())
-        return false;
-
+    // Not refused when the wallet is already unlocked: the passphrase is checked the same way, and walletpassphrase uses
+    // that to extend an unlock. (It returned false here, so a second walletpassphrase failed with "incorrect passphrase".)
     CKeyingMaterial vMasterKey;
 
     {

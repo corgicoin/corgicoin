@@ -86,6 +86,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_rewrite_safety.py` | a failing wallet rewrite leaves wallet.dat and its keys alone; a start with only wallet.dat.bak refuses to run |
 | `wallet_relock_during_topup.py` | a wallet that relocks in the middle of a key-pool top-up keeps the node up; dumpwallet leaves no temporary file |
+| `wallet_unlock_timeout.py` | walletpassphrase: negative and huge timeouts, and unlocking an unlocked wallet extends the unlock |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
 | `wallet_accounting.py` | `move` between accounts: balances, each account's entries in order, `listtransactions "*"`, still there after a restart (the wallet's one read by key order from a chosen start) |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |

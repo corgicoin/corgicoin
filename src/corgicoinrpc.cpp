@@ -2100,8 +2100,15 @@ Value walletpassphrase(const Array& params, bool fHelp)
     if (!pwalletMain->IsCrypted())
         throw JSONRPCError(-15, "Error: running with an unencrypted wallet, but walletpassphrase was called.");
 
-    if (!pwalletMain->IsLocked())
-        throw JSONRPCError(-17, "Error: Wallet is already unlocked.");
+    // Called again on a wallet that is already unlocked, it checks the passphrase and extends the timeout (it used
+    // to refuse with -17, so overlapping payout runs that each unlock the wallet failed against each other)
+
+    // The timeout is in seconds and is multiplied by 1000 for the relock thread: a negative value would relock at
+    // once and a huge one would overflow, so refuse the first and cap the second (2^30 seconds is 34 years)
+    const int64 nTimeout = params[1].get_int64();
+    if (nTimeout < 0)
+        throw JSONRPCError(-8, "Error: the timeout cannot be negative.");
+    const int64 nSleepSeconds = std::min<int64>(nTimeout, 1LL << 30);
 
     // Note that the walletpassphrase is stored in params[0] which is not mlock()ed
     SecureString strWalletPass;
@@ -2121,7 +2128,7 @@ Value walletpassphrase(const Array& params, bool fHelp)
             "Stores the wallet decryption key in memory for <timeout> seconds.");
 
     CreateThread(ThreadTopUpKeyPool, nullptr);
-    int64* pnSleepTime = new int64(params[1].get_int64());
+    int64* pnSleepTime = new int64(nSleepSeconds);
     CreateThread(ThreadCleanWalletPassphrase, pnSleepTime);
 
     return Value::null;

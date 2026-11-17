@@ -31,6 +31,7 @@ TESTS = [
     "wallet_accounting.py",
     "wallet_rewrite_safety.py",
     "wallet_relock_during_topup.py",
+    "wallet_unlock_timeout.py",
     "wallet_upgrade_fixtures.py",
     "feature_block_sync.py",
     "p2p_network_rpcs.py",
