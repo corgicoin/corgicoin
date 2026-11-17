@@ -37,6 +37,7 @@ TESTS = [
     "mining_getwork.py",
     "rpc_http_protocol.py",
     "wallet_listtransactions_paging.py",
+    "rpc_getblocktemplate.py",
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",
     "rpc_standard_signatures.py",
