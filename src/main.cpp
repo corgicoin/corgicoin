@@ -1528,6 +1528,10 @@ bool IsInitialBlockDownload()
 // The block (on the branch that failed) whose ConnectBlock failed, so that InvalidChainFound can mark that block and not
 // only the tip of the branch. Set by the code that saw it fail; null when the failure was not the block's fault.
 static CBlockIndex* pindexConnectFailed = nullptr;
+// Set by ConnectBlock when it failed for a reason that may be this node's and not the block's: a database write that failed, or
+// inputs it could not read (missing from the index, a read error, an exhausted lock table). Such a block is not marked failed:
+// a transient error would otherwise make the node give up the honest chain until it restarts.
+static bool fConnectFailureMaybeLocal = false;
 
 // Mark pindexBad as failed, and every block already in the index that is built on it. A block built on a failed one is
 // then not tried again (each try would be a whole reorganisation that ends at the same invalid block), and one that
@@ -1904,6 +1908,7 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
 bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
+    fConnectFailureMaybeLocal = false;
     // Check it again in case a previous version let a bad block in
     if (!CheckBlock())
         return false;
@@ -1958,7 +1963,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         {
             bool fInvalid;
             if (!tx.FetchInputs(txdb, mapQueuedChanges, true, false, mapInputs, fInvalid))
+            {
+                fConnectFailureMaybeLocal = !fInvalid;
                 return false;
+            }
 
             if (fStrictPayToScriptHash)
             {
@@ -1983,7 +1991,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     for (const auto& mi : mapQueuedChanges)
     {
         if (!txdb.UpdateTxIndex(mi.first, mi.second))
+        {
+            fConnectFailureMaybeLocal = true;
             return LogError("ConnectBlock() : UpdateTxIndex failed");
+        }
     }
 
 	uint256 prevHash = 0;
@@ -2007,7 +2018,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         CDiskBlockIndex blockindexPrev(pindex->pprev);
         blockindexPrev.hashNext = pindex->GetBlockHash();
         if (!txdb.WriteBlockIndex(blockindexPrev))
+        {
+            fConnectFailureMaybeLocal = true;
             return LogError("ConnectBlock() : WriteBlockIndex failed");
+        }
     }
 
     // (The wallet and ZMQ are told after the database commit: see NotifyConnected.)
@@ -2086,8 +2100,9 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
             return LogError("Reorganize() : ReadFromDisk for connect failed");
         if (!block.ConnectBlock(txdb, pindex))
         {
-            // Invalid block
-            pindexConnectFailed = pindex;
+            // Invalid block (unless the failure may be ours)
+            if (!fConnectFailureMaybeLocal)
+                pindexConnectFailed = pindex;
             return LogError("Reorganize() : ConnectBlock %s failed", pindex->GetBlockHash().ToString().substr(0,20).c_str());
         }
 
@@ -2141,7 +2156,7 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 
     // Adding to current best branch
     const bool fConnected = ConnectBlock(txdb, pindexNew);
-    if (!fConnected)
+    if (!fConnected && !fConnectFailureMaybeLocal)
         pindexConnectFailed = pindexNew;      // the block's fault, not the database's
     if (!fConnected || !txdb.WriteHashBestChain(hash))
     {
