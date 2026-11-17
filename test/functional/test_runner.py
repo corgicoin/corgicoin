@@ -41,6 +41,7 @@ TESTS = [
     "rpc_gettxout.py",
     "rpc_getblock_verbose.py",
     "rpc_rawtransaction.py",
+    "rpc_small_fixes.py",
     "rpc_submitblock.py",
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",

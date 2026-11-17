@@ -153,8 +153,13 @@ Value gettxout(const Array& params, bool fHelp)
 
     RPCTypeCheck(params, {str_type, int_type, bool_type});
 
+    // SetHex stops at the first character that is not hex, so a string that was not a transaction id (too short, too long,
+    // or ending in rubbish) used to be read as some other id
+    const std::string strTxid = params[0].get_str();
+    if (!IsHex(strTxid) || strTxid.size() != 64)
+        throw JSONRPCError(-8, "txid must be 64 hex characters");
     uint256 hash;
-    hash.SetHex(params[0].get_str());
+    hash.SetHex(strTxid);
     const int n = params[1].get_int();
     const bool fIncludeMempool = params.size() > 2 ? params[2].get_bool() : true;
     if (n < 0)

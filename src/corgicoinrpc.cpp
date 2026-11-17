@@ -3035,7 +3035,10 @@ Value getblock(const Array& params, bool fHelp)
 
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
-    block.ReadFromDisk(pblockindex, true);
+    // The result was ignored: a block whose data cannot be read (a damaged or missing blk file) left an empty block, and
+    // blockToJSON then read vtx[0] of it
+    if (!block.ReadFromDisk(pblockindex, true))
+        throw JSONRPCError(-1, "Block not found on disk");
 
     if (!fVerbose)
     {
