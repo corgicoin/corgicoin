@@ -2380,9 +2380,10 @@ Value getwork(const Array& params, bool fHelp)
 
 Value getblocktemplate(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() > 1)
         throw runtime_error(
             "getblocktemplate [params]\n"
+            "[params] is optional: with none, the template is returned.\n"
             "If [params] does not contain a \"data\" key, returns data needed to construct a block to work on:\n"
             "  \"version\" : block version\n"
             "  \"previousblockhash\" : hash of current highest block\n"
@@ -2398,10 +2399,17 @@ Value getblocktemplate(const Array& params, bool fHelp)
             "  \"sizelimit\" : limit of block size\n"
             "  \"bits\" : compressed target of next block\n"
             "  \"height\" : height of the next block\n"
+            "  \"longpollid\" : changes when the chain tip or the mempool contents change (the call does not wait: poll it)\n"
             "If [params] does contain a \"data\" key, tries to solve the block and returns null if it was successful (and \"rejected\" if not)\n"
             "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.");
 
-    const Object& oparam = params[0].get_obj();
+    Object oparam;
+    if (params.size() == 1)
+    {
+        if (params[0].type() != obj_type)
+            throw JSONRPCError(-8, "getblocktemplate takes an object (or nothing)");
+        oparam = params[0].get_obj();
+    }
     std::string strMode;
     {
         const Value& modeval = find_value(oparam, "mode");
@@ -2416,10 +2424,11 @@ Value getblocktemplate(const Array& params, bool fHelp)
 
     if (strMode == "template")
     {
-        if (vNodes.empty())
+        // Regtest mines without peers, like generate and createauxblock
+        if (vNodes.empty() && !fRegTest)
             throw JSONRPCError(-9, "CorgiCoin is not connected!");
 
-        if (IsInitialBlockDownload())
+        if (IsInitialBlockDownload() && !fRegTest)
             throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
         static CReserveKey reservekey(pwalletMain.get());
@@ -2519,6 +2528,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
         result.emplace_back("curtime", (int64_t)pblock->nTime);
         result.emplace_back("bits", HexBits(pblock->nBits));
         result.emplace_back("height", (int64_t)(pindexPrev->nHeight+1));
+        result.emplace_back("longpollid", pindexPrev->GetBlockHash().GetHex() + strprintf("%u", nTransactionsUpdatedLast));
 
         return result;
     }
@@ -2526,9 +2536,22 @@ Value getblocktemplate(const Array& params, bool fHelp)
     if (strMode == "submit")
     {
         // Parse parameters
-        CDataStream ssBlock(ParseHex(find_value(oparam, "data").get_str()), SER_NETWORK, PROTOCOL_VERSION);
+        const Value& valData = find_value(oparam, "data");
+        if (valData.type() != str_type || !IsHex(valData.get_str()))
+            throw JSONRPCError(-22, "Block decode failed");
+        CDataStream ssBlock(ParseHex(valData.get_str()), SER_NETWORK, PROTOCOL_VERSION);
         CBlock pblock;
-        ssBlock >> pblock;
+        try {
+            ssBlock >> pblock;
+        } catch (const std::exception&) {
+            throw JSONRPCError(-22, "Block decode failed");
+        }
+        if (!ssBlock.empty())
+            throw JSONRPCError(-22, "Block decode failed: trailing data");
+
+        // BIP 22 reasons: a block we already hold is "duplicate"
+        if (mapBlockIndex.count(pblock.GetHash()))
+            return "duplicate";
 
         bool fAccepted = ProcessBlock(nullptr, &pblock);
 
