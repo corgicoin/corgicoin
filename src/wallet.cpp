@@ -14,6 +14,7 @@
 #include "base58.h"
 #include "logging.h"
 #include "bip39.h"
+#include <openssl/crypto.h>
 #include <random>
 
 using namespace std;
@@ -61,12 +62,15 @@ bool CWallet::LoadHDMnemonic(const std::string& mnemonic)
     // valid-looking key nobody can recover (or, for an all-zero seed, everybody can)
     std::vector<unsigned char> seed = bip39::MnemonicToSeed(mnemonic);
     CExtKey master;
-    if (seed.empty() || !master.SetSeed(&seed[0], (unsigned int)seed.size()))
+    const bool fDerived = !seed.empty() && master.SetSeed(&seed[0], (unsigned int)seed.size());
+    OPENSSL_cleanse(seed.data(), seed.size());
+    if (!fDerived)
         return false;
     hdMasterKey = master;
     strHDMnemonic = mnemonic;
     hdSeedId = hdMasterKey.key.GetPubKey().GetID();
     fHDEnabled = true;
+    fHDMasterLoaded = true;
     return true;
 }
 
@@ -150,9 +154,13 @@ CPubKey CWallet::GenerateNewKey()
     // unencrypted wallets and unlocked encrypted ones (doc/hd-wallet-spec.md).
     if (fHDEnabled && !IsLocked())
     {
+        if (!fHDMasterLoaded)
+            throw std::runtime_error("CWallet::GenerateNewKey() : the HD seed is not available (it could not be decrypted when the wallet was unlocked), so no new keys can be made");
         if (!DeriveHDChild(hdMasterKey, nHDExternalIndex, key))
             throw std::runtime_error("CWallet::GenerateNewKey() : HD derivation failed");
-        if (!AddKey(key))
+        // The same index can come up twice: restoring a phrase derives keys ahead, and restoring one that is already
+        // in the wallet derives the same keys again. A key that is already there is the one asked for, not a failure.
+        if (!HaveKey(key.GetPubKey().GetID()) && !AddKey(key))
             throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
         nHDExternalIndex++;
         if (fFileBacked)
@@ -361,8 +369,10 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase)
         {
             if (UnlockWithMasterKey(strWalletPassphrase, pMasterKey.second, vMasterKey))
             {
-                // Make the HD seed usable for this unlocked session.
-                DecryptHDSeed(vMasterKey);
+                // Make the HD seed usable for this unlocked session. If it cannot be decrypted the wallet still
+                // unlocks (its existing keys work), but it cannot make new keys: say so, and getwalletinfo reports it
+                if (!DecryptHDSeed(vMasterKey))
+                    LogPrintf("Unlock: the HD seed could not be decrypted; existing keys work but no new keys can be derived (hdseed_available is false)\n");
                 return true;
             }
         }
@@ -1894,6 +1904,77 @@ bool GetWalletFile(CWallet* pwallet, string &strWalletFileOut)
 // Mark old keypool keys as used,
 // and generate all new keys
 //
+bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strError)
+{
+    LOCK2(cs_main, cs_wallet);
+    if (!IsHDSeedAvailable() || IsLocked())
+    {
+        strError = "The HD seed is not available (unlock the wallet first)";
+        return false;
+    }
+    nGap = std::max(1u, nGap);
+
+    // keys 0 .. nDerived-1 are in the key store; mapIndex says which index each one is
+    unsigned int nDerived = 0;
+    std::map<CKeyID, unsigned int> mapIndex;
+    auto DeriveTo = [&](unsigned int nTo) {
+        for (; nDerived < nTo; nDerived++)
+        {
+            CKey key;
+            if (!DeriveHDChild(hdMasterKey, nDerived, key))
+                return false;
+            const CKeyID keyid = key.GetPubKey().GetID();
+            // a key that is already here (an earlier restore of the same phrase, or the key pool) is not an error
+            if (!HaveKey(keyid) && !AddKey(key))
+                return false;
+            mapIndex[keyid] = nDerived;
+        }
+        return true;
+    };
+
+    // Look for the last key that has been paid. Each round derives nGap keys past the last one found and rescans; it ends
+    // when a round finds nothing further.
+    int nHighest = -1;
+    while (true)
+    {
+        if (!DeriveTo(static_cast<unsigned int>(nHighest + 1) + nGap))
+        {
+            strError = "Could not derive the HD keys";
+            return false;
+        }
+        ScanForWalletTransactions(pindexGenesisBlock, true);
+
+        int nFound = nHighest;
+        for (const auto& item : mapWallet)
+            for (const CTxOut& txout : item.second.vout)
+            {
+                CTxDestination dest;
+                if (!ExtractDestination(txout.scriptPubKey, dest))
+                    continue;
+                const CKeyID* pkeyid = std::get_if<CKeyID>(&dest);
+                auto it = pkeyid ? mapIndex.find(*pkeyid) : mapIndex.end();
+                if (it != mapIndex.end())
+                    nFound = std::max(nFound, static_cast<int>(it->second));
+            }
+        if (nFound == nHighest)
+            break;
+        nHighest = nFound;
+        if (nDerived > 1000000)       // a runaway guard: a million keys is not a wallet
+            break;
+    }
+
+    // The next address is the first one never used. (The keys before it stay in the key store: coins sent to any of them
+    // are the wallet's.)
+    // (Never lower it: restoring the phrase the wallet already uses must not hand out addresses it has given out before,
+    // and those are not on the chain yet.)
+    nHDExternalIndex = std::max(nHDExternalIndex, static_cast<uint32_t>(nHighest + 1));
+    if (fFileBacked)
+        CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
+    nUsedRet = nHighest + 1;
+    ReacceptWalletTransactions();
+    return true;
+}
+
 bool CWallet::NewKeyPool()
 {
     {
@@ -1916,6 +1997,29 @@ bool CWallet::NewKeyPool()
         LogPrintf("CWallet::NewKeyPool wrote %" PRI64d " new keys\n", nKeys);
     }
     return true;
+}
+
+bool CWallet::Lock()
+{
+    LOCK(cs_wallet);
+    if (!CCryptoKeyStore::Lock())
+        return false;
+    WipeHDSecrets();
+    return true;
+}
+
+void CWallet::WipeHDSecrets()
+{
+    LOCK(cs_wallet);
+    // Only when the encrypted copy of the phrase exists to bring it back at the next unlock
+    if (vchCryptedHDMnemonic.empty())
+        return;
+    if (!strHDMnemonic.empty())
+        OPENSSL_cleanse(&strHDMnemonic[0], strHDMnemonic.size());
+    strHDMnemonic.clear();
+    strHDMnemonic.shrink_to_fit();
+    hdMasterKey = CExtKey();
+    fHDMasterLoaded = false;
 }
 
 bool CWallet::TopUpKeyPool()

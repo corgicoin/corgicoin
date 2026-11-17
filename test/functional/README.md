@@ -84,6 +84,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_listtransactions.py` | `listtransactions`: paging, and count/from as large as an int (their sum used to overflow) |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_rewrite_safety.py` | a failing wallet rewrite leaves wallet.dat and its keys alone; a start with only wallet.dat.bak refuses to run |
+| `wallet_relock_during_topup.py` | a wallet that relocks in the middle of a key-pool top-up keeps the node up; dumpwallet leaves no temporary file |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
 | `wallet_accounting.py` | `move` between accounts: balances, each account's entries in order, `listtransactions "*"`, still there after a restart (the wallet's one read by key order from a chosen start) |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |
@@ -120,6 +121,8 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_invalidateblock_deep.py` | invalidateblock 400 blocks deep fits the database lock table (-dbmaxlocks) |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
 | `wallet_hd_version_gate.py` | an HD wallet records 4.5.0.0 as its minimum client version, so releases before HD refuse it |
+| `wallet_hd_lock_secrets.py` | an encrypted HD wallet wipes its recovery phrase and master key from memory when it locks |
+| `wallet_hd_restore.py` | restoring a phrase derives ahead, rescans, finds coins on late keys, and continues after the last used address |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |
 | `rpc_multisig_limits.py` | `addmultisigaddress`: 15 compressed keys work and the coins can be spent; 16 keys by size, 17 keys by count, and 8 uncompressed keys are refused with an error instead of an assert or an unspendable address |
 | `rpc_hostile_inputs.py` | wrong types, integers too large for their argument, empty or odd hex, oversized multisig and malformed or look-alike-Unicode recovery phrases: each is refused and the node keeps answering; messily spaced valid phrases are stored canonically |

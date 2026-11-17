@@ -11,6 +11,7 @@
 
 #include <string.h>
 #include <string>
+#include <openssl/crypto.h>   // OPENSSL_cleanse: a wipe the compiler may not remove
 
 #ifdef WIN32
 #ifdef _WIN32_WINNT
@@ -81,7 +82,8 @@ struct secure_allocator : public std::allocator<T>
     {
         if (p != nullptr)
         {
-            memset(p, 0, sizeof(T) * n);
+            // not memset: a compiler may drop a memset of memory that is freed right after, and these hold secrets
+            OPENSSL_cleanse(p, sizeof(T) * n);
             munlock(p, sizeof(T) * n);
         }
         std::allocator<T>::deallocate(p, n);
@@ -115,7 +117,7 @@ struct zero_after_free_allocator : public std::allocator<T>
     void deallocate(T* p, std::size_t n)
     {
         if (p != nullptr)
-            memset(p, 0, sizeof(T) * n);
+            OPENSSL_cleanse(p, sizeof(T) * n);
         std::allocator<T>::deallocate(p, n);
     }
 };

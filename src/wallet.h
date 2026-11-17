@@ -138,16 +138,23 @@ public:
     CExtKey hdMasterKey;
     bool fHDEnabled = false;
     uint32_t nHDExternalIndex = 0;   // next external chain child index
-    std::string strHDMnemonic;       // recovery phrase (in memory; empty while locked)
+    std::string strHDMnemonic;       // recovery phrase (in memory; empty while an encrypted wallet is locked)
+    bool fHDMasterLoaded = false;    // hdMasterKey and strHDMnemonic hold the seed (false while locked, or if it failed to decrypt)
     CKeyID hdSeedId;                 // fingerprint of the HD master pubkey (non-secret)
     std::vector<unsigned char> vchCryptedHDMnemonic; // encrypted phrase (crypted wallets)
 
     bool IsHDEnabled() const { return fHDEnabled; }
+    bool IsHDSeedAvailable() const { return fHDEnabled && fHDMasterLoaded; }
     std::string GetHDMnemonic() const { return strHDMnemonic; }
     CKeyID GetHDSeedId() const { return hdSeedId; }
     // Set the HD seed from a BIP39 mnemonic, persist it (encrypted if the
     // wallet is encrypted and unlocked), and reset the keypool to HD keys.
     bool SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError);
+    // After a seed was restored from a phrase: derive keys ahead of the last one the chain shows in use (nGap past it, at
+    // least 1), rescan the block chain for what they received, and move the next-address counter past the last used key.
+    // Without it a restored wallet knows only the first -keypool keys, shows no balance until -rescan, and misses coins
+    // on later keys. nUsedRet is the number of keys up to and including the last used one.
+    bool RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strError);
     // Decrypt the stored HD mnemonic using the master key (called from Unlock).
     bool DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn);
     // Load-time setup (no persistence, no counter reset) — used by CWalletDB.
@@ -203,6 +210,12 @@ public:
     bool LoadCScript(const CScript& redeemScript) { return CCryptoKeyStore::AddCScript(redeemScript); }
 
     bool Unlock(const SecureString& strWalletPassphrase);
+    /** Lock the wallet. Waits for cs_wallet, so key generation, signing and dumps that are under way finish first
+     *  (a relock in the middle of them used to make them throw). */
+    bool Lock();
+    /** Forget the HD recovery phrase and master key in memory (an encrypted wallet that is locked keeps only the
+     *  encrypted phrase, so memory dumps, swap and crash reports no longer hold the root secret). */
+    void WipeHDSecrets();
     // Derive the key for one master key from the passphrase, decrypt the master key and unlock the keystore with it
     bool UnlockWithMasterKey(const SecureString& strWalletPassphrase, const CMasterKey& kMasterKey, CKeyingMaterial& vMasterKeyOut);
     bool ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase);
