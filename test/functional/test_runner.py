@@ -22,6 +22,8 @@ TESTS = [
     "wallet_send.py",
     "wallet_listtransactions.py",
     "wallet_sendmany_total.py",
+    "wallet_change_position.py",
+    "rpc_sighash_single.py",
     "wallet_lockunspent.py",
     "wallet_abandon.py",
     "wallet_dump.py",

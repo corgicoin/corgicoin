@@ -1638,8 +1638,10 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                         scriptChange.SetDestination(vchPubKey.GetID());
                     }
 
-                    // Insert change txn at random position:
-                    auto position = wtxNew.vout.begin()+GetRandInt(wtxNew.vout.size());
+                    // Insert change txn at random position, the last one included: GetRandInt(n) is 0..n-1, so
+                    // with n outputs there are n+1 places. (With one recipient the change used to be always
+                    // output 0, which made every send of this wallet easy to read off the chain.)
+                    auto position = wtxNew.vout.begin()+GetRandInt(wtxNew.vout.size() + 1);
                     wtxNew.vout.insert(position, CTxOut(nChange, scriptChange));
                 }
                 else
