@@ -2907,6 +2907,7 @@ Value getmempoolinfo(const Array& params, bool fHelp)
     Object obj;
     obj.emplace_back("size", nTxs);
     obj.emplace_back("bytes", nBytes);
+    obj.emplace_back("maxmempoolbytes", (int64_t)std::max<int64>(1, GetArg("-maxmempoolkb", 100000)) * 1000);
     obj.emplace_back("minrelaytxfee", ValueFromAmount(MIN_RELAY_TX_FEE));
     return obj;
 }

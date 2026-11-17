@@ -42,6 +42,7 @@ TESTS = [
     "rpc_submitblock.py",
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",
+    "rpc_mempool_policy.py",
     "rpc_standard_signatures.py",
     "rpc_invalidateblock.py",
     "rpc_invalidateblock_deep.py",
@@ -56,6 +57,7 @@ TESTS = [
     "rpc_cookie_auth.py",
     "rpc_config_hardening.py",
     "rpc_failed_block.py",
+    "rpc_mempool_cap.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 
