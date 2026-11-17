@@ -9,6 +9,10 @@
 #ifndef BITCOIN_UTIL_H
 #define BITCOIN_UTIL_H
 
+#ifdef NDEBUG
+#error "CorgiCoin must not be built with NDEBUG: assert() guards consensus and signing code. Remove -DNDEBUG from the build flags."
+#endif
+
 #include "uint256.h"
 
 #ifndef WIN32

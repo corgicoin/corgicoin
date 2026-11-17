@@ -28,6 +28,15 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Keep assert() live in every build type. CMake adds -DNDEBUG to Release flags, which compiles
+# out every assert, including ones that guard consensus and signing code. A failed assert aborts
+# the node instead of continuing with a corrupt state. (See NOFORK-PLAN 3.4.)
+foreach(_cfg RELEASE RELWITHDEBINFO MINSIZEREL)
+  foreach(_lang CXX C)
+    string(REGEX REPLACE "[-/]D ?NDEBUG" "" CMAKE_${_lang}_FLAGS_${_cfg} "${CMAKE_${_lang}_FLAGS_${_cfg}}")
+  endforeach()
+endforeach()
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Build options
