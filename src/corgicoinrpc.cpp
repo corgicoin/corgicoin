@@ -44,6 +44,7 @@ void ThreadRPCServer2(void* parg);
 
 static std::string strRPCUserColonPass;
 static std::string strRPCCookieFile;   // set while the server authenticates with a cookie
+static CCriticalSection cs_rpcCookie;   // guards strRPCCookieFile: the RPC thread sets it, the shutdown thread clears it
 
 // Cookie authentication: with no -rpcuser and no -rpcpassword the server makes a random password, writes it to
 // <datadir>/.cookie (readable by its owner only) and removes the file at shutdown. The command line client reads it.
@@ -80,12 +81,16 @@ static bool GenerateAuthCookie(std::string& strUserPassRet)
     if (!file)
         return false;
 #endif
-    strRPCCookieFile = path.string();
+    {
+        LOCK(cs_rpcCookie);
+        strRPCCookieFile = path.string();
+    }
     return true;
 }
 
 static void DeleteAuthCookie()
 {
+    LOCK(cs_rpcCookie);
     if (strRPCCookieFile.empty())
         return;
     std::error_code ec;
@@ -110,8 +115,23 @@ static CCriticalSection cs_rpcAuthFailures;
 static std::map<std::string, std::pair<int, int64>> mapRPCAuthFailures;   // address -> (failures, start of window)
 static const int64 RPC_AUTH_WINDOW = 60;
 
+// Loopback clients are never locked out: RPC listens on loopback only by default, and any local process (or a pool retrying a
+// stale password) could otherwise lock the real pool and corgicoin-cli out, a minute at a time, for as long as it liked.
+static bool RPCAuthExempt(const std::string& strAddr)
+{
+    boost::system::error_code ec;
+    boost::asio::ip::address addr = boost::asio::ip::make_address(strAddr, ec);
+    if (ec)
+        return false;
+    if (addr.is_v6() && addr.to_v6().is_v4_mapped())
+        addr = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, addr.to_v6());
+    return addr.is_loopback();
+}
+
 static bool RPCAuthLockedOut(const std::string& strAddr)
 {
+    if (RPCAuthExempt(strAddr))
+        return false;
     LOCK(cs_rpcAuthFailures);
     auto it = mapRPCAuthFailures.find(strAddr);
     if (it == mapRPCAuthFailures.end())
@@ -126,6 +146,8 @@ static bool RPCAuthLockedOut(const std::string& strAddr)
 
 static void RPCAuthFailed(const std::string& strAddr)
 {
+    if (RPCAuthExempt(strAddr))
+        return;
     LOCK(cs_rpcAuthFailures);
     const int64 now = GetTime();
     if (mapRPCAuthFailures.size() > 1000)
@@ -4350,7 +4372,7 @@ void ThreadRPCServer2(void* parg)
     LogPrintf("ThreadRPCServer started\n");
 
     strRPCUserColonPass = mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"];
-    if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && !GetBoolArg("-norpccookie", false))
+    if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && GetBoolArg("-rpccookie", true)) // -norpccookie is -rpccookie=0
     {
         if (!GenerateAuthCookie(strRPCUserColonPass))
         {
@@ -4359,7 +4381,7 @@ void ThreadRPCServer2(void* parg)
             StartShutdown();
             return;
         }
-        LogPrintf("ThreadRPCServer: no rpcuser or rpcpassword set, authenticating with the cookie in %s\n", strRPCCookieFile.c_str());
+        LogPrintf("ThreadRPCServer: no rpcuser or rpcpassword set, authenticating with the cookie in %s\n", GetCookiePath().string().c_str());
     }
     else if (mapArgs["-rpcpassword"] == "")
     {

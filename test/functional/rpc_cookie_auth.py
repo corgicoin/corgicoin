@@ -3,7 +3,7 @@
 
 With no -rpcuser and no -rpcpassword the node makes a random password, writes it to <datadir>/.cookie (mode 0600), serves
 with it, and removes the file at a clean shutdown. After -rpcmaxauthfailures failed logins from one address, that address
-is refused for a minute, even with the right password.
+is refused for a minute, even with the right password; loopback addresses are never refused (the test can only check that).
 """
 import base64
 import http.client
@@ -78,11 +78,11 @@ class RPCCookieAuthTest(CorgiTestFramework):
         assert new_pass != user_pass
         assert_equal(post(node, new_pass), 200)
 
-        self.log("five failed logins lock the address out, even for the right password")
+        self.log("failed logins do not lock out a loopback client: any local process could lock the real one out")
         for _ in range(5):
             assert_equal(post(node, "__cookie__:wrong"), 401)
-        assert_equal(post(node, new_pass), 401)
-        node.kill()
+        assert_equal(post(node, new_pass), 200)
+        self.stop_cookie_node(node, new_pass)
 
 
 if __name__ == "__main__":

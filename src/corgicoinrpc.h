@@ -13,6 +13,8 @@
 #include <list>
 #include <map>
 
+#include <boost/asio/ip/address.hpp>
+
 #include "json/json_compat.h"
 
 json_spirit::Object JSONRPCError(int code, const std::string& message);
@@ -22,7 +24,6 @@ void ThreadRPCServer(void* parg);
 void RPCAbortConnections();
 // Remove the cookie file (see -rpcuser): at shutdown, and at once if the server thread has not got that far
 void DeleteRPCCookie();
-#include <boost/asio/ip/address.hpp>
 /** Is the address inside the subnet written "a.b.c.d/n" or "x::/n"? (-rpcallowip accepts these as well as wildcards.) */
 bool AddressInSubnet(const boost::asio::ip::address& address, const std::string& strSubnet);
 int CommandLineRPC(int argc, char *argv[]);
