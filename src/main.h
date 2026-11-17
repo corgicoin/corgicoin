@@ -920,6 +920,13 @@ public:
             {
                 if (fRead)
                     const_cast<CBlock*>(this)->auxpow = std::make_shared<CAuxPow>();
+                else if (!auxpow)
+                    // A header built from CBlockIndex (e.g. GetBlockHeader()) carries the
+                    // AuxPoW version bit but no proof object. Serializing one would
+                    // dereference this null pointer; throw instead so callers that forgot
+                    // to attach the proof fail loudly (and ProcessMessages' catch keeps the
+                    // node up) rather than crashing the process.
+                    throw std::ios_base::failure("CBlock::SerializationOp() : AuxPoW version bit set but no proof attached");
                 READWRITE(*auxpow);
             }
             else if (fRead)

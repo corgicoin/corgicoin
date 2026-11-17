@@ -882,6 +882,13 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
 {
     if (!fReadTransactions)
     {
+        // pindex->GetBlockHeader() does not carry the AuxPoW proof (CBlockIndex
+        // keeps only the on-disk file position, not the CAuxPow object), so for
+        // a merged-mined block that shortcut would produce a header with the
+        // AuxPoW version bit set and no proof attached -- undefined behaviour
+        // once serialized (see CBlock::SerializationOp). Go to disk for those.
+        if (IsAuxPowVersion(pindex->nVersion))
+            return ReadFromDisk(pindex->nFile, pindex->nBlockPos, false);
         *this = pindex->GetBlockHeader();
         return true;
     }
@@ -3334,7 +3341,23 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         LogPrintf("getheaders %d to %s\n", (pindex ? pindex->nHeight : -1), hashStop.ToString().substr(0,20).c_str());
         for (; pindex; pindex = pindex->pnext)
         {
-            vHeaders.push_back(pindex->GetBlockHeader());
+            if (IsAuxPowVersion(pindex->nVersion))
+            {
+                // GetBlockHeader() does not carry the AuxPoW proof (CBlockIndex keeps
+                // only the on-disk position, not the CAuxPow object), and serializing
+                // an AuxPoW-versioned header with none attached is now a hard error
+                // (see CBlock::SerializationOp). CBlock::ReadFromDisk(pindex, false)
+                // knows to go to disk for this case; use it instead of the shortcut.
+                CBlock block;
+                if (!block.ReadFromDisk(pindex, false))
+                {
+                    LogPrintf("getheaders : ReadFromDisk failed for %s, stopping\n", pindex->GetBlockHash().ToString().substr(0,20).c_str());
+                    break;
+                }
+                vHeaders.push_back(block);
+            }
+            else
+                vHeaders.push_back(pindex->GetBlockHeader());
             if (--nLimit <= 0 || pindex->GetBlockHash() == hashStop)
                 break;
         }
