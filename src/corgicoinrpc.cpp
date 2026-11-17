@@ -29,6 +29,10 @@
 #include <boost/asio/ssl.hpp>
 #include <memory>
 #include <list>
+#include <set>
+#ifndef WIN32
+#include <poll.h>
+#endif
 
 using namespace std;
 using namespace boost;
@@ -84,6 +88,10 @@ extern Value sendrawtransaction(const Array& params, bool fHelp);
 const Object emptyobj;
 
 void ThreadRPCServer3(void* parg);
+
+// Connections that exist from the moment they are accepted until their handler thread has destroyed them. A connection's
+// socket is registered with the io_context of ThreadRPCServer2, which must not be destroyed before the last of them is.
+static std::atomic<int> nRPCConnectionsOpen(0);
 
 Object JSONRPCError(int code, const string& message)
 {
@@ -3517,6 +3525,9 @@ static string HTTPReply(int nStatus, const string& strMsg, bool keepalive)
     else if (nStatus == 400) cStatus = "Bad Request";
     else if (nStatus == 403) cStatus = "Forbidden";
     else if (nStatus == 404) cStatus = "Not Found";
+    else if (nStatus == 413) cStatus = "Request Entity Too Large";
+    else if (nStatus == 431) cStatus = "Request Header Fields Too Large";
+    else if (nStatus == 503) cStatus = "Service Unavailable";
     else if (nStatus == 500) cStatus = "Internal Server Error";
     else cStatus = "";
     return strprintf(
@@ -3607,6 +3618,78 @@ int ReadHTTP(std::basic_istream<char>& stream, map<string, string>& mapHeadersRe
     }
 
     return nStatus;
+}
+
+// ---- Reading a request on the server side -----------------------------------------------------------------
+// A request is read before the caller has proved who it is, so every part of it is bounded: the length of a line,
+// the number of header lines, the size of the body (checked only after the login, and only then allocated) and,
+// with the socket timeout set in ThreadRPCServer3, the time any of it may take.
+static const size_t MAX_HTTP_LINE = 8192;
+static const int MAX_HTTP_HEADERS = 100;
+
+// Next line without its newline (and a trailing carriage return). false: end of stream, or longer than nMax
+// (str.size() == nMax then).
+static bool GetLineLimited(std::istream& stream, string& str, size_t nMax)
+{
+    str.clear();
+    char c;
+    while (stream.get(c))
+    {
+        if (c == '\n')
+        {
+            if (!str.empty() && str.back() == '\r')
+                str.pop_back();
+            return true;
+        }
+        if (str.size() >= nMax)
+            return false;
+        str += c;
+    }
+    return false;
+}
+
+// Reads the request line and the headers. Returns 200 when they were read, 400 for something that is not a request,
+// 431 for lines or a header count over the limit, 0 when the peer went away (nothing to answer).
+// nLenRet is the Content-Length, 0 if none; a value that is not a plain non-negative number is a 400.
+static int ReadHTTPRequestHead(std::istream& stream, map<string, string>& mapHeadersRet, int& nProtoRet, int64_t& nLenRet)
+{
+    mapHeadersRet.clear();
+    nProtoRet = 0;
+    nLenRet = 0;
+
+    string strRequestLine;
+    if (!GetLineLimited(stream, strRequestLine, MAX_HTTP_LINE))
+        return strRequestLine.size() >= MAX_HTTP_LINE ? 431 : 0;
+    vector<string> vWords;
+    ParseString(strRequestLine, ' ', vWords);
+    if (vWords.size() < 2)
+        return 400;
+    const char* ver = strstr(strRequestLine.c_str(), "HTTP/1.");
+    if (ver != nullptr)
+        nProtoRet = atoi(ver + 7);
+
+    for (int nHeaders = 0;; nHeaders++)
+    {
+        string str;
+        if (!GetLineLimited(stream, str, MAX_HTTP_LINE))
+            return str.size() >= MAX_HTTP_LINE ? 431 : 0;
+        if (str.empty())
+            return 200;
+        if (nHeaders >= MAX_HTTP_HEADERS)
+            return 431;
+        string::size_type nColon = str.find(":");
+        if (nColon == string::npos)
+            continue;
+        string strHeader = ToLower(TrimString(str.substr(0, nColon)));
+        string strValue = TrimString(str.substr(nColon + 1));
+        mapHeadersRet[strHeader] = strValue;
+        if (strHeader == "content-length")
+        {
+            if (strValue.empty() || strValue.size() > 18 || strValue.find_first_not_of("0123456789") != string::npos)
+                return 400;
+            nLenRet = strtoll(strValue.c_str(), nullptr, 10);
+        }
+    }
 }
 
 bool HTTPAuthorized(map<string, string>& mapHeaders)
@@ -3707,9 +3790,31 @@ public:
         fNeedHandshake = false;
         stream.handshake(role);
     }
+    // Give up on a read that gets nothing for this long (0: wait for ever). SO_RCVTIMEO does not do it: asio turns a
+    // synchronous read that would block into poll() with no time limit, so the wait is made here, before the read.
+    void set_timeout(int nSecondsIn) { nTimeoutSeconds = nSecondsIn; }
+
     std::streamsize read(char* s, std::streamsize n)
     {
         handshake(ssl::stream_base::server); // HTTPS servers read first
+        if (nTimeoutSeconds > 0 && !fUseSSL)
+        {
+            // (With TLS the decrypted bytes may already be waiting inside the TLS layer, where poll() cannot see them.)
+#ifdef WIN32
+            // (select, not WSAPoll: WSAPoll needs Windows Vista, and this is built for XP: _WIN32_WINNT in compat.h. One socket in the set
+            // is far below the limit of a set, whatever the number of connections.)
+            fd_set fdsRead;
+            FD_ZERO(&fdsRead);
+            FD_SET(stream.next_layer().native_handle(), &fdsRead);
+            struct timeval tv = { nTimeoutSeconds, 0 };
+            const int nReady = select(0, &fdsRead, nullptr, nullptr, &tv);
+#else
+            struct pollfd pfd = { stream.next_layer().native_handle(), POLLIN, 0 };
+            const int nReady = poll(&pfd, 1, nTimeoutSeconds * 1000);
+#endif
+            if (nReady == 0)
+                return -1;           // end of stream: the caller treats the connection as finished
+        }
         if (fUseSSL) return stream.read_some(asio::buffer(s, n));
         return stream.next_layer().read_some(asio::buffer(s, n));
     }
@@ -3741,6 +3846,7 @@ public:
 private:
     bool fNeedHandshake;
     bool fUseSSL;
+    int nTimeoutSeconds = 0;
     asio::ssl::stream<typename Protocol::socket>& stream;
 };
 
@@ -3752,6 +3858,10 @@ public:
     virtual std::iostream& stream() = 0;
     virtual std::string peer_address_to_string() const = 0;
     virtual void close() = 0;
+    /** Give up on a read or write that makes no progress for this many seconds (0: wait forever). */
+    virtual void set_timeout(int nSeconds) = 0;
+    /** Make a read blocked on this connection in another thread return. Safe to call from any thread. */
+    virtual void abort() = 0;
 };
 
 template <typename Protocol>
@@ -3781,6 +3891,20 @@ public:
     virtual void close() override
     {
         _stream.close();
+    }
+
+    virtual void set_timeout(int nSeconds) override
+    {
+        // the stream holds its own copy of the device: set it there
+        _stream->set_timeout(nSeconds);
+    }
+
+    virtual void abort() override
+    {
+        // shutdown(2) on the descriptor wakes a blocked read_some with end-of-stream; the socket object itself
+        // is not touched, so the handler thread that owns it can go on using it
+        boost::system::error_code ec;
+        sslStream.lowest_layer().shutdown(asio::socket_base::shutdown_both, ec);
     }
 
     typename Protocol::endpoint peer;
@@ -3878,10 +4002,24 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > 
         delete conn;
     }
 
-    // start HTTP client thread
-    else if (!CreateThread(ThreadRPCServer3, conn)) {
-        LogPrintf("Failed to create RPC server client thread\n");
+    // Each connection has a thread of its own, so the number of them is limited: past it the caller is told to come
+    // back later instead of the process running out of threads and memory
+    else if (vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] >= GetArg("-rpcmaxconnections", 64))
+    {
+        if (!fUseSSL)
+            conn->stream() << HTTPReply(503, "", false) << std::flush;
         delete conn;
+    }
+
+    // start HTTP client thread
+    else
+    {
+        nRPCConnectionsOpen++;
+        if (!CreateThread(ThreadRPCServer3, conn)) {
+            LogPrintf("Failed to create RPC server client thread\n");
+            delete conn;
+            nRPCConnectionsOpen--;
+        }
     }
 
     vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
@@ -3999,6 +4137,18 @@ void ThreadRPCServer2(void* parg)
         io_service.run_one();
     vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]++;
     StopRequests();
+
+    // io_service goes out of scope when this returns, and every open connection has a socket registered with it. A handler
+    // that destroys its connection after that touches freed memory (a crash at shutdown, a double free or a segfault, about one
+    // run in three with idle clients connected now that shutdown wakes them all at once). Wake them and wait for the last.
+    const int64 nWaitStart = GetTime();
+    while (nRPCConnectionsOpen > 0 && GetTime() - nWaitStart < 30)
+    {
+        RPCAbortConnections();
+        Sleep(10);
+    }
+    if (nRPCConnectionsOpen > 0)
+        LogPrintf("ThreadRPCServer: %d RPC connection(s) still open after 30 seconds\n", nRPCConnectionsOpen.load());
 }
 
 class JSONRequest
@@ -4084,6 +4234,24 @@ static string JSONRPCExecBatch(const Array& vReq)
 
 static CCriticalSection cs_THREAD_RPCHANDLER;
 
+// Live RPC connections. A pool's HTTP client keeps its connection open between calls, and the handler thread for
+// it sits in a blocking read, so without this a "stop" waits for the client to hang up.
+static CCriticalSection cs_rpcConnections;
+static std::set<AcceptedConnection*> setRPCConnections;
+
+void RPCAbortConnections()
+{
+    LOCK(cs_rpcConnections);
+    for (AcceptedConnection* conn : setRPCConnections)
+        conn->abort();
+}
+
+static void ForgetRPCConnection(AcceptedConnection* conn)
+{
+    LOCK(cs_rpcConnections);
+    setRPCConnections.erase(conn);
+}
+
 void ThreadRPCServer3(void* parg)
 {
     IMPLEMENT_RANDOMIZE_STACK(ThreadRPCServer3(parg));
@@ -4096,23 +4264,51 @@ void ThreadRPCServer3(void* parg)
         vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]++;
     }
     AcceptedConnection *conn = static_cast<AcceptedConnection*>(parg);
+    {
+        // fShutdown is set before RPCAbortConnections() runs, and it is checked below after this registration,
+        // so a connection that arrives during shutdown is either aborted there or sees the flag here
+        LOCK(cs_rpcConnections);
+        setRPCConnections.insert(conn);
+    }
+
+    // A read or write that makes no progress for this long ends the connection. This covers a client that sends
+    // half a request and stops, and one that holds an idle keep-alive connection for ever. (A pool's HTTP client
+    // reconnects when the server closes an idle connection, as it must for any server.)
+    conn->set_timeout(static_cast<int>(GetArg("-rpcservertimeout", 30)));
+    const int64_t nMaxBody = GetArg("-rpcmaxbody", 8 * 1024 * 1024);
 
     bool fRun = true;
     while(true) {
         if (fShutdown || !fRun)
         {
+            ForgetRPCConnection(conn);
             conn->close();
             delete conn;
             {
                 LOCK(cs_THREAD_RPCHANDLER);
                 --vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)];
             }
+            nRPCConnectionsOpen--;
             return;
         }
         map<string, string> mapHeaders;
         string strRequest;
 
-        ReadHTTP(conn->stream(), mapHeaders, strRequest);
+        // The head first, bounded; the body only after the caller has logged in
+        int nProto = 0;
+        int64_t nLen = 0;
+        const int nHeadStatus = ReadHTTPRequestHead(conn->stream(), mapHeaders, nProto, nLen);
+        if (nHeadStatus != 200)
+        {
+            if (nHeadStatus != 0)
+                conn->stream() << HTTPReply(nHeadStatus, "", false) << std::flush;
+            break;
+        }
+        {
+            const string& sConHdr = mapHeaders["connection"];
+            if (sConHdr != "close" && sConHdr != "keep-alive")
+                mapHeaders["connection"] = nProto >= 1 ? "keep-alive" : "close";
+        }
 
         // Check authorization
         if (mapHeaders.count("authorization") == 0)
@@ -4134,6 +4330,21 @@ void ThreadRPCServer3(void* parg)
         }
         if (mapHeaders["connection"] == "close")
             fRun = false;
+
+        // Logged in: now the body, if it is not too big to take
+        if (nLen > nMaxBody)
+        {
+            conn->stream() << HTTPReply(413, "", false) << std::flush;
+            break;
+        }
+        if (nLen > 0)
+        {
+            vector<char> vch(static_cast<size_t>(nLen));
+            conn->stream().read(&vch[0], nLen);
+            if (conn->stream().gcount() != nLen)
+                break;      // the client went away or stopped sending before the body was complete
+            strRequest = string(vch.begin(), vch.end());
+        }
 
         JSONRequest jreq;
         try
@@ -4174,11 +4385,13 @@ void ThreadRPCServer3(void* parg)
         }
     }
 
+    ForgetRPCConnection(conn);
     delete conn;
     {
         LOCK(cs_THREAD_RPCHANDLER);
         vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]--;
     }
+    nRPCConnectionsOpen--;
 }
 
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const

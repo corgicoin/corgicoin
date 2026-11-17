@@ -13,6 +13,7 @@
 #include "addrman.h"
 #include "ui_interface.h"
 #include "logging.h"
+#include "corgicoinrpc.h"
 
 #include <memory>
 
@@ -1993,6 +1994,7 @@ bool StopNode()
     LogPrintf("StopNode()\n");
     fShutdown = true;
     nTransactionsUpdated++;
+    RPCAbortConnections();   // idle keep-alive clients would otherwise hold their handler threads, and this, forever
     int64 nStart = GetTime();
     if (semOutbound)
         for (int i=0; i<MAX_OUTBOUND_CONNECTIONS; i++)
@@ -2020,8 +2022,19 @@ bool StopNode()
     if (vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)] > 0) LogPrintf("ThreadDNSAddressSeed still running\n");
     if (vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)] > 0) LogPrintf("ThreadOpenAddedConnections still running\n");
     if (vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)] > 0) LogPrintf("ThreadDumpAddresses still running\n");
+    // Handlers finish the request they are in and exit. Connections that arrived late are aborted on each pass; if
+    // something is still stuck after 30 s, go on and close the databases cleanly anyway, which beats being killed.
+    int64 nWaitStart = GetTime();
     while (vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)] > 0 || vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] > 0)
+    {
+        RPCAbortConnections();
+        if (GetTime() - nWaitStart > 30)
+        {
+            LogPrintf("StopNode(): message or RPC handler threads still running after 30 seconds, going on without them\n");
+            break;
+        }
         Sleep(20);
+    }
     Sleep(50);
     DumpAddresses();
     return true;

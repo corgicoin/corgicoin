@@ -23,6 +23,7 @@
 #include <sys/types.h>  // provides pid_t on MinGW
 #endif
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <map>
 #include <vector>
@@ -115,7 +116,7 @@ extern bool fDebugNet;
 extern bool fPrintToConsole;
 extern bool fPrintToDebugger;
 extern bool fRequestShutdown;
-extern bool fShutdown;
+extern std::atomic<bool> fShutdown;   // set by the shutdown thread, read by every worker thread
 extern bool fDaemon;
 extern bool fServer;
 extern bool fCommandLine;
