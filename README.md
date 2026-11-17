@@ -70,7 +70,8 @@ written up as a reusable playbook:
 - **C++17 compiler**: GCC 9+, Clang 10+, or MSVC 2019+
 - **OpenSSL** 1.1.0+ (3.x recommended)
 - **Boost** 1.65+
-- **Berkeley DB** 5.3+
+- **Berkeley DB** 5.3+ (C++ bindings). Never open a data directory with an older Berkeley DB than the one that wrote it: the
+  releases do not all link the same version (see [doc/berkeley-db.md](doc/berkeley-db.md))
 - **Qt 5.15+** (for GUI wallet, optional)
 - **CMake** 3.10+
 
