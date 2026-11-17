@@ -199,6 +199,54 @@ BOOST_AUTO_TEST_CASE(DoS_checknbits)
 
 }
 
+// ComputeMinWork is the most the next target may have eased after nTime. Under LWMA the target eases every block, so it must
+// allow at least what the real retarget can do. Simulate the fastest easing (solvetimes of 2, 3 and 6 times the spacing) from a
+// steady chain and compare, for 3 hours up to 3 days.
+BOOST_AUTO_TEST_CASE(DoS_computeminwork_allows_what_lwma_can_ease)
+{
+    const int64 T = 60;
+    CBigNum bnBase(~uint256(0) >> 20);   // the proof-of-work limit
+    bnBase >>= 32;
+    const unsigned int nBaseBits = bnBase.GetCompact();
+
+    for (int64 nSolve : {2 * T, 3 * T, 6 * T})
+    {
+        // a steady chain of 100 blocks at the base target, one per T
+        std::vector<CBlockIndex*> chain;
+        for (int i = 0; i < 100; i++)
+        {
+            CBlockIndex* p = new CBlockIndex();
+            p->nHeight = 100000 + i;
+            p->nTime = 1700000000 + i * T;
+            p->nBits = nBaseBits;
+            p->pprev = i ? chain.back() : nullptr;
+            chain.push_back(p);
+        }
+        const int64 nStart = chain.back()->nTime;
+        int64 nNextCheck = 3 * 3600;
+        while (chain.back()->nTime - nStart < 3 * 24 * 3600)
+        {
+            CBlockIndex* p = new CBlockIndex();
+            p->nHeight = chain.back()->nHeight + 1;
+            p->nTime = chain.back()->nTime + nSolve;
+            p->nBits = CalculateNextWorkRequiredLWMA(chain.back());
+            p->pprev = chain.back();
+            chain.push_back(p);
+            if (p->nTime - nStart >= nNextCheck)
+            {
+                CBigNum have;
+                have.SetCompact(p->nBits);
+                CBigNum required;
+                required.SetCompact(ComputeMinWork(nBaseBits, p->nTime - nStart));
+                BOOST_CHECK_MESSAGE(have <= required, "solvetime " << nSolve << "s, after " << (p->nTime - nStart) / 3600 << " h the target eased past ComputeMinWork");
+                nNextCheck += 3 * 3600;
+            }
+        }
+        for (CBlockIndex* p : chain)
+            delete p;
+    }
+}
+
 CTransaction RandomOrphan()
 {
     auto it = mapOrphanTransactions.lower_bound(GetRandHash());
