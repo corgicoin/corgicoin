@@ -1374,8 +1374,38 @@ bool IsInitialBlockDownload()
             pindexBest->GetBlockTime() < GetTime() - 24 * 60 * 60);
 }
 
+// The block (on the branch that failed) whose ConnectBlock failed, so that InvalidChainFound can mark that block and not
+// only the tip of the branch. Set by the code that saw it fail; null when the failure was not the block's fault.
+static CBlockIndex* pindexConnectFailed = nullptr;
+
+// Mark pindexBad as failed, and every block already in the index that is built on it. A block built on a failed one is
+// then not tried again (each try would be a whole reorganisation that ends at the same invalid block), and one that
+// arrives later is marked as it is added (AddToBlockIndex copies the flag from its parent).
+static void MarkFailedChain(CBlockIndex* pindexBad)
+{
+    pindexBad->fFailedChain = true;
+    for (auto& item : mapBlockIndex)
+    {
+        CBlockIndex* p = item.second;
+        if (p->fFailedChain || p->nHeight <= pindexBad->nHeight)
+            continue;
+        const CBlockIndex* q = p;
+        while (q && q->nHeight > pindexBad->nHeight)
+            q = q->pprev;
+        if (q == pindexBad)
+            p->fFailedChain = true;
+    }
+}
+
 void static InvalidChainFound(CBlockIndex* pindexNew)
 {
+    if (pindexConnectFailed)
+    {
+        LogPrintf("InvalidChainFound: marking %s (height %d) and what is built on it as failed\n",
+                  pindexConnectFailed->GetBlockHash().ToString().substr(0,20).c_str(), pindexConnectFailed->nHeight);
+        MarkFailedChain(pindexConnectFailed);
+        pindexConnectFailed = nullptr;
+    }
     if (pindexNew->bnChainWork > bnBestInvalidWork)
     {
         bnBestInvalidWork = pindexNew->bnChainWork;
@@ -1829,14 +1859,23 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
             return LogError("ConnectBlock() : WriteBlockIndex failed");
     }
 
-    // Watch for transactions paying to me
-    for (CTransaction& tx : vtx)
+    // (The wallet and ZMQ are told after the database commit: see NotifyConnected.)
+    return true;
+}
+
+// Tell the wallets and ZMQ about the transactions of a block that is now on the best chain. Done after the commit: from
+// inside ConnectBlock the wallet took in transactions of blocks that a later failure (of the commit, or of a later block
+// of the same reorganisation) then never connected. ZMQ is not told during the initial download: it would be a
+// notification for every transaction of the whole chain.
+void CBlock::NotifyConnected() const
+{
+    const bool fNotifyZMQ = !IsInitialBlockDownload();
+    for (const CTransaction& tx : vtx)
     {
         SyncWithWallets(tx, this, true);
-        ZMQNotifyTransaction(tx);
+        if (fNotifyZMQ)
+            ZMQNotifyTransaction(tx);
     }
-
-    return true;
 }
 
 bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
@@ -1897,6 +1936,7 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         if (!block.ConnectBlock(txdb, pindex))
         {
             // Invalid block
+            pindexConnectFailed = pindex;
             return LogError("Reorganize() : ConnectBlock %s failed", pindex->GetBlockHash().ToString().substr(0,20).c_str());
         }
 
@@ -1921,6 +1961,14 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         if (pindex->pprev)
             pindex->pprev->pnext = pindex;
 
+    // The database has them: now the wallets can have them too
+    for (CBlockIndex* pindex : vConnect)
+    {
+        CBlock block;
+        if (block.ReadFromDisk(pindex))
+            block.NotifyConnected();
+    }
+
     // Resurrect memory transactions that were in the disconnected branch
     for (CTransaction& tx : vResurrect)
         tx.AcceptToMemoryPool(txdb, false);
@@ -1941,7 +1989,10 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
     uint256 hash = GetHash();
 
     // Adding to current best branch
-    if (!ConnectBlock(txdb, pindexNew) || !txdb.WriteHashBestChain(hash))
+    const bool fConnected = ConnectBlock(txdb, pindexNew);
+    if (!fConnected)
+        pindexConnectFailed = pindexNew;      // the block's fault, not the database's
+    if (!fConnected || !txdb.WriteHashBestChain(hash))
     {
         txdb.TxnAbort();
         InvalidChainFound(pindexNew);
@@ -1952,6 +2003,7 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 
     // Add to current best branch
     pindexNew->pprev->pnext = pindexNew;
+    NotifyConnected();
 
     // Delete redundant memory transactions
     for (CTransaction& tx : vtx)
@@ -1963,6 +2015,9 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
 {
     uint256 hash = GetHash();
+    // The block that is the tip when this is done. It is pindexNew unless a reorganisation connected only part of the
+    // new branch (a later block of it failed to connect): the tip is then the last block that did connect
+    CBlockIndex* pindexTip = pindexNew;
 
     if (!txdb.TxnBegin())
         return LogError("SetBestChain() : TxnBegin failed");
@@ -2005,6 +2060,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             InvalidChainFound(pindexNew);
             return LogError("SetBestChain() : Reorganize failed");
         }
+        pindexTip = pindexIntermediate;
 
         // Connect futher blocks
         for (auto it = vpindexSecondary.rbegin(); it != vpindexSecondary.rend(); ++it)
@@ -2023,6 +2079,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             // errors now are not fatal, we still did a reorganisation to a new chain in a valid way
             if (!block.SetBestChainInner(txdb, pindex))
                 break;
+            pindexTip = pindex;
         }
     }
 
@@ -2030,15 +2087,18 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
     bool fIsInitialDownload = IsInitialBlockDownload();
     if (!fIsInitialDownload)
     {
-        const CBlockLocator locator(pindexNew);
+        const CBlockLocator locator(pindexTip);
         ::SetBestChain(locator);
     }
 
-    // New best block
-    hashBestChain = hash;
-    pindexBest = pindexNew;
+    // New best block: the one the database ends on. Setting these from pindexNew when a later block of the branch
+    // had failed to connect left memory on a tip the database never reached: block templates were built on it, a
+    // heavier-looking chain that never connected kept honest blocks from becoming the best one, and the node came
+    // back from a restart on a different tip.
+    hashBestChain = pindexTip == pindexNew ? hash : pindexTip->GetBlockHash();
+    pindexBest = pindexTip;
     nBestHeight = pindexBest->nHeight;
-    bnBestChainWork = pindexNew->bnChainWork;
+    bnBestChainWork = pindexTip->bnChainWork;
     nTimeBestReceived = GetTime();
     nTransactionsUpdated++;
     LogPrintf("SetBestChain: new best=%s  height=%d  work=%s  date=%s\n",
@@ -2064,7 +2124,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
     }
 
     // the new tip is the block being added, so it is at hand for rawblock
-    if (!fIsInitialDownload)
+    if (!fIsInitialDownload && pindexTip == pindexNew)
         ZMQNotifyBlock(*this, hashBestChain);
 
     std::string strCmd = GetArg("-blocknotify", "");
@@ -3036,7 +3096,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         pfrom->fClient = !(pfrom->nServices & NODE_NETWORK);
 
-        AddTimeData(pfrom->addr, nTime);
+        // Outbound peers only: the ones we chose. Anyone can connect inbound, and with a handful of them could outvote
+        // the few honest outbound peers on what the time is.
+        if (!pfrom->fInbound)
+            AddTimeData(pfrom->addr, nTime);
 
         // Change version
         pfrom->PushMessage("verack");

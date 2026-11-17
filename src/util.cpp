@@ -1283,6 +1283,11 @@ void SetMockTime(int64 nMockTimeIn)
 
 static int64 nTimeOffset = 0;
 
+int64 GetTimeOffset()
+{
+    return nTimeOffset;
+}
+
 int64 GetAdjustedTime()
 {
     return GetTime() + nTimeOffset;
@@ -1300,12 +1305,16 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
     // Add data
     vTimeOffsets.input(nOffsetSample);
     LogPrintf("Added time data, samples %d, offset %+" PRI64d " (%+" PRI64d " minutes)\n", vTimeOffsets.size(), nOffsetSample, nOffsetSample/60);
-    if (vTimeOffsets.size() >= 5 && vTimeOffsets.size() % 2 == 1)
+    // Recomputed on every sample once there are five: the filter holds 200, and the odd-size condition this had
+    // meant that once it was full (an even size, for ever) the offset never changed again until a restart
+    if (vTimeOffsets.size() >= 5)
     {
         int64 nMedian = vTimeOffsets.median();
         std::vector<int64> vSorted = vTimeOffsets.sorted();
-        // Only let other nodes change our time by so much
-        if (abs64(nMedian) < 35 * 60) // CorgiCoin: changed maximum adjust to 35 mins to avoid letting peers change our time too much in case of an attack.
+        // Only let other nodes change our time by so much. Blocks more than 5 minutes ahead of our clock are refused
+        // (LWMA_FUTURE_TIME_LIMIT), so peers must not be able to move the clock by more than half of that: an offset of
+        // -34 minutes, which this used to allow, made every honest block look 34 minutes too far ahead and refused it
+        if (abs64(nMedian) <= MAX_TIME_OFFSET)
         {
             nTimeOffset = nMedian;
         }

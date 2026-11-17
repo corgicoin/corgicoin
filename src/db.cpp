@@ -85,8 +85,12 @@ bool CDBEnv::Open(std::filesystem::path pathEnv_)
     dbenv.set_cachesize(nDbCache / 1024, (nDbCache % 1024)*1048576, 1);
     dbenv.set_lg_bsize(1048576);
     dbenv.set_lg_max(10485760);
-    dbenv.set_lk_max_locks(10000);
-    dbenv.set_lk_max_objects(10000);
+    // Every txindex read and write inside a block or reorganisation holds a lock until it commits, and the table was
+    // 10000: a big block, or a deep reorganisation or invalidateblock, could exhaust it on some nodes and not others
+    // (the March 2013 Bitcoin fork). 537000 is what Bitcoin 0.8 and 0.7.3 moved to.
+    const int nMaxLocks = static_cast<int>(GetArg("-dbmaxlocks", 537000));
+    dbenv.set_lk_max_locks(nMaxLocks);
+    dbenv.set_lk_max_objects(nMaxLocks);
     dbenv.set_errfile(fopen(pathErrorFile.string().c_str(), "a")); /// debug
     dbenv.set_flags(DB_AUTO_COMMIT, 1);
     dbenv.set_flags(DB_TXN_WRITE_NOSYNC, 1);

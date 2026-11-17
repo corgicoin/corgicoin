@@ -356,4 +356,38 @@ BOOST_AUTO_TEST_CASE(inv_tostring_does_not_throw_on_an_unknown_type)
     BOOST_CHECK_EQUAL(tx.ToString().substr(0, 3), "tx ");
 }
 
+// Peers must not be able to move our clock by more than MAX_TIME_OFFSET. AddTimeData keeps its samples in process-wide
+// state (and ignores a second sample from the same address), so this is one sequence in one test.
+BOOST_AUTO_TEST_CASE(peer_time_offset_is_capped_and_keeps_updating)
+{
+    int nPeer = 0;
+    auto Feed = [&](int64 nOffset) {
+        // a distinct address for every sample
+        CNetAddr addr(strprintf("10.99.%d.%d", nPeer / 250, 1 + nPeer % 250));
+        nPeer++;
+        AddTimeData(addr, GetTime() + nOffset);
+    };
+
+    // four peers that agree we are 34 minutes behind (five samples with the filter's own 0): beyond the cap, so ignored
+    for (int i = 0; i < 4; i++)
+        Feed(-34 * 60);
+    BOOST_CHECK_EQUAL(GetTimeOffset(), 0);
+
+    // fill the filter far past its 200 samples with peers that are 60 s ahead: the median must follow them, and go on
+    // following them (it used to stop updating once the filter was full)
+    for (int i = 0; i < 260; i++)
+        Feed(60);
+    BOOST_CHECK(GetTimeOffset() >= 55 && GetTimeOffset() <= 65);
+
+    // then peers that are 100 s behind take over: still inside the cap, so the offset moves to them
+    for (int i = 0; i < 260; i++)
+        Feed(-100);
+    BOOST_CHECK(GetTimeOffset() >= -105 && GetTimeOffset() <= -95);
+
+    // and a flood of peers far outside the cap does not move it past MAX_TIME_OFFSET
+    for (int i = 0; i < 260; i++)
+        Feed(3 * 3600);
+    BOOST_CHECK(abs64(GetTimeOffset()) <= MAX_TIME_OFFSET);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

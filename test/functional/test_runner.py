@@ -41,6 +41,7 @@ TESTS = [
     "rpc_prioritisetransaction.py",
     "rpc_standard_signatures.py",
     "rpc_invalidateblock.py",
+    "rpc_invalidateblock_deep.py",
     "wallet_hd_encryption.py",
     "rpc_multisig_limits.py",
     "rpc_hostile_inputs.py",
@@ -51,6 +52,7 @@ TESTS = [
     "feature_shutdown_exit.py",
     "rpc_cookie_auth.py",
     "rpc_config_hardening.py",
+    "rpc_failed_block.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 
