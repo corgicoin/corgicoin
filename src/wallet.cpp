@@ -82,9 +82,11 @@ bool CWallet::DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn)
     if (!DecryptSecret(vMasterKeyIn, vchCryptedHDMnemonic, HDSeedIV(hdSeedId), sec))
         return false;
     std::string mnemonic(sec.begin(), sec.end());
-    if (!bip39::CheckMnemonic(mnemonic))
-        return false;
-    return LoadHDMnemonic(mnemonic); // sets hdMasterKey, strHDMnemonic, recomputes hdSeedId
+    const bool fOk = bip39::CheckMnemonic(mnemonic) && LoadHDMnemonic(mnemonic); // sets hdMasterKey, strHDMnemonic, recomputes hdSeedId
+    // strHDMnemonic holds the copy this session needs; this one must not stay on the heap after the unlock
+    if (!mnemonic.empty())
+        OPENSSL_cleanse(&mnemonic[0], mnemonic.size());
+    return fOk;
 }
 
 bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& strError)
@@ -464,6 +466,8 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                     pMasterKey.second = kOldMasterKey;
                     if (fWasLocked)
                         Lock();   // verifying the old passphrase unlocked the key store
+                    else
+                        DecryptHDSeed(vMasterKey); // Lock() above wiped the HD seed; the wallet stays unlocked
                     throw;
                 }
                 if (!fPersisted)
@@ -471,10 +475,14 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                     pMasterKey.second = kOldMasterKey;
                     if (fWasLocked)
                         Lock();
+                    else
+                        DecryptHDSeed(vMasterKey);
                     return false;
                 }
                 if (fWasLocked)
                     Lock();
+                else
+                    DecryptHDSeed(vMasterKey); // Lock() at the top wiped the HD seed: without this an unlocked HD wallet could not make keys
                 return true;
             }
         }
@@ -2126,6 +2134,9 @@ void CWallet::WipeHDSecrets()
         OPENSSL_cleanse(&strHDMnemonic[0], strHDMnemonic.size());
     strHDMnemonic.clear();
     strHDMnemonic.shrink_to_fit();
+    // CKey assignment (EC_KEY_copy) keeps the private scalar of a key it is given none for: free it explicitly
+    hdMasterKey.key.Reset();
+    OPENSSL_cleanse(hdMasterKey.vchChainCode, sizeof(hdMasterKey.vchChainCode));
     hdMasterKey = CExtKey();
     fHDMasterLoaded = false;
 }

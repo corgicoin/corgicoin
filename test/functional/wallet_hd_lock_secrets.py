@@ -45,6 +45,15 @@ class HDLockSecretsTest(CorgiTestFramework):
         node.walletpassphrase(PASSPHRASE, 1)
         self.wait_for_wipe(node)
 
+        self.log("walletpassphrasechange while unlocked: the wallet stays unlocked and can still derive keys")
+        node.walletpassphrase(PASSPHRASE, 60)
+        node.walletpassphrasechange(PASSPHRASE, PASSPHRASE + " 2")
+        assert_equal(node.getwalletinfo()["hdseed_available"], True)
+        node.getnewaddress()   # failed with "the HD seed is not available" before the fix
+        node.walletlock()
+        node.walletpassphrase(PASSPHRASE + " 2", 60)
+        assert_equal(node.getwalletinfo()["hdseed_available"], True)
+
     def wait_for_wipe(self, node):
         import time
         deadline = time.time() + 30

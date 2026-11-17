@@ -295,6 +295,7 @@ std::string HelpMessage()
         "  -zmqpubrawtx=<address>     " + _("Publish each such transaction, serialized") + "\n" +
         "  -upgradewallet         " + _("Upgrade wallet to latest format") + "\n" +
         "  -keypool=<n>           " + _("Set key pool size to <n> (default: 100)") + "\n" +
+        "  -hdrestoregap=<n>      " + _("How many keys past the last used one sethdseed derives and looks for when restoring a phrase (default: 1000)") + "\n" +
         "  -maxmempoolkb=<n>      " + _("Keep the transaction memory pool under <n> kB, dropping the lowest fee rate first (default: 100000)") + "\n" +
         "  -mempoolexpiry=<n>     " + _("Drop transactions that have waited <n> hours in the memory pool (default: 72)") + "\n" +
         "  -walletcompat          " + _("Record the old low minimum version in HD wallets so releases from before HD wallets can open them (they ignore the HD seed: use only on purpose)") + "\n" +

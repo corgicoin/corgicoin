@@ -43,7 +43,8 @@ class RelockDuringTopUpTest(CorgiTestFramework):
         node.dumpwallet(dump)
         assert os.path.exists(dump)
         assert not os.path.exists(dump + ".tmp"), "the temporary file was left behind"
-        assert oct(os.stat(dump).st_mode & 0o777) in ("0o600", "0o644", "0o666"), oct(os.stat(dump).st_mode)
+        if os.name != "nt":  # the dump holds every private key: owner-only from the moment it exists
+            assert_equal(oct(os.stat(dump).st_mode & 0o777), "0o600")
 
     def locked(self, node):
         """True once the wallet refuses to reveal a private key (RPCs wait for any top-up that is still running)."""

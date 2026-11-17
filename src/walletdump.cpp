@@ -9,6 +9,10 @@
 #include "util.h"
 
 #include <fstream>
+#ifndef WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 #include <set>
 #include <sstream>
 #include <vector>
@@ -62,16 +66,25 @@ bool DumpWalletToFile(CWallet* pwallet, const std::filesystem::path& path, bool 
     // Write to a temporary file next to the target and move it into place only when it is complete, so a failure
     // part way leaves no half-written backup that looks like a real one. Owner-only permissions where the platform
     // has them: the file holds every private key.
-    const std::filesystem::path pathTmp = path.string() + ".tmp";
+    // A fresh name, so a file of the user's called <path>.tmp is never truncated, and (not on Windows) created owner-only
+    // and exclusively: never written first and chmod-ed after, and never through a symlink someone left there.
+    const std::filesystem::path pathTmp = path.string() + strprintf(".tmp%08x", (unsigned int)GetRand(0xffffffff));
+#ifndef WIN32
+    {
+        int fd = open(pathTmp.string().c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (fd < 0) {
+            strError = "Cannot create the wallet dump file";
+            return false;
+        }
+        close(fd);
+    }
+#endif
     std::ofstream file(pathTmp, std::ios::out | std::ios::trunc);
     if (!file.is_open()) {
+        std::error_code ec;
+        std::filesystem::remove(pathTmp, ec);
         strError = "Cannot open wallet dump file";
         return false;
-    }
-    {
-        std::error_code ec;
-        std::filesystem::permissions(pathTmp, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
-                                     std::filesystem::perm_options::replace, ec);
     }
     auto Abort = [&](const std::string& strWhy) {
         file.close();
