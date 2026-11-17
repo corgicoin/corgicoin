@@ -453,11 +453,20 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
                 if (std::filesystem::is_directory(pathDest))
                     pathDest /= wallet.strWalletFile;
 
+                // Copy beside the destination and move it into place when complete and the same size as the
+                // source: a failure part way (disk full, a network share) must not destroy the previous backup
+                const std::filesystem::path pathTmp = pathDest.string() + ".tmp";
                 try {
-                    std::filesystem::copy_file(pathSrc, pathDest, std::filesystem::copy_options::overwrite_existing);
+                    std::filesystem::copy_file(pathSrc, pathTmp, std::filesystem::copy_options::overwrite_existing);
+                    if (std::filesystem::file_size(pathTmp) != std::filesystem::file_size(pathSrc))
+                        throw std::filesystem::filesystem_error("copy is not the size of the original",
+                                                                pathTmp, std::make_error_code(std::errc::io_error));
+                    std::filesystem::rename(pathTmp, pathDest);
                     LogPrintf("copied wallet.dat to %s\n", pathDest.string().c_str());
                     return true;
                 } catch(const std::filesystem::filesystem_error &e) {
+                    std::error_code ecRemove;
+                    std::filesystem::remove(pathTmp, ecRemove);
                     LogPrintf("error copying wallet.dat to %s - %s\n", pathDest.string().c_str(), e.what());
                     return false;
                 }

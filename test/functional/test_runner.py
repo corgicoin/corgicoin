@@ -25,6 +25,7 @@ TESTS = [
     "wallet_lockunspent.py",
     "wallet_abandon.py",
     "wallet_dump.py",
+    "wallet_backup.py",
     "wallet_import_range.py",
     "wallet_encryption.py",
     "wallet_accounting.py",

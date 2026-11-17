@@ -1983,7 +1983,9 @@ Value backupwallet(const Array& params, bool fHelp)
             "Safely copies wallet.dat to destination, which can be a directory or a path with filename.");
 
     string strDest = params[0].get_str();
-    BackupWallet(*pwalletMain, strDest);
+    // the result was ignored, so a backup that failed (no such directory, disk full) was reported as done
+    if (!BackupWallet(*pwalletMain, strDest))
+        throw JSONRPCError(-4, "Error: Wallet backup failed (see debug.log)");
 
     return Value::null;
 }
