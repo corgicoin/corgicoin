@@ -70,6 +70,65 @@ function serialize(tx) {
 
 async function txid(serialized) { return toHex(reverse(await sha256d(serialized))); }
 
+// ---- reading a transaction ------------------------------------------------------------------------------
+// Needed to check what the explorer says about an unspent output. A legacy signature does not commit to the value of
+// the output it spends, so a wallet that signs with a value the server made up (lower than the real one) pays the
+// difference to the miners as fee. The wallet fetches the transaction that created each coin, checks that it hashes to
+// the id the server gave, and takes the value from it.
+function readVarint(b, pos) {
+  const f = b[pos];
+  if (f < 0xfd) return [f, pos + 1];
+  const size = f === 0xfd ? 2 : f === 0xfe ? 4 : 8;
+  if (size === 8) throw new Error("transaction: length too large");
+  if (pos + 1 + size > b.length) throw new Error("transaction: truncated");
+  let n = 0;
+  for (let i = size - 1; i >= 0; i--) n = n * 256 + b[pos + 1 + i];
+  return [n, pos + 1 + size];
+}
+
+// Outputs of a serialized legacy transaction (hex) and its txid. Throws unless the bytes are exactly one transaction.
+export async function parseTransaction(hex) {
+  if (!/^([0-9a-fA-F]{2})+$/.test(hex)) throw new Error("transaction: not hex");
+  const b = fromHex(hex);
+  let pos = 4;                                           // version
+  let n;
+  [n, pos] = readVarint(b, pos);
+  for (let i = 0; i < n; i++) {
+    pos += 36;                                           // prevout hash and index
+    let len; [len, pos] = readVarint(b, pos);
+    pos += len + 4;                                      // scriptSig, sequence
+  }
+  let nOut; [nOut, pos] = readVarint(b, pos);
+  const outputs = [];
+  for (let i = 0; i < nOut; i++) {
+    if (pos + 8 > b.length) throw new Error("transaction: truncated");
+    let value = 0n;
+    for (let j = 7; j >= 0; j--) value = (value << 8n) | BigInt(b[pos + j]);
+    pos += 8;
+    let len; [len, pos] = readVarint(b, pos);
+    if (pos + len > b.length) throw new Error("transaction: truncated");
+    outputs.push({ value, script: b.slice(pos, pos + len) });
+    pos += len;
+  }
+  pos += 4;                                              // lock time
+  if (pos !== b.length) throw new Error("transaction: not exactly one transaction");
+  return { txid: await txid(b), outputs };
+}
+
+// The real value of an unspent output as the server described it: { txid, vout, value }. rawHex is the transaction the
+// server says created it; scriptExpected the P2PKH script of the address it was found for. Returns the value (BigInt)
+// read from the transaction, or throws if the transaction is not the one named, has no such output, or pays another script.
+export async function verifiedValue(rawHex, utxo, scriptExpected) {
+  const tx = await parseTransaction(rawHex);
+  if (tx.txid !== utxo.txid) throw new Error("the transaction the server sent is not " + utxo.txid);
+  const out = tx.outputs[utxo.vout];
+  if (!out) throw new Error("the transaction has no output " + utxo.vout);
+  if (toHex(out.script) !== toHex(scriptExpected)) throw new Error("the output does not pay this address");
+  return out.value;
+}
+
+export { serialize, p2pkhScript, txid };
+
 // ---- coin selection ---------------------------------------------------------
 // Largest-first: fewest inputs, simplest; fine for a browser wallet.
 function selectCoins(utxos, target) {
