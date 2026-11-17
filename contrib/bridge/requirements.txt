@@ -1,3 +1,4 @@
 requests>=2.31
-solana>=0.36
-solders>=0.26
+# solana 0.37 and later no longer have the synchronous client (solana.rpc.api) that bridge.py uses
+solana>=0.36,<0.37
+solders>=0.26,<0.27

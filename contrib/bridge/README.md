@@ -169,6 +169,28 @@ python bridge.py --reset <CORG_TXID>
 auto-rewinds `last_height` to `entry.height - 1` so the bridge re-scans
 the burn's block on next tick.
 
+## Operations
+
+**Alerts.** Set `BRIDGE_ALERT_CMD` to a command; it is run with a message as its last argument whenever something needs a person:
+a burn over a payout limit, a treasury that cannot cover a reward (`treasury_low`), a payment that failed or is unconfirmed, a
+reorganisation deeper than the wait, and five failed scans in a row. For example `BRIDGE_ALERT_CMD="/usr/local/bin/notify-me"`.
+A command that fails is logged and does not stop the bridge. The same words are in the log, but nobody reads a log at night.
+
+**Empty treasury.** Before paying, the bridge reads the treasury's token balance. If it holds less than the reward, nothing is
+paid and the burn is recorded as `treasury_low` (it shows in `--list-pending`). Fund the treasury, then `--reset` the entry so it is
+scanned again. If the balance cannot be read the payment is tried, as before.
+
+**Treasury key file.** The bridge refuses to start if the key file can be read by other users of the machine (`chmod 600`).
+
+**Not done, and worth doing before real money**
+
+- The treasury is a single hot key on this machine. A multisig treasury, or a program that holds the tokens and pays only what
+  a verified burn allows, would stop a stolen key emptying it. Until then keep only what a day's limit needs in the treasury and
+  set `max_reward_per_day`.
+- The state is a JSON file that is rewritten (and synced) after each burn. That is safe against a crash but slow if there are
+  very many burns; a database would be the next step.
+- This has been run only against mocks, never against a real node and a real Solana cluster.
+
 ## Tests
 
 ```bash
