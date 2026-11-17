@@ -176,12 +176,12 @@ public:
     bool IsLockedCoin(const uint256& hash, unsigned int n) const;
     void ListLockedCoins(std::vector<COutPoint>& vOutpts) const;
 
-    // With a coinControl that has selected outputs, only those are returned.
     /** The other wallet transactions that spend an output this one spends (a double spend, or a malleated twin). */
     std::set<uint256> GetConflicts(const CWalletTx& wtx) const;
     /** True if wtx is not in the main chain and a transaction that conflicts with it is. Such a transaction can never
      *  confirm: what it paid, and its change, are not the wallet's to count or to spend. */
     bool IsConflicted(const CWalletTx& wtx) const;
+    // With a coinControl that has selected outputs, only those are returned.
     void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl* coinControl = nullptr) const;
     bool SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
 
@@ -647,9 +647,10 @@ public:
             return false;
         if (GetDepthInMainChain() >= 1)
             return true;
-        if (pwallet->IsConflicted(*this))
-            return false;
         if (!IsFromMe()) // using wtx's cached debit
+            return false;
+        // after IsFromMe: the scan is over the whole wallet, and anyone can send us unconfirmed transactions
+        if (pwallet->IsConflicted(*this))
             return false;
 
         // If no confirmations but it's from us, we can still
@@ -668,6 +669,7 @@ public:
                 continue;
             if (!pwallet->IsFromMe(*ptx))
                 return false;
+            if (ptx != this) // this one was checked above
             {
                 // a dependency that a transaction in the chain conflicts with will never confirm either
                 LOCK(pwallet->cs_wallet);

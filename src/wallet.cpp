@@ -1387,15 +1387,19 @@ int64 CWallet::GetImmatureBalance() const
     return nTotal;
 }
 
-// populate vCoins with vector of spendable COutputs
 std::set<uint256> CWallet::GetConflicts(const CWalletTx& wtx) const
 {
     std::set<uint256> result;
+    // every coinbase has the same null prevout: they never conflict with each other, nor with anything else
+    if (wtx.IsCoinBase())
+        return result;
     LOCK(cs_wallet);
     const uint256 hash = wtx.GetHash();
     for (const auto& item : mapWallet)
     {
         if (item.first == hash)
+            continue;
+        if (item.second.IsCoinBase())
             continue;
         for (const CTxIn& other : item.second.vin)
         {
@@ -1430,6 +1434,7 @@ bool CWallet::IsConflicted(const CWalletTx& wtx) const
     return false;
 }
 
+// populate vCoins with vector of spendable COutputs
 void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl* coinControl) const
 {
     vCoins.clear();
