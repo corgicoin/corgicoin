@@ -2048,16 +2048,18 @@ bool StopNode()
     if (vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)] > 0) LogPrintf("ThreadDNSAddressSeed still running\n");
     if (vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)] > 0) LogPrintf("ThreadOpenAddedConnections still running\n");
     if (vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)] > 0) LogPrintf("ThreadDumpAddresses still running\n");
-    // Handlers finish the request they are in and exit. Connections that arrived late are aborted on each pass; if
-    // something is still stuck after 30 s, go on and close the databases cleanly anyway, which beats being killed.
+    // Handlers finish the request they are in and exit. Connections that arrived late are aborted on each pass. There is
+    // no time limit: a handler can be in a long rescan or reorganisation, and Shutdown() closes the databases and frees the
+    // wallet without cs_main or cs_wallet, so going on without it would pull them from under a live thread.
     int64 nWaitStart = GetTime();
+    bool fLoggedWait = false;
     while (vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)] > 0 || vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] > 0)
     {
         RPCAbortConnections();
-        if (GetTime() - nWaitStart > 30)
+        if (!fLoggedWait && GetTime() - nWaitStart > 30)
         {
-            LogPrintf("StopNode(): message or RPC handler threads still running after 30 seconds, going on without them\n");
-            break;
+            LogPrintf("StopNode(): message or RPC handler threads still running after 30 seconds (a long command or reorganisation?); waiting for them\n");
+            fLoggedWait = true;
         }
         Sleep(20);
     }

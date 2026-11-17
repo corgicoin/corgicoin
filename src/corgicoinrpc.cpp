@@ -4323,7 +4323,8 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > 
 
     // Each connection has a thread of its own, so the number of them is limited: past it the caller is told to come
     // back later instead of the process running out of threads and memory
-    else if (vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] >= GetArg("-rpcmaxconnections", 64))
+    // (counted when accepted, not when the handler thread starts, so a burst of connections cannot get past it)
+    else if (nRPCConnectionsOpen >= GetArg("-rpcmaxconnections", 64))
     {
         if (!fUseSSL)
             conn->stream() << HTTPReply(503, "", false) << std::flush;
@@ -4523,15 +4524,20 @@ void ThreadRPCServer2(void* parg)
 
     // io_service goes out of scope when this returns, and every open connection has a socket registered with it. A handler
     // that destroys its connection after that touches freed memory (a crash at shutdown, a double free or a segfault, about one
-    // run in three with idle clients connected now that shutdown wakes them all at once). Wake them and wait for the last.
+    // run in three with idle clients connected now that shutdown wakes them all at once). Wake them and wait for the last,
+    // however long it takes: a handler can be in a long command, and returning early is the same use-after-free.
     const int64 nWaitStart = GetTime();
-    while (nRPCConnectionsOpen > 0 && GetTime() - nWaitStart < 30)
+    bool fLoggedWait = false;
+    while (nRPCConnectionsOpen > 0)
     {
         RPCAbortConnections();
+        if (!fLoggedWait && GetTime() - nWaitStart > 30)
+        {
+            LogPrintf("ThreadRPCServer: %d RPC connection(s) still open after 30 seconds; waiting for them\n", nRPCConnectionsOpen.load());
+            fLoggedWait = true;
+        }
         Sleep(10);
     }
-    if (nRPCConnectionsOpen > 0)
-        LogPrintf("ThreadRPCServer: %d RPC connection(s) still open after 30 seconds\n", nRPCConnectionsOpen.load());
 }
 
 class JSONRequest
