@@ -344,4 +344,16 @@ BOOST_AUTO_TEST_CASE(timing_resistant_equal)
     BOOST_CHECK(TimingResistantEqual(std::string("\xff\x80", 2), std::string("\xff\x80", 2)));
 }
 
+// An inventory item of a type this node does not know is printed (with -debug, for every item of a peer's message) and
+// must not throw while it is.
+BOOST_AUTO_TEST_CASE(inv_tostring_does_not_throw_on_an_unknown_type)
+{
+    CInv unknown(99, GetRandHash());
+    std::string str;
+    BOOST_CHECK_NO_THROW(str = unknown.ToString());
+    BOOST_CHECK_EQUAL(str.substr(0, 11), "unknown(99)");
+    CInv tx(1, GetRandHash());
+    BOOST_CHECK_EQUAL(tx.ToString().substr(0, 3), "tx ");
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -1314,13 +1314,13 @@ bool CAuxPow::Check(uint256 hashAuxBlock, int32_t nChainId) const
     if (script.end() - pc < 8)
         return LogError("AuxPow::Check() : missing merkle tree size and nonce");
 
-    uint32_t nSize;
-    memcpy(&nSize, &pc[0], 4);
+    // little-endian on the wire whatever the host is (a memcpy was right only on little-endian machines)
+    auto ReadLE32 = [](const unsigned char* p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); };
+    uint32_t nSize = ReadLE32(&pc[0]);
     if (nSize != (1u << vChainMerkleBranch.size()))
         return LogError("AuxPow::Check() : merkle tree size does not match branch length");
 
-    uint32_t nNonce;
-    memcpy(&nNonce, &pc[4], 4);
+    uint32_t nNonce = ReadLE32(&pc[4]);
     if ((unsigned int)nChainIndex != GetExpectedAuxIndex(nNonce, nChainId, vChainMerkleBranch.size()))
         return LogError("AuxPow::Check() : chain index does not match expected slot");
 
@@ -2040,7 +2040,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
         const CBlockIndex* pindex = pindexBest;
         for (int i = 0; i < 100 && pindex != nullptr; i++)
         {
-            if (pindex->nVersion > CBlock::CURRENT_VERSION)
+            if (GetBaseVersion(pindex->nVersion) > CBlock::CURRENT_VERSION)   // not the whole field: its chain id and AuxPoW bit made every merged-mined block look newer
                 ++nUpgraded;
             pindex = pindex->pprev;
         }
@@ -3367,7 +3367,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             for (unsigned int i = 0; i < vWorkQueue.size(); i++)
             {
                 uint256 hashPrev = vWorkQueue[i];
-                for (const auto& orphanItem : mapOrphanTransactionsByPrev[hashPrev])
+                // find(), not operator[]: that added an empty entry to the map for the hash of every accepted transaction,
+                // for ever
+                auto itByPrev = mapOrphanTransactionsByPrev.find(hashPrev);
+                if (itByPrev == mapOrphanTransactionsByPrev.end())
+                    continue;
+                for (const auto& orphanItem : itByPrev->second)
                 {
                     const CDataStream& vMsg = *orphanItem.second;
                     CTransaction tx;
