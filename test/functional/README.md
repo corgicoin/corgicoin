@@ -97,6 +97,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `getnodeaddresses`, `disconnectnode` |
 | `p2p_bad_subver.py` | a peer user agent with invalid UTF-8, control characters or great length cannot break getpeerinfo |
 | `p2p_maxconnections.py` | -maxconnections is capped below what select() can hold, and the log says so |
+| `p2p_resource_limits.py` | what a peer can make the node remember (announced items, known addresses) or queue (getdata) is bounded |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
 | `p2p_getheaders_auxpow.py` | `getheaders` across a merged-mined block: the node stays up and returns one header with its real AuxPoW proof attached |
 | `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |

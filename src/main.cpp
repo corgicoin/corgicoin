@@ -878,7 +878,7 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock)
 // CBlock and CBlockIndex
 //
 
-bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
+bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions, bool fCheckPoW)
 {
     if (!fReadTransactions)
     {
@@ -892,7 +892,7 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
         *this = pindex->GetBlockHeader();
         return true;
     }
-    if (!ReadFromDisk(pindex->nFile, pindex->nBlockPos, fReadTransactions))
+    if (!ReadFromDisk(pindex->nFile, pindex->nBlockPos, fReadTransactions, fCheckPoW))
         return false;
     if (GetHash() != pindex->GetBlockHash())
         return LogError("CBlock::ReadFromDisk() : GetHash() doesn't match index");
@@ -3029,6 +3029,62 @@ bool static AlreadyHave(CTxDB& txdb, const CInv& inv)
 unsigned char pchMessageStart[4] = { 0xc0, 0xc0, 0xc0, 0xc0 }; 
 
 
+// Answer the queued getdata items while the send buffer has room for the replies.
+static void ProcessGetData(CNode* pfrom)
+{
+    LOCK(cs_main);
+    while (!pfrom->vRecvGetData.empty())
+    {
+        // Don't bother if send buffer is too full to respond anyway
+        if (pfrom->vSend.size() >= SendBufferSize())
+            break;
+        if (fShutdown)
+            return;
+
+        const CInv inv = pfrom->vRecvGetData.front();
+        pfrom->vRecvGetData.pop_front();
+        LogPrint(LOG_NET, "received getdata for: %s\n", inv.ToString().c_str());
+
+        if (inv.type == static_cast<int>(MsgType::Block))
+        {
+            // Send block from disk
+            auto mi = mapBlockIndex.find(inv.hash);
+            if (mi != mapBlockIndex.end())
+            {
+                CBlock block;
+                // already accepted, so its proof of work was checked: do not pay for it again on every read
+                block.ReadFromDisk((*mi).second, true, false);
+                pfrom->PushMessage("block", block);
+
+                // Trigger them to send a getblocks request for the next batch of inventory
+                if (inv.hash == pfrom->hashContinue)
+                {
+                    // Bypass PushInventory, this must send even if redundant,
+                    // and we want it right after the last block so they don't
+                    // wait for other stuff first.
+                    vector<CInv> vInv;
+                    vInv.emplace_back(static_cast<int>(MsgType::Block), hashBestChain);
+                    pfrom->PushMessage("inv", vInv);
+                    pfrom->hashContinue = 0;
+                }
+            }
+        }
+        else if (inv.IsKnownType())
+        {
+            // Send stream from relay memory
+            {
+                LOCK(cs_mapRelay);
+                auto mi = mapRelay.find(inv);
+                if (mi != mapRelay.end())
+                    pfrom->PushMessage(inv.GetCommand(), (*mi).second);
+            }
+        }
+
+        // Track requests for our stuff
+        Inventory(inv.hash);
+    }
+}
+
 bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<CService, CPubKey> mapReuseKey;
@@ -3309,49 +3365,17 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         LogPrint(LOG_NET, "received getdata (%d invsz)\n", vInv.size());
 
-        for (const CInv& inv : vInv)
+        // Queue the request and answer as much as the send buffer takes. The rest is answered as it drains
+        // (ProcessMessages), and nothing newer from this peer is read until then, so replies stay in order. One message
+        // of 50000 items used to be answered to the end at once: every block read from disk and queued in memory, under
+        // cs_main, however slowly the peer read.
+        if (pfrom->vRecvGetData.size() + vInv.size() > MAX_GETDATA_QUEUE)
         {
-            if (fShutdown)
-                return true;
-            LogPrint(LOG_NET, "received getdata for: %s\n", inv.ToString().c_str());
-
-            if (inv.type == static_cast<int>(MsgType::Block))
-            {
-                // Send block from disk
-                auto mi = mapBlockIndex.find(inv.hash);
-                if (mi != mapBlockIndex.end())
-                {
-                    CBlock block;
-                    block.ReadFromDisk((*mi).second);
-                    pfrom->PushMessage("block", block);
-
-                    // Trigger them to send a getblocks request for the next batch of inventory
-                    if (inv.hash == pfrom->hashContinue)
-                    {
-                        // Bypass PushInventory, this must send even if redundant,
-                        // and we want it right after the last block so they don't
-                        // wait for other stuff first.
-                        vector<CInv> vInv;
-                        vInv.emplace_back(static_cast<int>(MsgType::Block), hashBestChain);
-                        pfrom->PushMessage("inv", vInv);
-                        pfrom->hashContinue = 0;
-                    }
-                }
-            }
-            else if (inv.IsKnownType())
-            {
-                // Send stream from relay memory
-                {
-                    LOCK(cs_mapRelay);
-                    auto mi = mapRelay.find(inv);
-                    if (mi != mapRelay.end())
-                        pfrom->PushMessage(inv.GetCommand(), (*mi).second);
-                }
-            }
-
-            // Track requests for our stuff
-            Inventory(inv.hash);
+            pfrom->Misbehaving(20);
+            return LogError("getdata queue of %d items is full", pfrom->vRecvGetData.size());
         }
+        pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
+        ProcessGetData(pfrom);
     }
 
 
@@ -3694,6 +3718,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 bool ProcessMessages(CNode* pfrom)
 {
     CDataStream& vRecv = pfrom->vRecv;
+
+    // Answers owed from an earlier getdata come first, and until they are done nothing newer from this peer is read
+    if (!pfrom->vRecvGetData.empty())
+        ProcessGetData(pfrom);
+    if (!pfrom->vRecvGetData.empty())
+        return true;
+
     if (vRecv.empty())
         return true;
 
@@ -3710,6 +3741,9 @@ bool ProcessMessages(CNode* pfrom)
     {
         // Don't bother if send buffer is too full to respond anyway
         if (pfrom->vSend.size() >= SendBufferSize())
+            break;
+        // this maintains the order of responses
+        if (!pfrom->vRecvGetData.empty())
             break;
 
         // Scan for message start

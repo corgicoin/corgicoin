@@ -5,6 +5,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "main.h"
 #include "net.h"
 #include "corgicoinrpc.h"
 
@@ -81,11 +82,28 @@ Value getpeerinfo(const Array& params, bool fHelp)
         obj.emplace_back("releasetime", (int64_t)stats.nReleaseTime);
         obj.emplace_back("startingheight", stats.nStartingHeight);
         obj.emplace_back("banscore", stats.nMisbehavior);
+        obj.emplace_back("addr_known", (int64_t)stats.nAddrKnown);
+        obj.emplace_back("getdata_queued", (int64_t)stats.nGetDataQueued);
 
         ret.push_back(obj);
     }
 
     return ret;
+}
+
+Value getmemoryinfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getmemoryinfo\n"
+            "Returns the sizes of the structures a peer can make grow, to watch them and to check their bounds.\n"
+            "Result: {askedfor, blockindex, mempool}");
+
+    Object obj;
+    obj.emplace_back("askedfor", (int64_t)mapAlreadyAskedFor.size());   // items peers announced that we asked for (at most 50000)
+    obj.emplace_back("blockindex", (int64_t)mapBlockIndex.size());
+    obj.emplace_back("mempool", (int64_t)mempool.size());
+    return obj;
 }
 
 Value ping(const Array& params, bool fHelp)

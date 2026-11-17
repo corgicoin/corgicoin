@@ -150,6 +150,7 @@ static int DefaultRPCPort()
 extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.cpp
 extern Value getpeerinfo(const Array& params, bool fHelp);
 extern Value ping(const Array& params, bool fHelp);
+extern Value getmemoryinfo(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -3447,6 +3448,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getconnectioncount",     &getconnectioncount,     true },
     { "getpeerinfo",            &getpeerinfo,            true },
     { "ping",                   &ping,                   true },
+    { "getmemoryinfo",          &getmemoryinfo,          true },
     { "getnettotals",           &getnettotals,           true },
     { "setban",                 &setban,                 true },
     { "listbanned",             &listbanned,             true },

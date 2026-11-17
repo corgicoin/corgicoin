@@ -33,6 +33,7 @@ TESTS = [
     "p2p_auxpow_refetch.py",
     "p2p_bad_subver.py",
     "p2p_maxconnections.py",
+    "p2p_resource_limits.py",
     "rpc_createauxblock.py",
     "feature_auxpow.py",
     "rpc_mempool_verify.py",
