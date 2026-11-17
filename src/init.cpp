@@ -235,7 +235,7 @@ std::string HelpMessage()
         "  -tor=<ip:port>         " + _("Use proxy to reach tor hidden services (default: same as -proxy)") + "\n"
         "  -dns                   " + _("Allow DNS lookups for -addnode, -seednode and -connect") + "\n" +
         "  -port=<port>           " + _("Listen for connections on <port> (default: 62556 or testnet: 64556)") + "\n" +
-        "  -maxconnections=<n>    " + _("Maintain at most <n> connections to peers (default: 125)") + "\n" +
+        "  -maxconnections=<n>    " + _("Maintain at most <n> connections to peers (default: 125; at most about 870 where select() is used)") + "\n" +
         "  -addnode=<ip>          " + _("Add a node to connect to and attempt to keep the connection open") + "\n" +
         "  -connect=<ip>          " + _("Connect only to the specified node(s)") + "\n" +
         "  -seednode=<ip>         " + _("Connect to a node to retrieve peer addresses, and disconnect") + "\n" +
@@ -403,6 +403,10 @@ bool AppInit2()
     fDebug = fDebug || fDebugAll;
     if (fDebugAll || GetBoolArg("-debugnet"))
         fDebugNet = true;
+
+    if (GetArg("-maxconnections", 125) > GetMaxConnections())
+        LogPrintf("-maxconnections reduced from %d to %d: select() cannot wait on more descriptors than that%s",
+                  static_cast<int>(GetArg("-maxconnections", 125)), GetMaxConnections(), "\n");
 
     bitdb.SetDetach(GetBoolArg("-detachdb", false));
 
