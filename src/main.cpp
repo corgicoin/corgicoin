@@ -1951,6 +1951,9 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
 {
     uint256 hash = GetHash();
+    // The block that is the tip when this is done. It is pindexNew unless a reorganisation connected only part of the
+    // new branch (a later block of it failed to connect): the tip is then the last block that did connect
+    CBlockIndex* pindexTip = pindexNew;
 
     if (!txdb.TxnBegin())
         return LogError("SetBestChain() : TxnBegin failed");
@@ -1993,6 +1996,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             InvalidChainFound(pindexNew);
             return LogError("SetBestChain() : Reorganize failed");
         }
+        pindexTip = pindexIntermediate;
 
         // Connect futher blocks
         for (auto it = vpindexSecondary.rbegin(); it != vpindexSecondary.rend(); ++it)
@@ -2011,6 +2015,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             // errors now are not fatal, we still did a reorganisation to a new chain in a valid way
             if (!block.SetBestChainInner(txdb, pindex))
                 break;
+            pindexTip = pindex;
         }
     }
 
@@ -2018,15 +2023,18 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
     bool fIsInitialDownload = IsInitialBlockDownload();
     if (!fIsInitialDownload)
     {
-        const CBlockLocator locator(pindexNew);
+        const CBlockLocator locator(pindexTip);
         ::SetBestChain(locator);
     }
 
-    // New best block
-    hashBestChain = hash;
-    pindexBest = pindexNew;
+    // New best block: the one the database ends on. Setting these from pindexNew when a later block of the branch
+    // had failed to connect left memory on a tip the database never reached: block templates were built on it, a
+    // heavier-looking chain that never connected kept honest blocks from becoming the best one, and the node came
+    // back from a restart on a different tip.
+    hashBestChain = pindexTip == pindexNew ? hash : pindexTip->GetBlockHash();
+    pindexBest = pindexTip;
     nBestHeight = pindexBest->nHeight;
-    bnBestChainWork = pindexNew->bnChainWork;
+    bnBestChainWork = pindexTip->bnChainWork;
     nTimeBestReceived = GetTime();
     nTransactionsUpdated++;
     LogPrintf("SetBestChain: new best=%s  height=%d  work=%s  date=%s\n",
@@ -2052,7 +2060,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
     }
 
     // the new tip is the block being added, so it is at hand for rawblock
-    if (!fIsInitialDownload)
+    if (!fIsInitialDownload && pindexTip == pindexNew)
         ZMQNotifyBlock(*this, hashBestChain);
 
     std::string strCmd = GetArg("-blocknotify", "");
@@ -3021,7 +3029,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         pfrom->fClient = !(pfrom->nServices & NODE_NETWORK);
 
-        AddTimeData(pfrom->addr, nTime);
+        // Outbound peers only: the ones we chose. Anyone can connect inbound, and with a handful of them could outvote
+        // the few honest outbound peers on what the time is.
+        if (!pfrom->fInbound)
+            AddTimeData(pfrom->addr, nTime);
 
         // Change version
         pfrom->PushMessage("verack");
