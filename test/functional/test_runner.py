@@ -39,6 +39,7 @@ TESTS = [
     "rpc_mempool_verify.py",
     "rpc_gettxout.py",
     "rpc_getblock_verbose.py",
+    "rpc_rawtransaction.py",
     "rpc_submitblock.py",
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",
