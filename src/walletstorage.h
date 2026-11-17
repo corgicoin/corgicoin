@@ -58,7 +58,7 @@ public:
 bool RewriteWalletStorage(const std::string& strFile, const char* pszSkip = nullptr);
 
 /** The wallet's storage in the file strFile of the data directory. pszMode is as CDB takes it: "r" read only, "r+" read and write, "c" may create,
- *  as in "cr+". If the file cannot be opened the storage is still returned, and every call on it fails (as an unopened CDB always did). */
+ *  as in "cr+". Throws if the file cannot be opened (as the CDB constructor always has). */
 std::unique_ptr<CWalletStorage> OpenWalletStorage(const std::string& strFile, const char* pszMode);
 
 #endif

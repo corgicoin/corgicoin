@@ -28,7 +28,15 @@ public:
     {
     public:
         BerkeleyCursor(CBerkeleyWalletStorage& dbIn, Dbc* pcursorIn) : db(dbIn), pcursor(pcursorIn) {}
-        ~BerkeleyCursor() override { if (pcursor) pcursor->close(); }
+        // The environment throws DbException (DB_CXX_NO_EXCEPTIONS is not set): a throw from a destructor that runs while another
+        // exception unwinds would call std::terminate
+        ~BerkeleyCursor() override
+        {
+            if (!pcursor)
+                return;
+            try { pcursor->close(); }
+            catch (...) { LogPrintf("wallet storage: closing a cursor failed\n"); }
+        }
 
         Result Seek(CDataStream& ssKey, CDataStream& ssValue) override { return Get(ssKey, ssValue, DB_SET_RANGE); }
         Result Next(CDataStream& ssKey, CDataStream& ssValue) override { return Get(ssKey, ssValue, DB_NEXT); }
