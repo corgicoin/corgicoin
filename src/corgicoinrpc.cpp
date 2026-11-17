@@ -3801,8 +3801,13 @@ public:
         {
             // (With TLS the decrypted bytes may already be waiting inside the TLS layer, where poll() cannot see them.)
 #ifdef WIN32
-            WSAPOLLFD pfd = { stream.next_layer().native_handle(), POLLRDNORM, 0 };
-            const int nReady = WSAPoll(&pfd, 1, nTimeoutSeconds * 1000);
+            // (select, not WSAPoll: WSAPoll needs Windows Vista, and this is built for XP: _WIN32_WINNT in compat.h. One socket in the set
+            // is far below the limit of a set, whatever the number of connections.)
+            fd_set fdsRead;
+            FD_ZERO(&fdsRead);
+            FD_SET(stream.next_layer().native_handle(), &fdsRead);
+            struct timeval tv = { nTimeoutSeconds, 0 };
+            const int nReady = select(0, &fdsRead, nullptr, nullptr, &tv);
 #else
             struct pollfd pfd = { stream.next_layer().native_handle(), POLLIN, 0 };
             const int nReady = poll(&pfd, 1, nTimeoutSeconds * 1000);
