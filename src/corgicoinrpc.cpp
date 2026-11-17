@@ -1792,13 +1792,14 @@ Value listtransactions(const Array& params, bool fHelp)
         if (pacentry != 0)
             AcentryToJSON(*pacentry, strAccount, ret);
 
-        if (static_cast<int>(ret.size()) >= (nCount+nFrom)) break;
+        // count and from can each be as large as INT_MAX, so their sum is taken in 64 bits
+        if (static_cast<int64_t>(ret.size()) >= static_cast<int64_t>(nCount) + nFrom) break;
     }
     // ret is newest to oldest
 
     if (nFrom > static_cast<int>(ret.size()))
         nFrom = ret.size();
-    if ((nFrom + nCount) > static_cast<int>(ret.size()))
+    if (static_cast<int64_t>(nFrom) + nCount > static_cast<int64_t>(ret.size()))
         nCount = ret.size() - nFrom;
     auto first = ret.begin();
     std::advance(first, nFrom);

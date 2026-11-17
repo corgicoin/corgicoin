@@ -81,6 +81,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_logging.py` | every debug.log line is timestamped with -logtimestamps; RPC calls are logged only with -debug=rpc |
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
+| `wallet_listtransactions.py` | `listtransactions`: paging, and count/from as large as an int (their sum used to overflow) |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |
