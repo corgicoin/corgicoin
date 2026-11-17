@@ -208,6 +208,9 @@ class TestNode:
         if m:
             start = max(0, m.start() - 200)
             self.problems.append("node%d stderr (%s):\n%s" % (self.index, self.stderr_log, text[start:m.end() + 800]))
+        elif self.process is not None and self.process.returncode not in (None, 0):
+            # Died without a message of a kind listed above (a signal, an exception that was not caught): whatever it said last
+            self.problems.append("node%d stderr (%s), its last lines:\n%s" % (self.index, self.stderr_log, text[-1500:] if text else "(empty)"))
 
     def kill(self):
         """Stop a node the test is finished with; it is not a failure if it had to be killed here."""
