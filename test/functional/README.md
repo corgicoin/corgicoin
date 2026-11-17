@@ -88,6 +88,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
 | `rpc_shutdown_keepalive.py` | a node stops promptly while pool-style idle keep-alive RPC clients stay connected |
+| `feature_shutdown_exit.py` | two connected nodes in use are stopped twelve times over; each has to end with exit status 0 (no abort or crash while the process shuts down). Without the RPC shutdown commit, 11 of 16 copies run at once on a loaded machine died with signal 6 or 11 |
 | `rpc_http_limits.py` | RPC request line/header/body limits (body only after login), stalled-connection timeout, connection cap with 503 |
 | `rpc_http_auth.py` | malformed `Authorization` headers get 401 and leave the server running; a correct login still works |
 | `feature_cross_binary.py` | two different builds (e.g. against different OpenSSL versions) interoperate: blocks and signatures accepted both ways, `wallet.dat` and encrypted wallets open in either. Needs `--alt-corgicoind` or `$CORGICOIND_ALT`, otherwise it is shown as SKIP. Against a v4.2–v4.7 build the "encrypted by the main build, unlocked by the alternate one" check fails by design (v4.7 cannot unlock a v4.8-encrypted wallet) |
