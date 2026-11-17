@@ -4029,8 +4029,15 @@ void JSONRequest::parse(const Value& valRequest)
     if (valMethod.type() != str_type)
         throw JSONRPCError(-32600, "Method must be a string");
     strMethod = valMethod.get_str();
-    if (strMethod != "getwork" && strMethod != "getblocktemplate")
-        LogPrintf("ThreadRPCServer method=%s\n", strMethod.c_str());
+    // Pools call a handful of methods several times a second, so this is a debug category (-debug=rpc), not a line per
+    // call in debug.log. The name comes from the caller: only printable characters are logged, so a name with a newline
+    // cannot forge a log line.
+    {
+        string strSafe;
+        for (unsigned char c : strMethod.substr(0, 64))
+            strSafe += (c >= 0x20 && c <= 0x7e) ? static_cast<char>(c) : '?';
+        LogPrint(LOG_RPC, "ThreadRPCServer method=%s\n", strSafe.c_str());
+    }
 
     // Parse params
     Value valParams = find_value(request, "params");
