@@ -3520,7 +3520,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (pfrom->vRecvGetData.size() + vInv.size() > MAX_GETDATA_QUEUE)
         {
             pfrom->Misbehaving(20);
-            return LogError("getdata queue of %d items is full", pfrom->vRecvGetData.size());
+            return LogError("getdata queue of %u items is full", (unsigned int)pfrom->vRecvGetData.size());
         }
         pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
         ProcessGetData(pfrom);

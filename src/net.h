@@ -153,7 +153,9 @@ public:
         if (it != map.end())
             return it->second;
         order.push_back(inv);
-        if (map.size() >= MAX_SIZE)
+        // also on the queue's own size: entries are normally erased from the map when the item arrives, which leaves
+        // their names in the queue, and without this it would grow by one for every transaction ever received
+        if (map.size() >= MAX_SIZE || order.size() > 2 * MAX_SIZE)
             Trim();
         return map[inv];
     }
