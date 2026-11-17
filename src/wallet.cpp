@@ -1542,9 +1542,13 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
     int64 nValue = 0;
     for (const std::pair<CScript, int64>& s : vecSend)
     {
-        if (nValue < 0)
+        // Every amount, and every running total, must be a possible amount of money: a signed sum that wraps is
+        // undefined behaviour, and a negative one used to be noticed only by looking at the total afterwards
+        if (s.second < 0 || !MoneyRange(s.second))
             return false;
         nValue += s.second;
+        if (!MoneyRange(nValue))
+            return false;
     }
     if (vecSend.empty() || nValue < 0)
         return false;

@@ -1307,6 +1307,8 @@ Value sendmany(const Array& params, bool fHelp)
         scriptPubKey.SetDestination(address.Get());
         int64 nAmount = AmountFromValue(s.value_);
         totalAmount += nAmount;
+        if (!MoneyRange(totalAmount))
+            throw JSONRPCError(-3, "Invalid amount: the total is more than there can be");
 
         vecSend.emplace_back(scriptPubKey, nAmount);
     }
