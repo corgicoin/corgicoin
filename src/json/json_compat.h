@@ -8,6 +8,8 @@
 #define JSON_COMPAT_H
 
 #include "nlohmann_json.hpp"
+#include <climits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -57,8 +59,18 @@ public:
     }
 
     std::string get_str() const { return data.get<std::string>(); }
-    int get_int() const { return data.get<int>(); }
-    int64_t get_int64() const { return data.get<int64_t>(); }
+    // nlohmann's get<int>() casts, so 2^32+1 would come back as 1: refuse anything that doesn't fit instead
+    int get_int() const {
+        int64_t n = get_int64();
+        if (n < INT_MIN || n > INT_MAX)
+            throw std::runtime_error("JSON integer out of range");
+        return (int)n;
+    }
+    int64_t get_int64() const {
+        if (data.is_number_unsigned() && data.get<uint64_t>() > (uint64_t)INT64_MAX)
+            throw std::runtime_error("JSON integer out of range");
+        return data.get<int64_t>();
+    }
     uint64_t get_uint64() const { return data.get<uint64_t>(); }
     double get_real() const { return data.get<double>(); }
     bool get_bool() const { return data.get<bool>(); }

@@ -2915,7 +2915,12 @@ Value getblock(const Array& params, bool fHelp)
         if (params[1].type() == bool_type)
             fVerbose = params[1].get_bool();
         else if (params[1].type() == int_type)
-            fVerbose = params[1].get_int() != 0;
+        {
+            int64_t nVerbosity = params[1].get_int64();
+            if (nVerbosity < 0 || nVerbosity > 2)
+                throw JSONRPCError(-8, "verbose must be 0, 1 or 2");
+            fVerbose = nVerbosity != 0;
+        }
         else
             throw JSONRPCError(-8, "verbose must be a boolean or an integer");
     }

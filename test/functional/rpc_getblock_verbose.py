@@ -47,6 +47,8 @@ class GetBlockVerboseTest(CorgiTestFramework):
         self.log("errors: unknown block, wrong type")
         assert_raises_rpc_error(-5, "Block not found", node.getblock, "00" * 32, False)
         assert_raises_rpc_error(-8, "boolean or an integer", node.getblock, h, "yes")
+        for verbosity in (-1, 3, 2 ** 40, -2 ** 63):  # 2^40 used to be cast to int and read as 0, i.e. hex
+            assert_raises_rpc_error(-8, "verbose must be 0, 1 or 2", node.getblock, h, verbosity)
 
         self.log("a merged-mined block: the hex carries the AuxPoW proof between header and transactions")
         node.generate(AUXPOW_FORK_REGTEST)

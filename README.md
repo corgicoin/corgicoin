@@ -118,6 +118,10 @@ rpcport=62555
 
 ## Version History
 
+### Unreleased
+- **RPC integer arguments are range-checked.** A number too large for the argument was silently cut to its low 32 bits: `addmultisigaddress 4294967297 [...]` made a 1-of-N address, and `getblock <hash> 1099511627776` returned hex. Such values are now an error, and `getblock` accepts only verbosity 0, 1 or 2
+- **Note on v4.9 phrase restores:** a recovery phrase that was restored on v4.5–v4.8 with irregular spacing (double spaces, tabs) made a wallet from the phrase *exactly as typed*. That wallet keeps working, because the phrase is stored in `wallet.dat` as it was. Restoring the same phrase again on v4.9 normalises the spacing, so it gives the standard wallet for those words, not that one. Keep a backup of `wallet.dat` for such a wallet, or move its coins to a fresh address
+
 ### v4.9.0.0 — Pool RPCs, ZeroMQ, Low-S Signatures + macOS Qt Wallet
 - **macOS Qt wallet**: releases now include `corgicoin-qt-<version>-macos-arm64.zip`, a self-contained `CorgiCoin-Qt.app`. The macOS daemon download also bundles its libraries in `lib/`; until now it only ran on Macs with the same Homebrew packages installed. Both are signed ad hoc, not notarized, so the first launch needs **Open Anyway** (see `doc/macos-first-launch.md`)
 - **Pool and integration RPCs** (thanks @colneech-dev):
