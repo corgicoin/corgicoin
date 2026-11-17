@@ -105,4 +105,25 @@ BOOST_FIXTURE_TEST_CASE(rpc_json_int_range, TestNetFixture)
     BOOST_CHECK_THROW(addmultisig(args, false), runtime_error);
 }
 
+BOOST_AUTO_TEST_CASE(rpcallowip_subnets)
+{
+    using boost::asio::ip::make_address;
+    BOOST_CHECK(AddressInSubnet(make_address("10.1.2.3"), "10.0.0.0/8"));
+    BOOST_CHECK(!AddressInSubnet(make_address("11.1.2.3"), "10.0.0.0/8"));
+    BOOST_CHECK(AddressInSubnet(make_address("172.31.255.255"), "172.16.0.0/12"));
+    BOOST_CHECK(!AddressInSubnet(make_address("172.32.0.1"), "172.16.0.0/12"));
+    BOOST_CHECK(AddressInSubnet(make_address("192.168.1.77"), "192.168.1.77/32"));
+    BOOST_CHECK(!AddressInSubnet(make_address("192.168.1.78"), "192.168.1.77/32"));
+    BOOST_CHECK(AddressInSubnet(make_address("8.8.8.8"), "0.0.0.0/0"));
+    BOOST_CHECK(AddressInSubnet(make_address("fd00::1"), "fd00::/8"));
+    BOOST_CHECK(!AddressInSubnet(make_address("fe80::1"), "fd00::/8"));
+    // a prefix that is too long, empty, not a number, or the wrong family matches nothing
+    BOOST_CHECK(!AddressInSubnet(make_address("10.1.2.3"), "10.0.0.0/33"));
+    BOOST_CHECK(!AddressInSubnet(make_address("10.1.2.3"), "10.0.0.0/"));
+    BOOST_CHECK(!AddressInSubnet(make_address("10.1.2.3"), "10.0.0.0/x"));
+    BOOST_CHECK(!AddressInSubnet(make_address("10.1.2.3"), "fd00::/8"));
+    BOOST_CHECK(!AddressInSubnet(make_address("fd00::1"), "10.0.0.0/8"));
+    BOOST_CHECK(!AddressInSubnet(make_address("10.1.2.3"), "not-an-address/8"));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

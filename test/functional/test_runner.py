@@ -47,6 +47,8 @@ TESTS = [
     "rpc_http_limits.py",
     "rpc_shutdown_keepalive.py",
     "feature_shutdown_exit.py",
+    "rpc_cookie_auth.py",
+    "rpc_config_hardening.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 

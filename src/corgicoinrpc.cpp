@@ -27,6 +27,7 @@
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/asio/ssl.hpp>
+#include <fstream>
 #include <memory>
 #include <list>
 #include <set>
@@ -42,6 +43,99 @@ using namespace json_spirit;
 void ThreadRPCServer2(void* parg);
 
 static std::string strRPCUserColonPass;
+static std::string strRPCCookieFile;   // set while the server authenticates with a cookie
+
+// Cookie authentication: with no -rpcuser and no -rpcpassword the server makes a random password, writes it to
+// <datadir>/.cookie (readable by its owner only) and removes the file at shutdown. The command line client reads it.
+static const char* COOKIE_USER = "__cookie__";
+static std::filesystem::path GetCookiePath() { return std::filesystem::path(GetDataDir()) / ".cookie"; }
+
+static bool GenerateAuthCookie(std::string& strUserPassRet)
+{
+    unsigned char rand[32];
+    if (!GetRandBytesChecked(rand, 32))
+        return false;
+    static const char* hex = "0123456789abcdef";
+    std::string strPass;
+    for (int i = 0; i < 32; i++) { strPass += hex[rand[i] >> 4]; strPass += hex[rand[i] & 15]; }
+    OPENSSL_cleanse(rand, sizeof(rand));
+    strUserPassRet = std::string(COOKIE_USER) + ":" + strPass;
+
+    const std::filesystem::path path = GetCookiePath();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+#ifndef WIN32
+    // create it closed to everyone else from the start (not written, then chmod)
+    int fd = open(path.string().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0)
+        return false;
+    ssize_t n = write(fd, strUserPassRet.data(), strUserPassRet.size());
+    close(fd);
+    if (n != (ssize_t)strUserPassRet.size())
+        return false;
+#else
+    std::ofstream file(path.string().c_str(), std::ios::out | std::ios::trunc | std::ios::binary);
+    file << strUserPassRet;
+    file.close();
+    if (!file)
+        return false;
+#endif
+    strRPCCookieFile = path.string();
+    return true;
+}
+
+static void DeleteAuthCookie()
+{
+    if (strRPCCookieFile.empty())
+        return;
+    std::error_code ec;
+    std::filesystem::remove(strRPCCookieFile, ec);
+    strRPCCookieFile.clear();
+}
+
+void DeleteRPCCookie() { DeleteAuthCookie(); }
+
+static bool ReadAuthCookie(std::string& strUserPassRet)
+{
+    std::ifstream file(GetCookiePath().string().c_str(), std::ios::in | std::ios::binary);
+    if (!file)
+        return false;
+    std::getline(file, strUserPassRet);
+    return strUserPassRet.compare(0, strlen(COOKIE_USER) + 1, std::string(COOKIE_USER) + ":") == 0;
+}
+
+// Failed logins per client address: after -rpcmaxauthfailures (default 20) in a minute the address is refused for the
+// rest of that minute, even with the right password. (A sleep per failure would tie up a handler thread instead.)
+static CCriticalSection cs_rpcAuthFailures;
+static std::map<std::string, std::pair<int, int64>> mapRPCAuthFailures;   // address -> (failures, start of window)
+static const int64 RPC_AUTH_WINDOW = 60;
+
+static bool RPCAuthLockedOut(const std::string& strAddr)
+{
+    LOCK(cs_rpcAuthFailures);
+    auto it = mapRPCAuthFailures.find(strAddr);
+    if (it == mapRPCAuthFailures.end())
+        return false;
+    if (GetTime() - it->second.second >= RPC_AUTH_WINDOW)
+    {
+        mapRPCAuthFailures.erase(it);
+        return false;
+    }
+    return it->second.first >= std::max<int64>(1, GetArg("-rpcmaxauthfailures", 20));
+}
+
+static void RPCAuthFailed(const std::string& strAddr)
+{
+    LOCK(cs_rpcAuthFailures);
+    const int64 now = GetTime();
+    if (mapRPCAuthFailures.size() > 1000)
+        for (auto it = mapRPCAuthFailures.begin(); it != mapRPCAuthFailures.end();)
+            it = (now - it->second.second >= RPC_AUTH_WINDOW) ? mapRPCAuthFailures.erase(it) : std::next(it);
+    auto& e = mapRPCAuthFailures[strAddr];
+    if (now - e.second >= RPC_AUTH_WINDOW || e.first == 0)
+        e = std::make_pair(0, now);
+    e.first++;
+}
 
 static int64 nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
@@ -3750,6 +3844,40 @@ void ErrorReply(std::ostream& stream, const Object& objError, const Value& id)
     stream << HTTPReply(nStatus, strReply, false) << std::flush;
 }
 
+// "10.0.0.0/8" or "fd00::/8": is the address inside the subnet? A prefix that does not parse, or is longer than the
+// address, matches nothing.
+bool AddressInSubnet(const boost::asio::ip::address& address, const string& strSubnet)
+{
+    const string::size_type nSlash = strSubnet.find('/');
+    boost::system::error_code ec;
+    const boost::asio::ip::address net = boost::asio::ip::make_address(strSubnet.substr(0, nSlash), ec);
+    if (ec || net.is_v4() != address.is_v4())
+        return false;
+    const string strBits = strSubnet.substr(nSlash + 1);
+    if (strBits.empty() || strBits.size() > 3 || strBits.find_first_not_of("0123456789") != string::npos)
+        return false;
+    const unsigned int nBits = static_cast<unsigned int>(atoi(strBits.c_str()));
+    std::vector<unsigned char> a, b;
+    if (address.is_v4())
+    {
+        auto x = address.to_v4().to_bytes(), y = net.to_v4().to_bytes();
+        a.assign(x.begin(), x.end());
+        b.assign(y.begin(), y.end());
+    }
+    else
+    {
+        auto x = address.to_v6().to_bytes(), y = net.to_v6().to_bytes();
+        a.assign(x.begin(), x.end());
+        b.assign(y.begin(), y.end());
+    }
+    if (nBits > a.size() * 8)
+        return false;
+    for (unsigned int i = 0; i < nBits; i++)
+        if (((a[i / 8] ^ b[i / 8]) >> (7 - i % 8)) & 1)
+            return false;
+    return true;
+}
+
 bool ClientAllowed(const boost::asio::ip::address& address)
 {
     // Make sure that IPv4-compatible and IPv4-mapped IPv6 addresses are treated as IPv4 addresses
@@ -3767,7 +3895,7 @@ bool ClientAllowed(const boost::asio::ip::address& address)
     const string strAddress = address.to_string();
     const vector<string>& vAllow = mapMultiArgs["-rpcallowip"];
     for (string strAllow : vAllow)
-        if (WildcardMatch(strAddress, strAllow))
+        if (strAllow.find('/') != string::npos ? AddressInSubnet(address, strAllow) : WildcardMatch(strAddress, strAllow))
             return true;
     return false;
 }
@@ -4030,7 +4158,18 @@ void ThreadRPCServer2(void* parg)
     LogPrintf("ThreadRPCServer started\n");
 
     strRPCUserColonPass = mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"];
-    if (mapArgs["-rpcpassword"] == "")
+    if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && !GetBoolArg("-norpccookie", false))
+    {
+        if (!GenerateAuthCookie(strRPCUserColonPass))
+        {
+            uiInterface.ThreadSafeMessageBox(strprintf(_("Could not write the RPC cookie file %s"), GetCookiePath().string().c_str()),
+                _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+            StartShutdown();
+            return;
+        }
+        LogPrintf("ThreadRPCServer: no rpcuser or rpcpassword set, authenticating with the cookie in %s\n", strRPCCookieFile.c_str());
+    }
+    else if (mapArgs["-rpcpassword"] == "")
     {
         unsigned char rand_pwd[32];
         GetRandBytes(rand_pwd, 32);
@@ -4052,6 +4191,43 @@ void ThreadRPCServer2(void* parg)
             _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
         StartShutdown();
         return;
+    }
+
+    // The password that ships in contrib/corgicoin.conf.example is public: serving with it is serving with none
+    if (mapArgs["-rpcpassword"] == "CHANGE_THIS_PASSWORD")
+    {
+        uiInterface.ThreadSafeMessageBox(strprintf(
+            _("The rpcpassword in %s is the example value from corgicoin.conf.example. Anyone who has read the documentation "
+              "can log in with it. Set your own (a long random one), and restart."), GetConfigFile().string().c_str()),
+            _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+        StartShutdown();
+        return;
+    }
+    if (mapArgs["-rpcpassword"].size() < 16)
+        LogPrintf("ThreadRPCServer WARNING: the rpcpassword is shorter than 16 characters\n");
+
+    // '#' starts a comment anywhere on a line of the config file, so "rpcpassword=ab#cd" is the password "ab" and
+    // nothing says so. Refuse to run on a password that was cut short without the operator knowing.
+    {
+        std::ifstream streamConfig(GetConfigFile().string());
+        string strLine;
+        while (std::getline(streamConfig, strLine))
+        {
+            string::size_type nStart = strLine.find_first_not_of(" \t");
+            if (nStart == string::npos || strLine.compare(nStart, 11, "rpcpassword") != 0)
+                continue;
+            string::size_type nEq = strLine.find_first_not_of(" \t", nStart + 11);
+            if (nEq != string::npos && strLine[nEq] == '=' && strLine.find('#', nEq) != string::npos)
+            {
+                uiInterface.ThreadSafeMessageBox(strprintf(
+                    _("The rpcpassword line in %s contains '#', which starts a comment: the password is cut off at it, so "
+                      "the node would use a shorter one than you wrote. Use a password without '#'."),
+                    GetConfigFile().string().c_str()),
+                    _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+                StartShutdown();
+                return;
+            }
+        }
     }
 
     const bool fUseSSL = GetBoolArg("-rpcssl");
@@ -4077,8 +4253,26 @@ void ThreadRPCServer2(void* parg)
         SSL_CTX_set_cipher_list(context.native_handle(), strCiphers.c_str());
     }
 
-    // Try a dual IPv6/IPv4 socket, falling back to separate IPv4 and IPv6 sockets
-    const bool loopback = !mapArgs.count("-rpcallowip");
+    // Where to listen. With -rpcbind (repeatable) exactly those addresses; without it, the addresses of a
+    // dual IPv6/IPv4 socket: loopback only, unless -rpcallowip is given, which has always meant every interface
+    vector<asio::ip::address> vBind;
+    for (const string& strBind : mapMultiArgs["-rpcbind"])
+    {
+        boost::system::error_code ecBind;
+        asio::ip::address addr = asio::ip::make_address(strBind, ecBind);
+        if (ecBind)
+        {
+            uiInterface.ThreadSafeMessageBox(strprintf(_("Invalid -rpcbind address: %s (it must be an IP address, not a name)"), strBind.c_str()),
+                                 _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+            StartShutdown();
+            return;
+        }
+        vBind.push_back(addr);
+    }
+    const bool loopback = vBind.empty() && !mapArgs.count("-rpcallowip");
+    if (vBind.empty() && !loopback)
+        LogPrintf("ThreadRPCServer WARNING: -rpcallowip is set and -rpcbind is not, so the RPC port is open on every network interface "
+                  "(only the -rpcallowip addresses are served, but the port is reachable). Add -rpcbind=<address> to listen on one.\n");
     asio::ip::address bindAddress = loopback ? asio::ip::address_v6::loopback() : asio::ip::address_v6::any();
     ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcport", DefaultRPCPort()));
 
@@ -4086,42 +4280,40 @@ void ThreadRPCServer2(void* parg)
 
     try
     {
-        std::shared_ptr<ip::tcp::acceptor> acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
-        acceptor->open(endpoint.protocol());
-        acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
-
-        // Try making the socket dual IPv6/IPv4 (if listening on the "any" address)
-        boost::system::error_code v6_only_error;
-        acceptor->set_option(boost::asio::ip::v6_only(loopback), v6_only_error);
-
-        acceptor->bind(endpoint);
-        acceptor->listen(boost::asio::socket_base::max_listen_connections);
-
-        RPCListen(acceptor, context, fUseSSL);
-        // Cancel outstanding listen-requests for this acceptor when shutting down
-        std::weak_ptr<ip::tcp::acceptor> weak_acceptor(acceptor);
-        StopRequests.connect([weak_acceptor]() {
-            if (auto a = weak_acceptor.lock()) a->close();
-        });
-
-        // If dual IPv6/IPv4 failed (or we're opening loopback interfaces only), open IPv4 separately
-        if (loopback || v6_only_error)
-        {
-            bindAddress = loopback ? asio::ip::address_v4::loopback() : asio::ip::address_v4::any();
-            endpoint.address(bindAddress);
-
-            acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
+        auto ListenOn = [&](const asio::ip::address& addr, bool fV6Only, boost::system::error_code& v6OnlyError) {
+            endpoint.address(addr);
+            std::shared_ptr<ip::tcp::acceptor> acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
             acceptor->open(endpoint.protocol());
             acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+            // Try making the socket dual IPv6/IPv4 (if listening on the "any" address)
+            if (addr.is_v6())
+                acceptor->set_option(boost::asio::ip::v6_only(fV6Only), v6OnlyError);
             acceptor->bind(endpoint);
             acceptor->listen(boost::asio::socket_base::max_listen_connections);
 
             RPCListen(acceptor, context, fUseSSL);
             // Cancel outstanding listen-requests for this acceptor when shutting down
-            std::weak_ptr<ip::tcp::acceptor> weak_acceptor2(acceptor);
-            StopRequests.connect([weak_acceptor2]() {
-                if (auto a = weak_acceptor2.lock()) a->close();
+            std::weak_ptr<ip::tcp::acceptor> weak_acceptor(acceptor);
+            StopRequests.connect([weak_acceptor]() {
+                if (auto a = weak_acceptor.lock()) a->close();
             });
+        };
+
+        boost::system::error_code v6_only_error;
+        if (!vBind.empty())
+        {
+            for (const asio::ip::address& addr : vBind)
+                ListenOn(addr, true, v6_only_error);
+        }
+        else
+        {
+            ListenOn(bindAddress, loopback, v6_only_error);
+            // If dual IPv6/IPv4 failed (or we're opening loopback interfaces only), open IPv4 separately
+            if (loopback || v6_only_error)
+            {
+                boost::system::error_code ignored;
+                ListenOn(loopback ? asio::ip::address(asio::ip::address_v4::loopback()) : asio::ip::address(asio::ip::address_v4::any()), false, ignored);
+            }
         }
     }
     catch(boost::system::system_error &e)
@@ -4316,8 +4508,15 @@ void ThreadRPCServer3(void* parg)
             conn->stream() << HTTPReply(401, "", false) << std::flush;
             break;
         }
+        if (RPCAuthLockedOut(conn->peer_address_to_string()))
+        {
+            LogPrintf("ThreadRPCServer too many failed logins from %s, refused\n", conn->peer_address_to_string().c_str());
+            conn->stream() << HTTPReply(401, "", false) << std::flush;
+            break;
+        }
         if (!HTTPAuthorized(mapHeaders))
         {
+            RPCAuthFailed(conn->peer_address_to_string());
             LogPrintf("ThreadRPCServer incorrect password attempt from %s\n", conn->peer_address_to_string().c_str());
             /* Deter brute-forcing short passwords.
                If this results in a DOS the user really
@@ -4426,7 +4625,9 @@ json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_s
 
 Object CallRPC(const string& strMethod, const Array& params)
 {
-    if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "")
+    std::string strCookie;
+    const bool fCookie = mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "" && ReadAuthCookie(strCookie);
+    if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "" && !fCookie)
         throw runtime_error(strprintf(
             _("You must set rpcpassword=<password> in the configuration file:\n%s\n"
               "If the file does not exist, create it with owner-readable-only file permissions."),
@@ -4444,7 +4645,7 @@ Object CallRPC(const string& strMethod, const Array& params)
         throw runtime_error("couldn't connect to server");
 
     // HTTP basic authentication
-    string strUserPass64 = EncodeBase64(mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"]);
+    string strUserPass64 = EncodeBase64(fCookie ? strCookie : mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"]);
     map<string, string> mapRequestHeaders;
     mapRequestHeaders["Authorization"] = string("Basic ") + strUserPass64;
 
