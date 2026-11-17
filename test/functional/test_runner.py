@@ -26,6 +26,7 @@ TESTS = [
     "rpc_sighash_single.py",
     "wallet_lockunspent.py",
     "wallet_abandon.py",
+    "wallet_conflicts.py",
     "wallet_dump.py",
     "wallet_backup.py",
     "wallet_import_range.py",

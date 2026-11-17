@@ -1967,6 +1967,13 @@ Value gettransaction(const Array& params, bool fHelp)
 
     WalletTxToJSON(wtx, entry);
 
+    // other wallet transactions that spend the same coins; "conflicted" when one of them is in the chain
+    Array conflicts;
+    for (const uint256& hashOther : pwalletMain->GetConflicts(wtx))
+        conflicts.push_back(hashOther.GetHex());
+    entry.emplace_back("walletconflicts", conflicts);
+    entry.emplace_back("conflicted", pwalletMain->IsConflicted(wtx));
+
     Array details;
     ListTransactions(wtx, "*", 0, false, details);
     entry.emplace_back("details", details);

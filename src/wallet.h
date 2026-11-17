@@ -177,6 +177,11 @@ public:
     void ListLockedCoins(std::vector<COutPoint>& vOutpts) const;
 
     // With a coinControl that has selected outputs, only those are returned.
+    /** The other wallet transactions that spend an output this one spends (a double spend, or a malleated twin). */
+    std::set<uint256> GetConflicts(const CWalletTx& wtx) const;
+    /** True if wtx is not in the main chain and a transaction that conflicts with it is. Such a transaction can never
+     *  confirm: what it paid, and its change, are not the wallet's to count or to spend. */
+    bool IsConflicted(const CWalletTx& wtx) const;
     void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl* coinControl = nullptr) const;
     bool SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
 
@@ -642,6 +647,8 @@ public:
             return false;
         if (GetDepthInMainChain() >= 1)
             return true;
+        if (pwallet->IsConflicted(*this))
+            return false;
         if (!IsFromMe()) // using wtx's cached debit
             return false;
 
@@ -661,6 +668,13 @@ public:
                 continue;
             if (!pwallet->IsFromMe(*ptx))
                 return false;
+            {
+                // a dependency that a transaction in the chain conflicts with will never confirm either
+                LOCK(pwallet->cs_wallet);
+                auto itDep = pwallet->mapWallet.find(ptx->GetHash());
+                if (itDep != pwallet->mapWallet.end() && pwallet->IsConflicted(itDep->second))
+                    return false;
+            }
 
             if (mapPrev.empty())
             {
