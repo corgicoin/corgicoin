@@ -859,7 +859,10 @@ bool AppInit2()
     {
         CAddrDB adb;
         if (!adb.Read(addrman))
+        {
+            addrman.Clear();   // a read that failed part way leaves counts that do not match the tables
             LogPrintf("Invalid or missing peers.dat; recreating\n");
+        }
     }
 
     LogPrintf("Loaded %i addresses from peers.dat  %" PRI64d "ms\n",

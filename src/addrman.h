@@ -403,6 +403,24 @@ public:
          nNew = 0;
     }
 
+    // Back to empty, with a new key. A peers.dat that fails to load (a bad count or index is refused part way, or the file is
+    // cut short) leaves whatever was read before the failure, and counts that do not match the tables make Select() spin for
+    // ever: the caller clears it and starts with no addresses.
+    void Clear()
+    {
+        LOCK(cs);
+        mapInfo.clear();
+        mapAddr.clear();
+        vRandom.clear();
+        vvTried.assign(ADDRMAN_TRIED_BUCKET_COUNT, std::vector<int>(0));
+        vvNew.assign(ADDRMAN_NEW_BUCKET_COUNT, std::set<int>());
+        nKey.resize(32);
+        GetRandBytes(&nKey[0], 32);
+        nIdCount = 0;
+        nTried = 0;
+        nNew = 0;
+    }
+
     // Return the number of (unique) addresses in all tables.
     int size()
     {

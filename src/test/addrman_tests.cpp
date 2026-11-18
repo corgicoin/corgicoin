@@ -48,6 +48,14 @@ BOOST_AUTO_TEST_CASE(counts_past_the_tables_are_refused)
         CAddrMan am;
         CDataStream ss = MakeFile(0, 1 << 30, ADDRMAN_NEW_BUCKET_COUNT, ADDRMAN_NEW_BUCKET_COUNT);
         BOOST_CHECK_THROW(ss >> am, std::exception);
+        // what the failed read left (a tried count of 1<<30 with empty tables would make Select spin) is gone after Clear,
+        // as init.cpp does on a failed load, and the manager works again
+        am.Clear();
+        BOOST_CHECK_EQUAL(am.size(), 0);
+        CAddress addr(CService("1.2.3.4", 62556));
+        BOOST_CHECK(am.Add(addr, CNetAddr("5.6.7.8")));
+        BOOST_CHECK_EQUAL(am.size(), 1);
+        BOOST_CHECK(am.Select().IsValid());
     }
 }
 
