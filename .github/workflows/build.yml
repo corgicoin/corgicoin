@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master]
 
+# the default token only needs to read the repository: no job here publishes anything
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
@@ -95,7 +99,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew install boost openssl@3 berkeley-db miniupnpc cmake zeromq
-          python3 -m pip install --break-system-packages pyzmq
+          python3 -m pip install --break-system-packages pyzmq==26.4.0
 
       - name: Build daemon
         run: |
@@ -323,7 +327,7 @@ jobs:
         run: |
           # MSYS2 has no pyzmq package for the MINGW64 environment (only for UCRT64 and the clang ones), and feature_zmq.py must not be skipped:
           # it is built from source against MSYS2's libzmq. (The Windows Python runs these tests about ten times slower.)
-          python3 -m pip install --break-system-packages pyzmq
+          python3 -m pip install --break-system-packages pyzmq==26.4.0
           CORGICOIND_ALT="$PWD/../prev/build/corgicoind.exe" python3 test/functional/test_runner.py --corgicoind build/corgicoind.exe -j 2
 
       - name: Upload Windows Qt wallet
