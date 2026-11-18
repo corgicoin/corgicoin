@@ -11,6 +11,7 @@ from test_framework import CorgiTestFramework, wait_until
 
 class HeadersFirstOldPeerTest(CorgiTestFramework):
     num_nodes = 1
+    extra_args = [["-headersfirst=1"]]
 
     def run_test(self):
         node = self.nodes[0]
