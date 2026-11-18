@@ -174,10 +174,14 @@ bool AppInit(int argc, char* argv[])
 
         fRet = AppInit2();
     }
+    // (Continue: PrintException rethrows, and an exception that leaves main aborts the process instead of letting Shutdown flush
+    // and close what init opened. A damaged blkindex.dat makes the database open throw.)
     catch (std::exception& e) {
-        PrintException(&e, "AppInit()");
+        PrintExceptionContinue(&e, "AppInit()");
+        fRet = false;
     } catch (...) {
-        PrintException(nullptr, "AppInit()");
+        PrintExceptionContinue(nullptr, "AppInit()");
+        fRet = false;
     }
     if (!fRet)
         Shutdown(nullptr);
