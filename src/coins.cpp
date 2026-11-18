@@ -310,6 +310,103 @@ bool Rebuild(const CBlockIndex* ptip)
     return true;
 }
 
+// The set is for a block that is in the block index but is not the chain's tip (a crash between the commit of the index and the commit of the
+// set, in either order, perhaps in the middle of a reorganisation): take the blocks of the set's own branch off, newest first, with the undo
+// data kept for each, back to the fork point with the chain, then apply the chain's blocks above it: instead of every block since the first.
+// False, with the set as it was (or at a consistent earlier tip), if a block cannot be read, its undo data is missing or a block does not
+// apply; the caller then rebuilds, which a pruned node cannot (it does not try, and leaves the set alone: see CoinsInit).
+bool CatchUp(const CBlockIndex* pMarker, const CBlockIndex* ptip)
+{
+    // the fork point: the newest block that both are built on
+    const CBlockIndex* a = pMarker;
+    const CBlockIndex* b = ptip;
+    while (a && b && a != b)
+    {
+        if (a->nHeight > b->nHeight)
+            a = a->pprev;
+        else if (b->nHeight > a->nHeight)
+            b = b->pprev;
+        else
+        {
+            a = a->pprev;
+            b = b->pprev;
+        }
+    }
+    if (!a || a != b)
+        return false;
+    const CBlockIndex* pFork = a;
+    std::vector<const CBlockIndex*> vChain;
+    for (const CBlockIndex* p = ptip; p && p != pFork; p = p->pprev)
+        vChain.push_back(p);
+    ClearPending();
+    int nBack = 0;
+    for (const CBlockIndex* p = pMarker; p != pFork; p = p->pprev)
+    {
+        CBlock block;
+        CBlockUndo undo;
+        if (!block.ReadFromDisk(p, true, false) || !GetUndo(p->GetBlockHash(), undo))
+        {
+            LogPrintf("COINS: block %d of the set's own branch cannot be taken off (no block data or no undo data)\n", p->nHeight);
+            ClearPending();
+            return false;
+        }
+        ApplyDisconnect(block, p->GetBlockHash(), undo);
+        if (fTxnBroken)
+        {
+            LogPrintf("COINS: the set's own branch does not come off cleanly at height %d\n", p->nHeight);
+            ClearPending();
+            return false;
+        }
+        mapPendingUndo.erase(p->GetBlockHash());
+        setPendingUndoErase.insert(p->GetBlockHash());
+        nBack++;
+    }
+    LogPrintf("COINS: the set is %d blocks off the chain's branch and %d behind its tip; fixing\n", nBack, (int)vChain.size());
+    if (vChain.empty())
+    {
+        // only blocks to take off: the set is now for the fork point, which is the tip
+        if (!WritePending(ptip->GetBlockHash()))
+        {
+            ClearPending();
+            return false;
+        }
+        LogPrintf("COINS: caught up\n");
+        return true;
+    }
+    int nSince = 0;
+    for (auto it = vChain.rbegin(); it != vChain.rend(); ++it)
+    {
+        const CBlockIndex* pindex = *it;
+        CBlock block;
+        if (!block.ReadFromDisk(pindex, true))
+        {
+            LogPrintf("COINS: block %d could not be read while catching up\n", pindex->nHeight);
+            ClearPending();
+            return false;
+        }
+        CBlockUndo undo;
+        ApplyConnect(block, pindex->nHeight, undo);
+        if (fTxnBroken)
+        {
+            LogPrintf("COINS: the chain does not apply cleanly at height %d\n", pindex->nHeight);
+            ClearPending();
+            return false;
+        }
+        mapPendingUndo[pindex->GetBlockHash()] = undo;
+        if (++nSince >= 500 || pindex == ptip)
+        {
+            if (!WritePending(pindex->GetBlockHash()))
+            {
+                ClearPending();
+                return false;
+            }
+            nSince = 0;
+        }
+    }
+    LogPrintf("COINS: caught up\n");
+    return true;
+}
+
 void GiveUp()
 {
     LogPrintf("COINS: the unspent set is not available; the node runs on the transaction index alone\n");
@@ -385,6 +482,13 @@ bool CoinsInit()
     const bool fEmptyChain = !pindexBest || pindexBest->nHeight == 0;
     if (fHave ? hashBest == hashChain : fEmptyChain)
         return true;
+    if (fHave)
+    {
+        // the set is for another block of the index than the tip (a crash between the two commits): mend it from there if that can be done
+        auto mi = mapBlockIndex.find(hashBest);
+        if (mi != mapBlockIndex.end() && CatchUp(mi->second, pindexBest))
+            return true;
+    }
     if (!Rebuild(pindexBest))
     {
         GiveUp();
