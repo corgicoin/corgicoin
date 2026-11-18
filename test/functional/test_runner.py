@@ -87,6 +87,7 @@ TESTS = [
     "p2p_inbound_group.py",
     "p2p_foreign_peer.py",
     "p2p_alerts_retired.py",
+    "feature_bootstrap_export.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 

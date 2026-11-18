@@ -173,6 +173,7 @@ extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.c
 extern Value getpeerinfo(const Array& params, bool fHelp);
 extern Value ping(const Array& params, bool fHelp);
 extern Value getmemoryinfo(const Array& params, bool fHelp);
+Value exportblocks(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -3744,6 +3745,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },
     { "uptime",                 &uptime,                 true },
+    { "exportblocks",           &exportblocks,           false },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -4841,6 +4843,73 @@ void ThreadRPCServer3(void* parg)
     nRPCConnectionsOpen--;
 }
 
+Value exportblocks(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 3)
+        throw runtime_error(
+            "exportblocks <file> [start=0] [end=tip]\n"
+            "Writes the blocks of the best chain from height start to end to a new file in the format -loadblock reads\n"
+            "(each block as the network magic, its size and its bytes), so a new node can be started from it:\n"
+            "  corgicoind -loadblock=<file>\n"
+            "The file must not exist. The node is busy while this runs (the whole call holds the node lock): export a long chain\n"
+            "in several ranges. Returns {file, blocks, bytes}.");
+    RPCTypeCheck(params, {str_type, int_type, int_type});
+
+    const std::string strFile = params[0].get_str();
+    const int nStart = params.size() > 1 ? params[1].get_int() : 0;
+    const int nEnd = params.size() > 2 ? params[2].get_int() : nBestHeight;
+    if (nStart < 0 || nEnd > nBestHeight || nStart > nEnd)
+        throw JSONRPCError(-8, strprintf("Block range out of bounds: the chain is %d blocks long", nBestHeight));
+    if (strFile.empty())
+        throw JSONRPCError(-8, "No file name");
+    {
+        // never overwrite: the name could be any file the node's user can write
+        std::ifstream exists(strFile.c_str());
+        if (exists.good())
+            throw JSONRPCError(-8, "The file exists already: name a new one");
+    }
+
+    // walk to the first block of the range from the tip's side (the chain is a linked list of index entries)
+    CBlockIndex* pindex = pindexBest;
+    while (pindex && pindex->nHeight > nEnd)
+        pindex = pindex->pprev;
+    std::vector<CBlockIndex*> vChain;
+    for (; pindex && pindex->nHeight >= nStart; pindex = pindex->pprev)
+        vChain.push_back(pindex);
+    std::reverse(vChain.begin(), vChain.end());
+
+    FILE* file = fopen(strFile.c_str(), "wb");    // (the check above said it is not there; "x" is not understood on every platform)
+    if (!file)
+        throw JSONRPCError(-4, "Cannot create the file");
+    CAutoFile out(file, SER_DISK, CLIENT_VERSION);
+    int64_t nBytes = 0;
+    try
+    {
+        for (CBlockIndex* p : vChain)
+        {
+            CBlock block;
+            if (!block.ReadFromDisk(p))
+                throw std::runtime_error(strprintf("Block %d could not be read from disk", p->nHeight));
+            const unsigned int nSize = ::GetSerializeSize(block, SER_DISK, CLIENT_VERSION);
+            out << FLATDATA(pchMessageStart) << nSize << block;
+            nBytes += 4 + 4 + nSize;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        out.fclose();
+        remove(strFile.c_str());        // not a file anyone should load half of
+        throw JSONRPCError(-1, e.what());
+    }
+    out.fclose();
+
+    Object r;
+    r.emplace_back("file", strFile);
+    r.emplace_back("blocks", (int)vChain.size());
+    r.emplace_back("bytes", nBytes);
+    return r;
+}
+
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
 {
     // Find method
@@ -4959,6 +5028,8 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "gethdseed"              && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "exportblocks"           && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "exportblocks"           && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
