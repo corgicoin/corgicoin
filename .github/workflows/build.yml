@@ -95,7 +95,7 @@ jobs:
         run: |
           # The node's stderr is kept by the test framework, and a test fails on "runtime error:" (UBSan) or
           # "AddressSanitizer" in it, and on a node that does not stop cleanly. Leak detection is off for the daemon: it
-          # exits through exit() with its threads still running, which is not a leak a test can act on.
+          # ends with _Exit after a clean shutdown (no static destructors run), so what is still allocated then is not a leak.
           export ASAN_OPTIONS=detect_leaks=0:abort_on_error=0 UBSAN_OPTIONS=print_stacktrace=1
           python3 test/functional/test_runner.py --corgicoind build-san/corgicoind -j 2
 
