@@ -177,6 +177,8 @@ Value exportblocks(const Array& params, bool fHelp);
 Value estimatefee(const Array& params, bool fHelp);
 Value getrpcinfo(const Array& params, bool fHelp);
 Value logging(const Array& params, bool fHelp);
+
+Value getmetrics(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -3755,6 +3757,8 @@ static const CRPCCommand vRPCCommands[] =
     { "estimatefee",            &estimatefee,            true },
     { "getrpcinfo",             &getrpcinfo,             true },
     { "logging",                &logging,                true },
+
+    { "getmetrics",             &getmetrics,             true },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -5006,6 +5010,49 @@ Value logging(const Array& params, bool fHelp)
     for (const auto& c : GetLogCategories())
         r.emplace_back(c.first, c.second);
     return r;
+}
+
+Value getmetrics(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getmetrics\n"
+            "Returns node metrics as text in the Prometheus exposition format (one gauge or counter per line), for a scraper.\n"
+            "Blocks, headers of the best chain, peers (in and out), memory pool size, traffic, uptime and RPC calls in flight.");
+    int nIn = 0, nOut = 0;
+    {
+        LOCK(cs_vNodes);
+        for (const CNode* pnode : vNodes)
+            (pnode->fInbound ? nIn : nOut)++;
+    }
+    int64 nMempoolTxs = 0, nMempoolBytes = 0;
+    {
+        LOCK(mempool.cs);
+        nMempoolTxs = (int64)mempool.mapTx.size();
+        for (const auto& item : mempool.mapTx)
+            nMempoolBytes += (int64)::GetSerializeSize(item.second, SER_NETWORK, PROTOCOL_VERSION);
+    }
+    int64 nActive = 0;
+    {
+        LOCK(cs_activeRPC);
+        nActive = (int64)listActiveRPC.size();
+    }
+    std::string s;
+    auto metric = [&](const char* pszName, const char* pszType, const char* pszHelp, const std::string& strValue, const char* pszLabels = "") {
+        s += strprintf("# HELP %s %s\n# TYPE %s %s\n%s%s %s\n", pszName, pszHelp, pszName, pszType, pszName, pszLabels, strValue.c_str());
+    };
+    metric("corgicoin_blocks", "gauge", "Height of the best chain", strprintf("%d", nBestHeight));
+    metric("corgicoin_difficulty", "gauge", "Difficulty of the best block", strprintf("%.8g", GetDifficulty()));
+    metric("corgicoin_initial_block_download", "gauge", "1 while the node is still catching up", IsInitialBlockDownload() ? "1" : "0");
+    // one metric, two samples: a second HELP or TYPE line for the same name is an error to a scraper
+    s += strprintf("# HELP corgicoin_peers Connected peers\n# TYPE corgicoin_peers gauge\ncorgicoin_peers{direction=\"in\"} %d\ncorgicoin_peers{direction=\"out\"} %d\n", nIn, nOut);
+    metric("corgicoin_mempool_transactions", "gauge", "Transactions in the memory pool", strprintf("%" PRI64d, nMempoolTxs));
+    metric("corgicoin_mempool_bytes", "gauge", "Serialized size of the memory pool", strprintf("%" PRI64d, nMempoolBytes));
+    metric("corgicoin_network_received_bytes_total", "counter", "Bytes received from peers", strprintf("%" PRI64d, (int64)GetTotalBytesRecv()));
+    metric("corgicoin_network_sent_bytes_total", "counter", "Bytes sent to peers", strprintf("%" PRI64d, (int64)GetTotalBytesSent()));
+    metric("corgicoin_uptime_seconds", "gauge", "Seconds since the node started", strprintf("%" PRI64d, (int64)(GetTime() - nNodeStartTime)));
+    metric("corgicoin_rpc_active", "gauge", "RPC calls being served or waiting", strprintf("%" PRI64d, nActive));
+    return s;
 }
 
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
