@@ -14,7 +14,6 @@ import time
 
 REGTEST_MAGIC = bytes.fromhex("fac0b6da")
 PROTOCOL_VERSION = 70014
-PROTOCOL_VERSION = 70001
 NODE_NETWORK = 1
 
 
@@ -41,7 +40,7 @@ class P2PConnection:
     wedged peer looks like to the node.
     """
 
-    def __init__(self, port, answer_pings=True, start_height=0):
+    def __init__(self, port, answer_pings=True, start_height=0, protocol_version=PROTOCOL_VERSION):
         self.answer_pings = answer_pings
         self.got_verack = False
         self.pings_received = 0
@@ -52,7 +51,7 @@ class P2PConnection:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._read_loop, daemon=True)
         self._thread.start()
-        payload = (struct.pack("<iQq", PROTOCOL_VERSION, NODE_NETWORK, int(time.time()))
+        payload = (struct.pack("<iQq", protocol_version, NODE_NETWORK, int(time.time()))
                    + ser_addr(port=port) + ser_addr()
                    + struct.pack("<Q", random.getrandbits(64))
                    + ser_varstr("/corgi-mininode:0.1/")
