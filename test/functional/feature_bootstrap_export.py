@@ -24,6 +24,27 @@ class BootstrapExportTest(CorgiTestFramework):
         assert_raises_rpc_error(-8, "out of bounds", source.exportblocks, path + ".2", 50, 10)
         assert not os.path.exists(path + ".2")
 
+        if os.name != "nt":
+            self.log("nor through a symlink that points nowhere, nor over a file the node cannot read")
+            target = os.path.join(source.datadir, "elsewhere.dat")
+            link = os.path.join(source.datadir, "link.dat")
+            os.symlink(target, link)
+            assert_raises_rpc_error(-8, "exists already", source.exportblocks, link, 0, 5)
+            assert not os.path.exists(target), "the export followed the symlink"
+            locked = os.path.join(source.datadir, "locked.dat")
+            with open(locked, "w") as f:
+                f.write("keep me")
+            os.chmod(locked, 0o200)
+            assert_raises_rpc_error(-8, "exists already", source.exportblocks, locked, 0, 5)
+            os.chmod(locked, 0o600)
+            with open(locked) as f:
+                assert_equal(f.read(), "keep me")
+
+        self.log("a relative name is in the data directory")
+        info = source.exportblocks("relative.dat", 0, 5)
+        assert_equal(info["file"], os.path.join(source.datadir, "regtest", "relative.dat"))
+        assert os.path.exists(info["file"])
+
         self.log("a range can be written: blocks 100 to 110 are 11 blocks")
         assert_equal(source.exportblocks(path + ".part", 100, 110)["blocks"], 11)
 

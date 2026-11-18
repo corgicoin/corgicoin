@@ -31,8 +31,14 @@
 #include <memory>
 #include <list>
 #include <set>
+#include <cerrno>
+#include <fcntl.h>
 #ifndef WIN32
 #include <poll.h>
+#include <unistd.h>
+#else
+#include <io.h>
+#include <sys/stat.h>
 #endif
 
 using namespace std;
@@ -3753,7 +3759,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },
     { "uptime",                 &uptime,                 true },
-    { "exportblocks",           &exportblocks,           false },
+    { "exportblocks",           &exportblocks,           true },
     { "estimatefee",            &estimatefee,            true },
     { "getrpcinfo",             &getrpcinfo,             true },
     { "logging",                &logging,                true },
@@ -3774,7 +3780,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
     { "gettxout",               &gettxout,               false },
-    { "gettxoutsetinfo",        &gettxoutsetinfo,        false },
+    { "gettxoutsetinfo",        &gettxoutsetinfo,        true },
     { "createrawtransaction",   &createrawtransaction,   false },
     { "decoderawtransaction",   &decoderawtransaction,   false },
     { "signrawtransaction",     &signrawtransaction,     false },
@@ -4864,22 +4870,23 @@ Value exportblocks(const Array& params, bool fHelp)
             "Writes the blocks of the best chain from height start to end to a new file in the format -loadblock reads\n"
             "(each block as the network magic, its size and its bytes), so a new node can be started from it:\n"
             "  corgicoind -loadblock=<file>\n"
-            "The file must not exist. The node is busy while this runs (the whole call holds the node lock): export a long chain\n"
+            "The file must not exist; a relative name is in the data directory. The node is busy while this runs (the whole call holds the node lock): export a long chain\n"
             "in several ranges. Returns {file, blocks, bytes}.");
     RPCTypeCheck(params, {str_type, int_type, int_type});
 
-    const std::string strFile = params[0].get_str();
+    std::string strFile = params[0].get_str();
     const int nStart = params.size() > 1 ? params[1].get_int() : 0;
     const int nEnd = params.size() > 2 ? params[2].get_int() : nBestHeight;
     if (nStart < 0 || nEnd > nBestHeight || nStart > nEnd)
         throw JSONRPCError(-8, strprintf("Block range out of bounds: the chain is %d blocks long", nBestHeight));
     if (strFile.empty())
         throw JSONRPCError(-8, "No file name");
+    // a relative name is in the data directory (the daemon's working directory is wherever it was started), as for dumpwallet
     {
-        // never overwrite: the name could be any file the node's user can write
-        std::ifstream exists(strFile.c_str());
-        if (exists.good())
-            throw JSONRPCError(-8, "The file exists already: name a new one");
+        std::filesystem::path path(strFile);
+        if (path.is_relative())
+            path = GetDataDir() / path;
+        strFile = path.string();
     }
 
     // walk to the first block of the range from the tip's side (the chain is a linked list of index entries)
@@ -4891,9 +4898,33 @@ Value exportblocks(const Array& params, bool fHelp)
         vChain.push_back(pindex);
     std::reverse(vChain.begin(), vChain.end());
 
-    FILE* file = fopen(strFile.c_str(), "wb");    // (the check above said it is not there; "x" is not understood on every platform)
+    // Created here and only here, never opened if it exists and never through a symlink: the name can be any path the node's
+    // user can write, and block data holds bytes anyone could put in a transaction. (A check before an fopen let a file the node
+    // cannot read, or a dangling symlink, through, and raced with the open.)
+#ifndef WIN32
+    const int fd = open(strFile.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);
+    FILE* file = fd >= 0 ? fdopen(fd, "wb") : nullptr;
+#else
+    const int fd = _open(strFile.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
+    FILE* file = fd >= 0 ? _fdopen(fd, "wb") : nullptr;
+#endif
     if (!file)
+    {
+#ifndef WIN32
+        const bool fExists = errno == EEXIST || errno == ELOOP;   // ELOOP: the name is a symlink (O_NOFOLLOW)
+#else
+        const bool fExists = errno == EEXIST;
+#endif
+        if (fd >= 0)
+#ifndef WIN32
+            close(fd);
+#else
+            _close(fd);
+#endif
+        if (fExists)
+            throw JSONRPCError(-8, "The file exists already: name a new one");
         throw JSONRPCError(-4, "Cannot create the file");
+    }
     CAutoFile out(file, SER_DISK, CLIENT_VERSION);
     int64_t nBytes = 0;
     try
@@ -4911,7 +4942,7 @@ Value exportblocks(const Array& params, bool fHelp)
     catch (const std::exception& e)
     {
         out.fclose();
-        remove(strFile.c_str());        // not a file anyone should load half of
+        remove(strFile.c_str());        // the file this call created: not one anyone should load half of
         throw JSONRPCError(-1, e.what());
     }
     out.fclose();
