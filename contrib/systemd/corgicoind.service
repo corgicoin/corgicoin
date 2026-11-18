@@ -1,0 +1,53 @@
+# systemd unit for corgicoind.
+#
+#   sudo useradd --system --home /var/lib/corgicoin --create-home --shell /usr/sbin/nologin corgicoin
+#   sudo install -d -o root -g corgicoin -m 0750 /etc/corgicoin
+#   sudo install -o root -g corgicoin -m 0640 corgicoin.conf /etc/corgicoin/corgicoin.conf
+#   sudo cp contrib/systemd/corgicoind.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now corgicoind
+#
+# The node runs in the foreground (no -daemon) and logs to the journal (-printtoconsole), so systemd sees it exit and can
+# restart it. Do not put rpcpassword on the command line: it shows in `ps`. Use rpcauth in the config file (contrib/rpcauth.py),
+# or leave both out and use the cookie in the data directory.
+
+[Unit]
+Description=CorgiCoin node
+Documentation=https://github.com/corgicoin/corgicoin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=corgicoin
+Group=corgicoin
+ExecStart=/usr/local/bin/corgicoind -datadir=/var/lib/corgicoin -conf=/etc/corgicoin/corgicoin.conf -printtoconsole -logtimestamps
+Restart=on-failure
+RestartSec=30
+
+# SIGTERM asks the node to shut down cleanly. Closing the databases can take minutes after a long run or a big reorganisation:
+# killing it before then (systemd's default is 90 seconds) risks a database that has to be recovered on the next start.
+KillSignal=SIGTERM
+TimeoutStopSec=600
+TimeoutStartSec=infinity
+
+# Open files: peers, block files and the wallet database
+LimitNOFILE=4096
+
+# Contain what a bug in the node could reach
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/var/lib/corgicoin
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

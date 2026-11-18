@@ -47,6 +47,7 @@ option(USE_ZMQ "Enable ZeroMQ notifications (-zmqpub*); needs libzmq. Off by def
 option(USE_DBUS "Enable D-Bus support for desktop notifications" OFF)
 option(BUILD_TESTS "Build test suite" OFF)
 option(ENABLE_HARDENING "Enable security hardening flags" ON)
+option(ENABLE_WERROR_FORMAT "Make a printf format that does not match its arguments a build error (the logging functions are checked)" OFF)
 
 # Platform detection
 if(WIN32)
@@ -126,9 +127,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wno-deprecated-declarations
     )
 
+    if(ENABLE_WERROR_FORMAT)
+        add_compile_options(-Werror=format)
+    endif()
+
     # GCC-specific warning suppressions (C++ only — avoid passing to C compiler)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-stringop-truncation> $<$<COMPILE_LANGUAGE:CXX>:-Wno-deprecated-copy>)
+    endif()
+
+    # Reproducible builds: the directory the source is in must not end up in the binary (__FILE__, assert messages, debug info)
+    if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
+       (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10.0))
+        add_compile_options(-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.)
     endif()
 
     # Security hardening flags
@@ -152,7 +163,26 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             add_link_options(
                 -Wl,-z,relro
                 -Wl,-z,now
+                -Wl,-z,noexecstack
             )
+
+            # _FORTIFY_SOURCE=3 (GCC 12+; on an older glibc it behaves as 2) and control-flow protection (x86 only)
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
+                add_compile_options(-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3)
+            endif()
+            if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$" AND
+               ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0) OR
+                (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 7.0)))
+                add_compile_options(-fcf-protection=full)
+            endif()
+        endif()
+
+        # Windows (MinGW): address space randomisation and no-execute data
+        if(WINDOWS AND MINGW)
+            add_link_options(-Wl,--dynamicbase -Wl,--nxcompat)
+            if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+                add_link_options(-Wl,--high-entropy-va -Wl,--image-base,0x140000000)
+            endif()
         endif()
     endif()
 endif()
@@ -207,6 +237,7 @@ set(DAEMON_SOURCES
     src/walletdump.cpp
     src/rpcnet.cpp
     src/rpcrawtransaction.cpp
+    src/utxoset.cpp
     src/bech32.cpp
     src/bip32.cpp
     src/bip39.cpp
@@ -524,6 +555,35 @@ if(BUILD_QT_GUI)
     endif()
 endif()
 
+# Fuzz targets (src/fuzz). With clang and -DFUZZ_LIBFUZZER=ON this is a libFuzzer binary; otherwise it is built with a small
+# driver that replays a corpus and mutates it, which needs nothing but the compiler.
+option(BUILD_FUZZ "Build the fuzz targets (src/fuzz)" OFF)
+option(FUZZ_LIBFUZZER "Link the fuzz binary with libFuzzer (clang only)" OFF)
+if(BUILD_FUZZ)
+    set(FUZZ_DAEMON_SOURCES ${DAEMON_SOURCES})
+    list(REMOVE_ITEM FUZZ_DAEMON_SOURCES src/init.cpp)
+    set(FUZZ_SOURCES src/fuzz/fuzz.cpp)
+    if(NOT FUZZ_LIBFUZZER)
+        list(APPEND FUZZ_SOURCES src/fuzz/fuzz_driver.cpp)
+    endif()
+    add_executable(fuzz_corgicoin ${FUZZ_SOURCES} ${FUZZ_DAEMON_SOURCES} ${JSON_SOURCES})
+    add_dependencies(fuzz_corgicoin generate_build_info)
+    if(FUZZ_LIBFUZZER)
+        target_compile_definitions(fuzz_corgicoin PRIVATE FUZZ_LIBFUZZER)
+        # coverage instrumentation on every source the target compiles, not only at link time: without it libFuzzer runs blind
+        target_compile_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer-no-link)
+        target_link_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer)
+    endif()
+    target_link_libraries(fuzz_corgicoin ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
+        Threads::Threads ${CMAKE_DL_LIBS})
+    if(LINUX)
+        target_link_libraries(fuzz_corgicoin rt)
+    endif()
+    if(USE_UPNP)
+        target_link_libraries(fuzz_corgicoin ${MINIUPNPC_LIBRARY})
+    endif()
+endif()
+
 # Test suite
 if(BUILD_TESTS)
     enable_testing()
@@ -540,6 +600,7 @@ if(BUILD_TESTS)
         src/test/getarg_tests.cpp
         src/test/key_tests.cpp
         src/test/miner_tests.cpp
+        src/test/addrman_tests.cpp
         src/test/mruset_tests.cpp
         src/test/multisig_tests.cpp
         src/test/netbase_tests.cpp

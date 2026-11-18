@@ -31,8 +31,14 @@
 #include <memory>
 #include <list>
 #include <set>
+#include <cerrno>
+#include <fcntl.h>
 #ifndef WIN32
 #include <poll.h>
+#include <unistd.h>
+#else
+#include <io.h>
+#include <sys/stat.h>
 #endif
 
 using namespace std;
@@ -173,6 +179,12 @@ extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.c
 extern Value getpeerinfo(const Array& params, bool fHelp);
 extern Value ping(const Array& params, bool fHelp);
 extern Value getmemoryinfo(const Array& params, bool fHelp);
+Value exportblocks(const Array& params, bool fHelp);
+Value estimatefee(const Array& params, bool fHelp);
+Value getrpcinfo(const Array& params, bool fHelp);
+Value logging(const Array& params, bool fHelp);
+
+Value getmetrics(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -189,6 +201,7 @@ extern Value dumpprivkey(const Array& params, bool fHelp); // in rpcdump.cpp
 extern Value importprivkey(const Array& params, bool fHelp);
 extern Value getrawtransaction(const Array& params, bool fHelp); // in rcprawtransaction.cpp
 extern Value gettxout(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
+extern Value gettxoutsetinfo(const Array& params, bool fHelp); // in utxoset.cpp
 extern Value testmempoolaccept(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
 extern Value prioritisetransaction(const Array& params, bool fHelp); // in rpcrawtransaction.cpp
 extern Value listunspent(const Array& params, bool fHelp);
@@ -2345,10 +2358,11 @@ Value getworkex(const Array& params, bool fHelp)
             "If [data, coinbase] is not specified, returns extended work data.\n"
         );
 
-    if (vNodes.empty())
+    // regtest mines without peers, like generate, createauxblock and getblocktemplate
+    if (vNodes.empty() && !fRegTest)
         throw JSONRPCError(-9, "CorgiCoin is not connected!!!");
 
-    if (IsInitialBlockDownload())
+    if (IsInitialBlockDownload() && !fRegTest)
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
     using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
@@ -2416,7 +2430,7 @@ Value getworkex(const Array& params, bool fHelp)
         result.emplace_back("coinbase", HexStr(ssTx.begin(), ssTx.end()));
 
         Array merkle_arr;
-        LogPrintf("DEBUG: merkle size %i\n", merkle.size());
+        LogPrintf("DEBUG: merkle size %i\n", (int)merkle.size());
 
         for (uint256 merkleh : merkle) {
             LogPrintf("%s\n", merkleh.ToString().c_str());
@@ -2481,10 +2495,11 @@ Value getwork(const Array& params, bool fHelp)
             "  \"target\" : little endian hash target\n"
             "If [data] is specified, tries to solve the block and returns true if it was successful.");
 
-    if (vNodes.empty())
+    // regtest mines without peers, like generate, createauxblock and getblocktemplate
+    if (vNodes.empty() && !fRegTest)
         throw JSONRPCError(-9, "CorgiCoin is not connected!");
 
-    if (IsInitialBlockDownload())
+    if (IsInitialBlockDownload() && !fRegTest)
         throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
     using mapNewBlock_t = map<uint256, pair<CBlock*, CScript> >;
@@ -3312,6 +3327,7 @@ Value getblockchaininfo(const Array& params, bool fHelp)
         obj.emplace_back("chainwork", pindexBest->bnChainWork.GetHex());
     }
     obj.emplace_back("initialblockdownload", IsInitialBlockDownload());
+    obj.emplace_back("minimumchainwork", bnMinimumChainWork.GetHex());
 
     Object softforks;
     softforks.emplace_back("lwma", SoftForkStatus(GetLwmaForkHeight()));
@@ -3743,6 +3759,12 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },
     { "uptime",                 &uptime,                 true },
+    { "exportblocks",           &exportblocks,           true },
+    { "estimatefee",            &estimatefee,            true },
+    { "getrpcinfo",             &getrpcinfo,             true },
+    { "logging",                &logging,                true },
+
+    { "getmetrics",             &getmetrics,             true },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -3758,6 +3780,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
     { "gettxout",               &gettxout,               false },
+    { "gettxoutsetinfo",        &gettxoutsetinfo,        true },
     { "createrawtransaction",   &createrawtransaction,   false },
     { "decoderawtransaction",   &decoderawtransaction,   false },
     { "signrawtransaction",     &signrawtransaction,     false },
@@ -4839,8 +4862,235 @@ void ThreadRPCServer3(void* parg)
     nRPCConnectionsOpen--;
 }
 
+Value exportblocks(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 3)
+        throw runtime_error(
+            "exportblocks <file> [start=0] [end=tip]\n"
+            "Writes the blocks of the best chain from height start to end to a new file in the format -loadblock reads\n"
+            "(each block as the network magic, its size and its bytes), so a new node can be started from it:\n"
+            "  corgicoind -loadblock=<file>\n"
+            "The file must not exist; a relative name is in the data directory. The node is busy while this runs (the whole call holds the node lock): export a long chain\n"
+            "in several ranges. Returns {file, blocks, bytes}.");
+    RPCTypeCheck(params, {str_type, int_type, int_type});
+
+    std::string strFile = params[0].get_str();
+    const int nStart = params.size() > 1 ? params[1].get_int() : 0;
+    const int nEnd = params.size() > 2 ? params[2].get_int() : nBestHeight;
+    if (nStart < 0 || nEnd > nBestHeight || nStart > nEnd)
+        throw JSONRPCError(-8, strprintf("Block range out of bounds: the chain is %d blocks long", nBestHeight));
+    if (strFile.empty())
+        throw JSONRPCError(-8, "No file name");
+    // a relative name is in the data directory (the daemon's working directory is wherever it was started), as for dumpwallet
+    {
+        std::filesystem::path path(strFile);
+        if (path.is_relative())
+            path = GetDataDir() / path;
+        strFile = path.string();
+    }
+
+    // walk to the first block of the range from the tip's side (the chain is a linked list of index entries)
+    CBlockIndex* pindex = pindexBest;
+    while (pindex && pindex->nHeight > nEnd)
+        pindex = pindex->pprev;
+    std::vector<CBlockIndex*> vChain;
+    for (; pindex && pindex->nHeight >= nStart; pindex = pindex->pprev)
+        vChain.push_back(pindex);
+    std::reverse(vChain.begin(), vChain.end());
+
+    // Created here and only here, never opened if it exists and never through a symlink: the name can be any path the node's
+    // user can write, and block data holds bytes anyone could put in a transaction. (A check before an fopen let a file the node
+    // cannot read, or a dangling symlink, through, and raced with the open.)
+#ifndef WIN32
+    const int fd = open(strFile.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);
+    FILE* file = fd >= 0 ? fdopen(fd, "wb") : nullptr;
+#else
+    const int fd = _open(strFile.c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
+    FILE* file = fd >= 0 ? _fdopen(fd, "wb") : nullptr;
+#endif
+    if (!file)
+    {
+#ifndef WIN32
+        const bool fExists = errno == EEXIST || errno == ELOOP;   // ELOOP: the name is a symlink (O_NOFOLLOW)
+#else
+        const bool fExists = errno == EEXIST;
+#endif
+        if (fd >= 0)
+#ifndef WIN32
+            close(fd);
+#else
+            _close(fd);
+#endif
+        if (fExists)
+            throw JSONRPCError(-8, "The file exists already: name a new one");
+        throw JSONRPCError(-4, "Cannot create the file");
+    }
+    CAutoFile out(file, SER_DISK, CLIENT_VERSION);
+    int64_t nBytes = 0;
+    try
+    {
+        for (CBlockIndex* p : vChain)
+        {
+            CBlock block;
+            if (!block.ReadFromDisk(p))
+                throw std::runtime_error(strprintf("Block %d could not be read from disk", p->nHeight));
+            const unsigned int nSize = ::GetSerializeSize(block, SER_DISK, CLIENT_VERSION);
+            out << FLATDATA(pchMessageStart) << nSize << block;
+            nBytes += 4 + 4 + nSize;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        out.fclose();
+        remove(strFile.c_str());        // the file this call created: not one anyone should load half of
+        throw JSONRPCError(-1, e.what());
+    }
+    out.fclose();
+
+    Object r;
+    r.emplace_back("file", strFile);
+    r.emplace_back("blocks", (int)vChain.size());
+    r.emplace_back("bytes", nBytes);
+    return r;
+}
+
+Value estimatefee(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "estimatefee <nblocks>\n"
+            "Estimates the fee per kB (in coins) a transaction needs to be in a block within <nblocks> blocks (1 to 25): the lowest\n"
+            "fee rate at which this node has seen at least 85% of the transactions that paid it or more confirm that fast.\n"
+            "Returns -1 when the node has not seen enough yet. The node learns only from blocks it has seen since it started,\n"
+            "so after a restart it says -1 for a while.");
+    RPCTypeCheck(params, {int_type});
+    const int nBlocks = params[0].get_int();
+    if (nBlocks < 1 || nBlocks > CFeeEstimator::MAX_TARGET)
+        throw JSONRPCError(-8, strprintf("nblocks must be 1 to %d", (int)CFeeEstimator::MAX_TARGET));
+    const double dRate = feeEstimator.Estimate(nBlocks);
+    if (dRate < 0)
+        return -1;
+    return ValueFromAmount((int64)dRate);
+}
+
+// The calls being served (running, or waiting for the node lock), for getrpcinfo
+static CCriticalSection cs_activeRPC;
+static std::list<std::pair<std::string, int64> > listActiveRPC;
+namespace {
+struct ActiveRPC
+{
+    std::list<std::pair<std::string, int64> >::iterator it;
+    explicit ActiveRPC(const std::string& strMethod)
+    {
+        LOCK(cs_activeRPC);
+        listActiveRPC.emplace_back(strMethod, GetTimeMillis());
+        it = std::prev(listActiveRPC.end());
+    }
+    ~ActiveRPC()
+    {
+        LOCK(cs_activeRPC);
+        listActiveRPC.erase(it);
+    }
+};
+}
+
+Value getrpcinfo(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getrpcinfo\n"
+            "Returns details of the RPC server: the calls being served now (running, or waiting for the node lock)\n"
+            "with how long each has been at it in milliseconds, and where the log is.");
+    Array calls;
+    {
+        LOCK(cs_activeRPC);
+        const int64 nNow = GetTimeMillis();
+        for (const auto& item : listActiveRPC)
+        {
+            Object o;
+            o.emplace_back("method", item.first);
+            o.emplace_back("duration", (int64_t)(nNow - item.second));
+            calls.push_back(o);
+        }
+    }
+    Object r;
+    r.emplace_back("active_commands", calls);
+    r.emplace_back("logpath", (GetDataDir() / "debug.log").string());
+    return r;
+}
+
+Value logging(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 2)
+        throw runtime_error(
+            "logging [include] [exclude]\n"
+            "Gets or sets which debug log categories are on, without a restart.\n"
+            "include and exclude are arrays of category names; the result lists every category and whether it is on.\n"
+            "Categories: net, mempool, rpc, db, wallet, mining, addrman, selectcoins.");
+    for (unsigned int i = 0; i < params.size(); i++)
+    {
+        if (params[i].type() != array_type)
+            throw JSONRPCError(-8, "include and exclude must be arrays of category names");
+        for (const Value& v : params[i].get_array())
+        {
+            if (v.type() != str_type || !SetLogCategory(v.get_str(), i == 0))
+                throw JSONRPCError(-8, "unknown logging category");
+        }
+    }
+    Object r;
+    for (const auto& c : GetLogCategories())
+        r.emplace_back(c.first, c.second);
+    return r;
+}
+
+Value getmetrics(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getmetrics\n"
+            "Returns node metrics as text in the Prometheus exposition format (one gauge or counter per line), for a scraper.\n"
+            "Blocks and difficulty of the best chain, peers (in and out), memory pool size, traffic, uptime and RPC calls in flight.\n"
+            "It is an RPC like any other (authenticated): a Prometheus scrape needs an exporter that calls it.");
+    int nIn = 0, nOut = 0;
+    {
+        LOCK(cs_vNodes);
+        for (const CNode* pnode : vNodes)
+            (pnode->fInbound ? nIn : nOut)++;
+    }
+    int64 nMempoolTxs = 0, nMempoolBytes = 0;
+    {
+        LOCK(mempool.cs);
+        nMempoolTxs = (int64)mempool.mapTx.size();
+        for (const auto& item : mempool.mapTx)
+            nMempoolBytes += (int64)::GetSerializeSize(item.second, SER_NETWORK, PROTOCOL_VERSION);
+    }
+    int64 nActive = 0;
+    {
+        LOCK(cs_activeRPC);
+        nActive = (int64)listActiveRPC.size();
+    }
+    std::string s;
+    auto metric = [&](const char* pszName, const char* pszType, const char* pszHelp, const std::string& strValue, const char* pszLabels = "") {
+        s += strprintf("# HELP %s %s\n# TYPE %s %s\n%s%s %s\n", pszName, pszHelp, pszName, pszType, pszName, pszLabels, strValue.c_str());
+    };
+    metric("corgicoin_blocks", "gauge", "Height of the best chain", strprintf("%d", nBestHeight));
+    metric("corgicoin_difficulty", "gauge", "Difficulty of the best block", strprintf("%.8g", GetDifficulty()));
+    metric("corgicoin_initial_block_download", "gauge", "1 while the node is still catching up", IsInitialBlockDownload() ? "1" : "0");
+    // one metric, two samples: a second HELP or TYPE line for the same name is an error to a scraper
+    s += strprintf("# HELP corgicoin_peers Connected peers\n# TYPE corgicoin_peers gauge\ncorgicoin_peers{direction=\"in\"} %d\ncorgicoin_peers{direction=\"out\"} %d\n", nIn, nOut);
+    metric("corgicoin_mempool_transactions", "gauge", "Transactions in the memory pool", strprintf("%" PRI64d, nMempoolTxs));
+    metric("corgicoin_mempool_bytes", "gauge", "Serialized size of the memory pool", strprintf("%" PRI64d, nMempoolBytes));
+    metric("corgicoin_network_received_bytes_total", "counter", "Bytes received from peers", strprintf("%" PRI64d, (int64)GetTotalBytesRecv()));
+    metric("corgicoin_network_sent_bytes_total", "counter", "Bytes sent to peers", strprintf("%" PRI64d, (int64)GetTotalBytesSent()));
+    metric("corgicoin_uptime_seconds", "gauge", "Seconds since the node started", strprintf("%" PRI64d, (int64)(GetTime() - nNodeStartTime)));
+    metric("corgicoin_rpc_active", "gauge", "RPC calls being served or waiting", strprintf("%" PRI64d, nActive));
+    return s;
+}
+
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
 {
+    ActiveRPC active(strMethod);
+
     // Find method
     const CRPCCommand *pcmd = tableRPC[strMethod];
     if (!pcmd)
@@ -4957,6 +5207,11 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "gethdseed"              && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "exportblocks"           && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "exportblocks"           && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "estimatefee"            && n > 0) ConvertTo<int64_t>(params[0]);
+    if (strMethod == "logging"                && n > 0) ConvertTo<Array>(params[0]);
+    if (strMethod == "logging"                && n > 1) ConvertTo<Array>(params[1]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);

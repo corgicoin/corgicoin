@@ -99,7 +99,63 @@ static std::atomic<uint64> nTotalBytesSent{0};
 uint64 GetTotalBytesRecv() { return nTotalBytesRecv.load(); }
 uint64 GetTotalBytesSent() { return nTotalBytesSent.load(); }
 void RecordBytesRecv(uint64 nBytes) { nTotalBytesRecv += nBytes; }
-void RecordBytesSent(uint64 nBytes) { nTotalBytesSent += nBytes; }
+
+static std::atomic<uint64> nUploadTarget{0};           // bytes per cycle; 0 means no limit
+static std::atomic<uint64> nUploadInCycle{0};
+static std::atomic<int64> nUploadCycleStart{0};
+static const int64 UPLOAD_CYCLE_SECONDS = 24 * 60 * 60;
+
+static void RollUploadCycle()
+{
+    const int64 now = GetTime();
+    if (nUploadCycleStart.load() == 0 || now - nUploadCycleStart.load() >= UPLOAD_CYCLE_SECONDS)
+    {
+        nUploadCycleStart = now;
+        nUploadInCycle = 0;
+    }
+}
+
+void RecordBytesSent(uint64 nBytes)
+{
+    nTotalBytesSent += nBytes;
+    if (nUploadTarget.load() != 0)
+    {
+        RollUploadCycle();
+        nUploadInCycle += nBytes;
+    }
+}
+
+void SetMaxUploadTarget(uint64 nBytesPerCycle) { nUploadTarget = nBytesPerCycle; }
+uint64 GetUploadTarget() { return nUploadTarget.load(); }
+
+bool UploadTargetReached(bool fHistorical)
+{
+    const uint64 nTarget = nUploadTarget.load();
+    if (nTarget == 0)
+        return false;
+    RollUploadCycle();
+    // Old blocks stop a tenth of the target early: what is left is kept for the blocks that are new, which the rest of the
+    // network needs from this node more than a node syncing from scratch needs the old ones.
+    const uint64 nBuffer = fHistorical ? nTarget / 10 : 0;
+    return nUploadInCycle.load() + nBuffer >= nTarget;
+}
+
+uint64 GetUploadBytesLeft()
+{
+    const uint64 nTarget = nUploadTarget.load();
+    if (nTarget == 0)
+        return 0;
+    RollUploadCycle();
+    return nUploadInCycle.load() >= nTarget ? 0 : nTarget - nUploadInCycle.load();
+}
+
+int64 GetUploadTimeLeft()
+{
+    if (nUploadTarget.load() == 0)
+        return 0;
+    RollUploadCycle();
+    return std::max<int64>(0, UPLOAD_CYCLE_SECONDS - (GetTime() - nUploadCycleStart.load()));
+}
 
 static std::unique_ptr<CSemaphore> semOutbound;
 
@@ -915,17 +971,32 @@ void ThreadSocketHandler2(void* parg)
                 if (!addr.SetSockAddr((const struct sockaddr*)&sockaddr))
                     LogPrintf("warning: unknown socket family\n");
 
+            int nInGroup = 0;       // inbound peers already connected from this address's network group
             {
                 LOCK(cs_vNodes);
+                const std::vector<unsigned char> vchGroup = addr.GetGroup();
                 for (CNode* pnode : vNodes)
                     if (pnode->fInbound)
+                    {
                         nInbound++;
+                        if (!pnode->fDisconnect && pnode->addr.GetGroup() == vchGroup)
+                            nInGroup++;
+                    }
             }
+            // -maxinboundpergroup: one address range may not hold more than this many of the inbound slots (0: no limit). A peer on
+            // this machine is not counted, except under the regtest hook that lets a test see the rule at work.
+            const int nMaxPerGroup = (int)GetArg("-maxinboundpergroup", 0);
+            const bool fGroupFull = nMaxPerGroup > 0 && nInGroup >= nMaxPerGroup && (!addr.IsLocal() || (fRegTest && GetBoolArg("-testgrouplocal", false)));
 
             if (hSocket == INVALID_SOCKET)
             {
                 if (WSAGetLastError() != WSAEWOULDBLOCK)
                     LogPrintf("socket error accept failed: %d\n", WSAGetLastError());
+            }
+            else if (fGroupFull)
+            {
+                LogPrintf("connection from %s dropped (already %d inbound from its network group)\n", addr.ToString().c_str(), nInGroup);
+                closesocket(hSocket);
             }
             else if (nInbound >= GetMaxConnections() - MAX_OUTBOUND_CONNECTIONS)
             {
@@ -983,7 +1054,7 @@ void ThreadSocketHandler2(void* parg)
 
                     if (nPos > ReceiveBufferSize()) {
                         if (!pnode->fDisconnect)
-                            LogPrintf("socket recv flood control disconnect (%d bytes)\n", vRecv.size());
+                            LogPrintf("socket recv flood control disconnect (%d bytes)\n", (int)vRecv.size());
                         pnode->CloseSocketDisconnect();
                     }
                     else {

@@ -125,11 +125,21 @@ extern bool fTestNet;
 extern bool fRegTest;   // -regtest: private instant-mining chain; implies fTestNet
 extern bool fNoListen;
 extern bool fLogTimestamps;
+extern bool fLogIPs;      // -logips: public IPv4 addresses are written to the log (default); -logips=0 replaces them by [ip]
+extern bool fLogJson;     // -logformat=json: one JSON object per line in debug.log
+/** Replace public IPv4 addresses (with their port) by [ip]; private and loopback ones, and version numbers like v4.8.0.0, stay. */
+std::string MaskLogIPs(const std::string& str);
+/** One JSON object for a log line: {"time":"...","msg":"..."} */
+std::string LogLineToJson(const std::string& strLine, int64 nTime);
 extern bool fReopenDebugLog;
 
 void RandAddSeed();
 void RandAddSeedPerfmon();
-int OutputDebugStringF(const char* pszFormat, ...);
+int OutputDebugStringF(const char* pszFormat, ...)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 1, 2)))
+#endif
+    ;
 int my_snprintf(char* buffer, size_t limit, const char* format, ...);
 
 /* It is not allowed to use va_start with a pass-by-reference argument.

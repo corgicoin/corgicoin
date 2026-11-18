@@ -15,7 +15,9 @@
 #include "logging.h"
 #include "bip39.h"
 #include <openssl/crypto.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <random>
+#include <thread>
 
 using namespace std;
 
@@ -357,6 +359,15 @@ bool CWallet::AddCScript(const CScript& redeemScript)
     return CWalletDB(strWalletFile).WriteCScript(Hash160(redeemScript), redeemScript);
 }
 
+// -walletkdf=scrypt: encrypt, and change the passphrase of, a wallet with the memory-hard derivation
+static_assert(CLIENT_VERSION >= static_cast<int>(WalletFeature::FEATURE_SCRYPT_KDF),
+              "a release with scrypt wallets must be numbered at least FEATURE_SCRYPT_KDF, or it cannot open its own");
+
+static bool WantScryptKDF()
+{
+    return GetArg("-walletkdf", "") == "scrypt";
+}
+
 // Milliseconds since nStart, at least 1: the key-derivation calibration divides by this, and a fast machine can finish
 // a short derivation inside one clock tick
 static double ElapsedMillis(int64 nStart)
@@ -437,6 +448,17 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                 // passphrase must keep working in memory as well as on disk
                 const CMasterKey kOldMasterKey = pMasterKey.second;
 
+                // A wallet that uses scrypt stays on scrypt (going back to the weaker derivation by changing a passphrase would
+                // be a silent downgrade), and -walletkdf=scrypt moves a wallet to it.
+                const bool fScrypt = WantScryptKDF() || kOldMasterKey.nDerivationMethod == WALLET_DERIVATION_SCRYPT;
+                if (fScrypt)
+                {
+                    pMasterKey.second.nDerivationMethod = WALLET_DERIVATION_SCRYPT;
+                    pMasterKey.second.nDeriveIterations = WALLET_SCRYPT_N;
+                    LogPrintf("Wallet passphrase changed, derived with scrypt, N = %i\n", pMasterKey.second.nDeriveIterations);
+                }
+                else
+                {
                 // Re-encrypt with the standard derivation (this also migrates a v4.2-v4.7 PBKDF2 master key)
                 pMasterKey.second.nDerivationMethod = WALLET_DERIVATION_BYTESTOKEY_SHA512;
                 int64 nStartTime = GetTimeMillis();
@@ -451,9 +473,13 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                     pMasterKey.second.nDeriveIterations = 25000;
 
                 LogPrintf("Wallet passphrase changed to an nDeriveIterations of %i\n", pMasterKey.second.nDeriveIterations);
+                }
 
                 // The database can fail by returning false or by throwing (it cannot open its file): either way the
                 // old master key goes back, so memory and disk agree
+                // the wallet is marked as needing a release that has scrypt before the key that needs it is written
+                if (pMasterKey.second.nDerivationMethod == WALLET_DERIVATION_SCRYPT)
+                    SetMinVersion(WalletFeature::FEATURE_SCRYPT_KDF);
                 bool fPersisted = false;
                 try
                 {
@@ -595,6 +621,15 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     }
 
     CCrypter crypter;
+    if (WantScryptKDF())
+    {
+        // a fixed cost: the work is in the memory, not in a count that has to be timed
+        kMasterKey.nDerivationMethod = WALLET_DERIVATION_SCRYPT;
+        kMasterKey.nDeriveIterations = WALLET_SCRYPT_N;
+        LogPrintf("Encrypting Wallet with scrypt, N = %i\n", kMasterKey.nDeriveIterations);
+    }
+    else
+    {
     int64 nStartTime = GetTimeMillis();
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, 25000, kMasterKey.nDerivationMethod);
     kMasterKey.nDeriveIterations = 2500000 / ElapsedMillis(nStartTime);
@@ -607,6 +642,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         kMasterKey.nDeriveIterations = 25000;
 
     LogPrintf("Encrypting Wallet with an nDeriveIterations of %i\n", kMasterKey.nDeriveIterations);
+    }
 
     if (!crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, kMasterKey.nDeriveIterations, kMasterKey.nDerivationMethod))
         return false;
@@ -666,6 +702,8 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 
         // Encryption was introduced in version 0.4.0
         SetMinVersion(WalletFeature::FEATURE_WALLETCRYPT, pwalletdbEncryption.get(), true);
+        if (kMasterKey.nDerivationMethod == WALLET_DERIVATION_SCRYPT)
+            SetMinVersion(WalletFeature::FEATURE_SCRYPT_KDF, pwalletdbEncryption.get());
 
         if (fFileBacked)
         {
@@ -767,6 +805,27 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
         if (fInsertedNew || fUpdated)
             if (!wtx.WriteToDisk())
                 return false;
+
+        // -walletnotify: tell the operator's command about a transaction that is new to the wallet or has changed (it
+        // confirmed, say). %s is the transaction id, which is hex, so nothing a peer sent reaches the shell.
+        if (fInsertedNew || fUpdated)
+        {
+            std::string strCmd = GetArg("-walletnotify", "");
+            if (!strCmd.empty())
+            {
+                boost::replace_all(strCmd, "%s", hash.GetHex());
+                // a rescan can start thousands of these at once: running out of threads must not throw into AddToWallet's callers
+                try
+                {
+                    std::thread t(runCommand, strCmd);
+                    t.detach();
+                }
+                catch (const std::system_error& e)
+                {
+                    LogPrintf("-walletnotify: could not start the command for %s: %s\n", hash.ToString().c_str(), e.what());
+                }
+            }
+        }
 #ifndef QT_GUI
         // If default receiving address gets used, replace it with a new one
         CScript scriptDefaultKey;
@@ -1226,7 +1285,7 @@ void CWallet::ReacceptWalletTransactions()
                 // Update fSpent if a tx got spent somewhere else by a copy of wallet.dat
                 if (txindex.vSpent.size() != wtx.vout.size())
                 {
-                    LogPrintf("ERROR: ReacceptWalletTransactions() : txindex.vSpent.size() %d != wtx.vout.size() %d\n", txindex.vSpent.size(), wtx.vout.size());
+                    LogPrintf("ERROR: ReacceptWalletTransactions() : txindex.vSpent.size() %d != wtx.vout.size() %d\n", (int)txindex.vSpent.size(), (int)wtx.vout.size());
                     continue;
                 }
                 for (unsigned int i = 0; i < txindex.vSpent.size(); i++)
@@ -1812,6 +1871,21 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
 {
     {
         LOCK2(cs_main, cs_wallet);
+
+        // Ask the mempool first, without storing anything: a transaction it would refuse must not leave the wallet with its
+        // coins marked spent and nothing on the network. (Before, the coins were marked and the refusal came after.)
+        {
+            CTxDB txdb("r");
+            CTxAcceptCheck check;
+            check.fTestOnly = true;
+            bool fMissingInputs = false;
+            if (!wtxNew.CTransaction::AcceptToMemoryPool(txdb, true, &fMissingInputs, &check))
+            {
+                LogPrintf("CommitTransaction() : the transaction was refused before it was recorded: %s%s\n", check.strReject.c_str(), fMissingInputs ? " (missing inputs)" : "");
+                return false;
+            }
+        }
+
         LogPrintf("CommitTransaction:\n%s", wtxNew.ToString().c_str());
         {
             // This is only to keep the database open to defeat the auto-flush for the
@@ -1940,9 +2014,15 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
         if (GetBoolArg("-walletcompat", false))
         {
             // Put the old number back, so that an older release can open the wallet (the gate cannot otherwise be undone)
-            if (nWalletVersion > static_cast<int>(WalletFeature::FEATURE_HD_LEGACY))
+            // but never below what a scrypt passphrase needs: an older release would open the wallet and then call the right
+            // passphrase incorrect
+            int nCompat = static_cast<int>(WalletFeature::FEATURE_HD_LEGACY);
+            for (const MasterKeyMap::value_type& pMasterKey : mapMasterKeys)
+                if (pMasterKey.second.nDerivationMethod == WALLET_DERIVATION_SCRYPT)
+                    nCompat = std::max(nCompat, static_cast<int>(WalletFeature::FEATURE_SCRYPT_KDF));
+            if (nWalletVersion > nCompat)
             {
-                nWalletVersion = static_cast<int>(WalletFeature::FEATURE_HD_LEGACY);
+                nWalletVersion = nCompat;
                 if (fFileBacked)
                     CWalletDB(strWalletFile).WriteMinVersion(nWalletVersion);
             }
@@ -1986,7 +2066,7 @@ void CWallet::PrintWallet(const CBlock& block)
         if (mapWallet.count(block.vtx[0].GetHash()))
         {
             CWalletTx& wtx = mapWallet[block.vtx[0].GetHash()];
-            LogPrintf("    mine:  %d  %d  %d", wtx.GetDepthInMainChain(), wtx.GetBlocksToMaturity(), wtx.GetCredit());
+            LogPrintf("    mine:  %d  %d  %" PRI64d "", wtx.GetDepthInMainChain(), wtx.GetBlocksToMaturity(), wtx.GetCredit());
         }
     }
     LogPrintf("\n");
@@ -2170,7 +2250,7 @@ bool CWallet::TopUpKeyPool()
             if (!walletdb.WritePool(nEnd, CKeyPool(GenerateNewKey())))
                 throw runtime_error("TopUpKeyPool() : writing generated key failed");
             setKeyPool.insert(nEnd);
-            LogPrintf("keypool added key %" PRI64d ", size=%d\n", nEnd, setKeyPool.size());
+            LogPrintf("keypool added key %" PRI64d ", size=%d\n", nEnd, (int)setKeyPool.size());
         }
     }
     return true;

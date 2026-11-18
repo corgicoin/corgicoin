@@ -1,0 +1,9 @@
+# keep the build context to the sources: no local build trees (their CMakeCache.txt breaks the image build), no history,
+# no editor or assistant settings
+build*/
+.git
+.github
+.claude
+.idea
+.vscode
+*.tar.gz

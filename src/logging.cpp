@@ -39,6 +39,39 @@ bool LogError(const char* fmt, ...)
     return false;
 }
 
+static const struct { const char* pszName; uint32_t nFlag; } LOG_CATEGORY_NAMES[] = {
+    {"net", LOG_NET}, {"mempool", LOG_MEMPOOL}, {"rpc", LOG_RPC}, {"db", LOG_DB}, {"wallet", LOG_WALLET},
+    {"mining", LOG_MINING}, {"addrman", LOG_ADDRMAN}, {"selectcoins", LOG_SELECTCOINS},
+};
+
+std::vector<std::pair<std::string, bool> > GetLogCategories()
+{
+    std::vector<std::pair<std::string, bool> > v;
+    const uint32_t nNow = __atomic_load_n(&nLogCategories, __ATOMIC_RELAXED);
+    for (const auto& c : LOG_CATEGORY_NAMES)
+        v.emplace_back(c.pszName, (nNow & c.nFlag) != 0);
+    return v;
+}
+
+bool SetLogCategory(const std::string& strName, bool fOn)
+{
+    for (const auto& c : LOG_CATEGORY_NAMES)
+    {
+        if (strName != c.pszName)
+            continue;
+        uint32_t nNew = __atomic_load_n(&nLogCategories, __ATOMIC_RELAXED);
+        nNew = fOn ? (nNew | c.nFlag) : (nNew & ~c.nFlag);
+        if (c.nFlag == LOG_NET)
+            fDebugNet = fOn;
+        if (nNew != LOG_NONE)
+            nLogLevel = LogLevel::DEBUG;
+        __atomic_store_n(&nLogCategories, nNew, __ATOMIC_RELAXED);
+        fDebug = (nNew != LOG_NONE);
+        return true;
+    }
+    return false;
+}
+
 void InitLogging(const std::string& debugCategories, bool printToConsole, bool logTimestamps)
 {
     fPrintToConsole = printToConsole;

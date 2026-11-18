@@ -192,7 +192,7 @@ bool AddOrphanTx(const CDataStream& vMsg)
     // at most 500 megabytes of orphans:
     if (pvMsg->size() > DEFAULT_MAX_MESSAGE_SIZE)
     {
-        LogPrintf("ignoring large orphan tx (size: %u, hash: %s)\n", pvMsg->size(), hash.ToString().substr(0,10).c_str());
+        LogPrintf("ignoring large orphan tx (size: %u, hash: %s)\n", (unsigned)pvMsg->size(), hash.ToString().substr(0,10).c_str());
         return false;
     }
 
@@ -201,7 +201,7 @@ bool AddOrphanTx(const CDataStream& vMsg)
         mapOrphanTransactionsByPrev[txin.prevout.hash].insert({hash, pvMsg});
 
     LogPrintf("stored orphan tx %s (mapsz %u)\n", hash.ToString().substr(0,10).c_str(),
-        mapOrphanTransactions.size());
+        (unsigned)mapOrphanTransactions.size());
     return true;
 }
 
@@ -685,7 +685,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             remove(*ptxOld);
         }
         addUnchecked(hash, tx);
-        PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime(), fCheckInputs };
+        PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime(), fCheckInputs, nBestHeight };
         mapEntry[hash] = entry;
         nPoolBytes += entry.nSize;
         Trim();
@@ -700,7 +700,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
     LogPrintf("CTxMemPool::accept() : accepted %s (poolsz %u)\n",
            hash.ToString().substr(0,10).c_str(),
-           mapTx.size());
+           (unsigned)mapTx.size());
     ZMQNotifyTransaction(tx);
     return true;
 }
@@ -798,6 +798,71 @@ std::vector<std::pair<double, uint256> > CTxMemPool::EvictionCandidates() const
     }
     std::sort(v.begin(), v.end());
     return v;
+}
+
+CFeeEstimator feeEstimator;
+
+CFeeEstimator::CFeeEstimator()
+{
+    double bound = (double)MIN_RELAY_TX_FEE;
+    for (int i = 0; i < NBUCKETS; i++, bound *= 1.5)
+        vBound[i] = bound;
+    Clear();
+}
+
+void CFeeEstimator::Clear()
+{
+    memset(mConfirmed, 0, sizeof(mConfirmed));
+    memset(vTotal, 0, sizeof(vTotal));
+}
+
+int CFeeEstimator::Bucket(double nFeeRate) const
+{
+    int b = 0;
+    while (b + 1 < NBUCKETS && nFeeRate >= vBound[b + 1])
+        b++;
+    return b;
+}
+
+void CFeeEstimator::Decay()
+{
+    for (int i = 0; i < NBUCKETS; i++)
+    {
+        vTotal[i] *= DECAY;
+        for (int n = 0; n <= MAX_TARGET; n++)
+            mConfirmed[n][i] *= DECAY;
+    }
+}
+
+void CFeeEstimator::Record(int nBlocks, double nFeeRate)
+{
+    if (nBlocks < 1 || nFeeRate < (double)MIN_RELAY_TX_FEE)
+        return;
+    const int b = Bucket(nFeeRate);
+    vTotal[b] += 1;
+    for (int n = std::min(nBlocks, MAX_TARGET + 1); n <= MAX_TARGET; n++)
+        mConfirmed[n][b] += 1;
+}
+
+double CFeeEstimator::Estimate(int nTarget) const
+{
+    if (nTarget < 1 || nTarget > MAX_TARGET)
+        return -1;
+    // From the highest fee rate down, take in one bucket at a time: all the transactions paying at least this much. The answer is
+    // the lowest bound that still gives the success rate, found when going lower stops doing so.
+    double dTotal = 0, dConfirmed = 0, dAnswer = -1;
+    for (int b = NBUCKETS - 1; b >= 0; b--)
+    {
+        dTotal += vTotal[b];
+        dConfirmed += mConfirmed[nTarget][b];
+        if (dTotal < MIN_SAMPLES || vTotal[b] <= 0)       // too few to say, or nothing seen at this rate: the answer moves only where there is data
+            continue;
+        if (dConfirmed / dTotal >= MIN_SUCCESS)
+            dAnswer = vBound[b];
+        else
+            break;
+    }
+    return dAnswer;
 }
 
 unsigned int CTxMemPool::Trim()
@@ -1510,9 +1575,14 @@ int GetNumBlocksOfPeers()
     return std::max(cPeerBlockCounts.median(), Checkpoints::GetTotalBlocksEstimate());
 }
 
+CBigNum bnMinimumChainWork = 0;
+
 bool IsInitialBlockDownload()
 {
-    if (pindexBest == nullptr || nBestHeight < Checkpoints::GetTotalBlocksEstimate())
+    // A node that has only been given a chain with less work than the floor has not caught up, however recent its last block
+    // looks: a peer feeding it a short, cheap chain must not be able to make it think it is finished (and start mining on it,
+    // serving templates, or taking payments).
+    if (pindexBest == nullptr || nBestHeight < Checkpoints::GetTotalBlocksEstimate() || pindexBest->bnChainWork < bnMinimumChainWork)
         return true;
     static int64 nLastUpdate;
     static CBlockIndex* pindexLastBest;
@@ -1701,7 +1771,7 @@ bool CTransaction::FetchInputs(CTxDB& txdb, const map<uint256, CTxIndex>& mapTes
             // Revisit this if/when transaction replacement is implemented and allows
             // adding inputs:
             fInvalid = true;
-            return DoS(100, LogError("FetchInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
+            return DoS(100, LogError("FetchInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, (int)txPrev.vout.size(), (int)txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
         }
     }
 
@@ -1770,7 +1840,7 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
             CTransaction& txPrev = inputs[prevout.hash].second;
 
             if (prevout.n >= txPrev.vout.size() || prevout.n >= txindex.vSpent.size())
-                return DoS(100, LogError("ConnectInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
+                return DoS(100, LogError("ConnectInputs() : %s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, (int)txPrev.vout.size(), (int)txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
 
             // If prev is coinbase, check that it's matured
             if (txPrev.IsCoinBase())
@@ -2072,8 +2142,8 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         vConnect.push_back(pindex);
     reverse(vConnect.begin(), vConnect.end());
 
-    LogPrintf("REORGANIZE: Disconnect %i blocks; %s..%s\n", vDisconnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexBest->GetBlockHash().ToString().substr(0,20).c_str());
-    LogPrintf("REORGANIZE: Connect %i blocks; %s..%s\n", vConnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexNew->GetBlockHash().ToString().substr(0,20).c_str());
+    LogPrintf("REORGANIZE: Disconnect %i blocks; %s..%s\n", (int)vDisconnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexBest->GetBlockHash().ToString().substr(0,20).c_str());
+    LogPrintf("REORGANIZE: Connect %i blocks; %s..%s\n", (int)vConnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexNew->GetBlockHash().ToString().substr(0,20).c_str());
 
     // Disconnect shorter branch
     vector<CTransaction> vResurrect;
@@ -2171,6 +2241,22 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
     pindexNew->pprev->pnext = pindexNew;
     NotifyConnected();
 
+    // What this block teaches about fees: the transactions that were waiting in the pool, and how many blocks each waited
+    {
+        LOCK(mempool.cs);
+        feeEstimator.Decay();
+        for (const CTransaction& tx : vtx)
+        {
+            if (tx.IsCoinBase())
+                continue;
+            auto itEntry = mempool.mapEntry.find(tx.GetHash());
+            if (itEntry == mempool.mapEntry.end())
+                continue;
+            feeEstimator.Record(std::max(1, pindexNew->nHeight - itEntry->second.nHeight),
+                                (double)itEntry->second.nFee * 1000.0 / std::max<unsigned int>(1, itEntry->second.nSize));
+        }
+    }
+
     // Delete redundant memory transactions
     for (CTransaction& tx : vtx)
         mempool.remove(tx);
@@ -2217,7 +2303,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
         }
 
         if (!vpindexSecondary.empty())
-            LogPrintf("Postponing %i reconnects\n", vpindexSecondary.size());
+            LogPrintf("Postponing %i reconnects\n", (int)vpindexSecondary.size());
 
         // Switch to new best branch
         if (!Reorganize(txdb, pindexIntermediate))
@@ -2947,7 +3033,7 @@ void PrintBlockTree()
             pindex->nBlockPos,
             block.GetHash().ToString().substr(0,20).c_str(),
             DateTimeStrFormat("%x %H:%M:%S", block.GetBlockTime()).c_str(),
-            block.vtx.size());
+            (int)block.vtx.size());
 
         PrintWallets(block);
 
@@ -3217,6 +3303,20 @@ static void ProcessGetData(CNode* pfrom)
             auto mi = mapBlockIndex.find(inv.hash);
             if (mi != mapBlockIndex.end())
             {
+                // -maxuploadtarget: once the target is nearly spent, a peer that asks for old blocks is let go (it can fetch them from
+                // someone with bandwidth). New blocks are always sent, whatever the target: a miner's or pool's own block that
+                // nobody is given is orphaned. "Old" is measured from the tip's time, not the clock, so the tip of a chain that has
+                // not moved for a week is still new.
+                int64 nOldSeconds = 7 * 24 * 60 * 60;
+                if (fRegTest && mapArgs.count("-testhistoricalblockage"))
+                    nOldSeconds = std::max<int64>(1, GetArg("-testhistoricalblockage", nOldSeconds));    // test hook, regtest only
+                const bool fHistorical = pindexBest && (*mi).second->GetBlockTime() < pindexBest->GetBlockTime() - nOldSeconds;
+                if (fHistorical && UploadTargetReached(true))
+                {
+                    LogPrintf("upload target reached: not sending an old block to %s, disconnecting\n", pfrom->addr.ToString().c_str());
+                    pfrom->fDisconnect = true;
+                    return;
+                }
                 CBlock block;
                 // already accepted, so its proof of work was checked: do not pay for it again on every read
                 block.ReadFromDisk((*mi).second, true, false);
@@ -3255,7 +3355,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<CService, CPubKey> mapReuseKey;
     RandAddSeedPerfmon();
-    LogDebug("received: %s (%d bytes)\n", strCommand.c_str(), vRecv.size());
+    LogDebug("received: %s (%d bytes)\n", strCommand.c_str(), (int)vRecv.size());
     if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
     {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
@@ -3303,6 +3403,16 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (!vRecv.empty())
             vRecv >> pfrom->nStartingHeight;
 
+        // Dogecoin nodes use the same magic bytes as this chain, so they connect, take a slot, and can never agree on a block.
+        // Turn them away by what they call themselves (a different chain's node that hides its name is not caught here).
+        if (pfrom->strSubVer.find("Shibetoshi") != std::string::npos || pfrom->strSubVer.find("Dogecoin") != std::string::npos ||
+            pfrom->strSubVer.find("dogecoin") != std::string::npos)
+        {
+            LogPrintf("partner %s is a node of another chain (%s); disconnecting\n", pfrom->addr.ToString().c_str(), pfrom->strSubVer.c_str());
+            pfrom->fDisconnect = true;
+            return false;
+        }
+
         if (pfrom->fInbound && addrMe.IsRoutable())
         {
             pfrom->addrLocal = addrMe;
@@ -3330,6 +3440,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         // Change version
         pfrom->PushMessage("verack");
+        // tell a peer that understands it what fee rate we want announced (BIP 133), if we want any: -feefilter, in satoshi per kB.
+        // Not the relay minimum by default: this node also takes in free transactions of high priority, and a peer must not hide those.
+        if (pfrom->nVersion >= FEEFILTER_VERSION && GetArg("-feefilter", 0) > 0)
+            pfrom->PushMessage("feefilter", (int64)GetArg("-feefilter", 0));
         pfrom->vSend.SetVersion(min(pfrom->nVersion, PROTOCOL_VERSION));
 
         if (!pfrom->fInbound)
@@ -3374,13 +3488,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             pfrom->PushGetBlocks(pindexBest, uint256(0));
         }
 
-        // Relay alerts
-        {
-            LOCK(cs_mapAlerts);
-            for (std::pair<const uint256, CAlert>& item : mapAlerts)
-                item.second.RelayTo(pfrom);
-        }
-
         pfrom->fSuccessfullyConnected = true;
 
         LogPrintf("receive version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", pfrom->nVersion, pfrom->nStartingHeight, addrMe.ToString().c_str(), addrFrom.ToString().c_str(), pfrom->addr.ToString().c_str());
@@ -3396,6 +3503,15 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         return false;
     }
 
+
+    else if (strCommand == "feefilter")
+    {
+        int64 nFilter = 0;
+        vRecv >> nFilter;
+        // only from a peer that said it speaks it, and only a sane number
+        if (pfrom->nVersion >= FEEFILTER_VERSION && nFilter >= 0 && nFilter <= MAX_MONEY)
+            pfrom->nMinFeeFilter = nFilter;
+    }
 
     else if (strCommand == "verack")
     {
@@ -3414,7 +3530,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (vAddr.size() > 1000)
         {
             pfrom->Misbehaving(20);
-            return LogError("message addr size() = %d", vAddr.size());
+            return LogError("message addr size() = %d", (int)vAddr.size());
         }
 
         // Store the new addresses
@@ -3477,7 +3593,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (vInv.size() > 50000)
         {
             pfrom->Misbehaving(20);
-            return LogError("message inv size() = %d", vInv.size());
+            return LogError("message inv size() = %d", (int)vInv.size());
         }
 
         // find last block in inv vector
@@ -3526,10 +3642,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (vInv.size() > 50000)
         {
             pfrom->Misbehaving(20);
-            return LogError("message getdata size() = %d", vInv.size());
+            return LogError("message getdata size() = %d", (int)vInv.size());
         }
 
-        LogPrint(LOG_NET, "received getdata (%d invsz)\n", vInv.size());
+        LogPrint(LOG_NET, "received getdata (%d invsz)\n", (int)vInv.size());
 
         // Queue the request and answer as much as the send buffer takes. The rest is answered as it drains
         // (ProcessMessages), and nothing newer from this peer is read until then, so replies stay in order. One message
@@ -3850,19 +3966,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
     else if (strCommand == "alert")
     {
-        CAlert alert;
-        vRecv >> alert;
-
-        if (alert.ProcessAlert())
-        {
-            // Relay
-            pfrom->setKnown.insert(alert.GetHash());
-            {
-                LOCK(cs_vNodes);
-                for (CNode* pnode : vNodes)
-                    alert.RelayTo(pnode);
-            }
-        }
+        // Retired. Alerts were signed with a key that is not secret, every one cost a signature check, and they could put
+        // any text in the status bar of every node. The message is read and dropped: not parsed, not checked, not relayed.
+        LogPrint(LOG_NET, "ignoring an alert from %s (alerts are retired)\n", pfrom->addr.ToString().c_str());
     }
 
 
@@ -3925,7 +4031,7 @@ bool ProcessMessages(CNode* pfrom)
             break;
         }
         if (pstart - vRecv.begin() > 0)
-            LogPrintf("\n\nPROCESSMESSAGE SKIPPED %d BYTES\n\n", pstart - vRecv.begin());
+            LogPrintf("\n\nPROCESSMESSAGE SKIPPED %d BYTES\n\n", (int)(pstart - vRecv.begin()));
         vRecv.erase(vRecv.begin(), pstart);
 
         // Read header
@@ -3934,7 +4040,7 @@ bool ProcessMessages(CNode* pfrom)
         vRecv >> hdr;
         if (!hdr.IsValid())
         {
-            LogPrintf("\n\nPROCESSMESSAGE: ERRORS IN HEADER %s\n\n\n", hdr.GetCommand().c_str());
+            LogPrintf("\n\nPROCESSMESSAGE: ERRORS IN HEADER %s\n\n\n", SanitizeString(hdr.GetCommand(), 12).c_str());      // what a peer sent: no control characters into the log
             continue;
         }
         string strCommand = hdr.GetCommand();
@@ -4139,6 +4245,17 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                     }
                 }
 
+                // a transaction that pays less per kB than this peer asked for is not announced to it
+                if (inv.type == static_cast<int>(MsgType::Tx) && pto->nMinFeeFilter > 0)
+                {
+                    LOCK(mempool.cs);
+                    auto itEntry = mempool.mapEntry.find(inv.hash);
+                    // (an entry put back after a reorganisation has no fee worked out: it reads 0, and is announced as before)
+                    if (itEntry != mempool.mapEntry.end() && itEntry->second.fFeeKnown &&
+                        (double)itEntry->second.nFee * 1000.0 / std::max<unsigned int>(1, itEntry->second.nSize) < (double)pto->nMinFeeFilter)
+                        continue;
+                }
+
                 // returns true if wasn't already contained in the set
                 if (pto->setInventoryKnown.insert(inv).second)
                 {
@@ -4341,6 +4458,13 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         LOCK2(cs_main, mempool.cs);
         CTxDB txdb("r");
 
+        // -blockmaxsize: how big a block this node makes (never more than it may, MAX_BLOCK_SIZE_GEN). -blockprioritysize: how much of
+        // it goes to the oldest, biggest-valued coins (priority), whatever they pay; the rest goes to whoever pays the most per byte.
+        const uint64 nBlockMaxSize = (uint64)std::min<int64>(MAX_BLOCK_SIZE_GEN, std::max<int64>(1000, GetArg("-blockmaxsize", MAX_BLOCK_SIZE_GEN)));
+        const uint64 nBlockPrioritySize = (uint64)std::min<int64>((int64)nBlockMaxSize, std::max<int64>(0, GetArg("-blockprioritysize", 27000)));
+        bool fByFee = false;        // set below once the priority part is full: at once, when -blockprioritysize is 0
+        map<const CTransaction*, double> mapPrioOf;     // the priority of each queued transaction
+
         // Priority order to process transactions
         list<COrphan> vOrphan; // list memory doesn't move
         map<uint256, vector<COrphan*> > mapDependers;
@@ -4391,6 +4515,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             mempool.ApplyDeltas(tx.GetHash(), dPriorityDelta, nUnusedFeeDelta);
             dPriority += dPriorityDelta;
 
+            mapPrioOf[&entry.second] = dPriority;
             if (porphan)
                 porphan->dPriority = dPriority;
             else
@@ -4410,16 +4535,51 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         uint64 nBlockSize = 1000;
         uint64 nBlockTx = 0;
         int nBlockSigOps = 100;
+
+        // The fee per byte a queued transaction pays. The pool recorded each entry's fee when it was accepted, so this reads it
+        // there: looking the inputs up again (from disk, for every queued transaction, each time the queue is re-sorted) cost
+        // seconds under cs_main on a full pool. Only an entry whose fee was not worked out (put back after a reorganisation)
+        // is looked up, in the chain or in what the block already holds.
+        auto FeeRateOf = [&](CTransaction& t) -> double {
+            const uint256 hashTx = t.GetHash();
+            double dUnused = 0;
+            int64 nDelta = 0;
+            mempool.ApplyDeltas(hashTx, dUnused, nDelta);
+            int64 nFee;
+            auto itEntry = mempool.mapEntry.find(hashTx);
+            if (itEntry != mempool.mapEntry.end() && itEntry->second.fFeeKnown)
+                nFee = itEntry->second.nFee + nDelta;
+            else
+            {
+                MapPrevTx mapIn;
+                bool fBad = false;
+                if (!t.FetchInputs(txdb, mapTestPool, false, true, mapIn, fBad))
+                    return 0;
+                nFee = t.GetValueIn(mapIn) - t.GetValueOut() + nDelta;
+            }
+            return (double)nFee / std::max<unsigned int>(1, ::GetSerializeSize(t, SER_NETWORK, PROTOCOL_VERSION));
+        };
+
         while (!mapPriority.empty())
         {
-            // Take highest priority transaction off priority queue
-            double dPriority = -(*mapPriority.begin()).first;
+            // The priority area is full (or what is left is too low to be free): from here on the highest fee per byte goes first
+            if (!fByFee && (nBlockSize >= nBlockPrioritySize || !CTransaction::AllowFree(-(*mapPriority.begin()).first)))
+            {
+                fByFee = true;
+                multimap<double, CTransaction*> mapByFee;
+                for (const auto& item : mapPriority)
+                    mapByFee.insert(std::make_pair(-FeeRateOf(*item.second), item.second));
+                mapPriority.swap(mapByFee);
+            }
+
+            // Take the first transaction off the queue (by priority, then by fee per byte)
             CTransaction& tx = *(*mapPriority.begin()).second;
+            const double dPriority = mapPrioOf[&tx];
             mapPriority.erase(mapPriority.begin());
 
             // Size limits
             unsigned int nTxSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
-            if (nBlockSize + nTxSize >= MAX_BLOCK_SIZE_GEN)
+            if (nBlockSize + nTxSize >= nBlockMaxSize)
                 continue;
 
             // Legacy limits on sigOps:
@@ -4473,7 +4633,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                     {
                         porphan->setDependsOn.erase(hash);
                         if (porphan->setDependsOn.empty())
-                            mapPriority.insert({-porphan->dPriority, porphan->ptx});
+                            mapPriority.insert({fByFee ? -FeeRateOf(*porphan->ptx) : -porphan->dPriority, porphan->ptx});
                     }
                 }
             }
@@ -4481,7 +4641,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
 
         nLastBlockTx = nBlockTx;
         nLastBlockSize = nBlockSize;
-        LogPrintf("CreateNewBlock(): total size %lu\n", nBlockSize);
+        LogPrintf("CreateNewBlock(): total size %" PRI64u "\n", (uint64)nBlockSize);
 
     }
     pblock->vtx[0].vout[0].nValue = GetBlockValue(pindexPrev->nHeight+1, nFees, pindexPrev->GetBlockHash());
@@ -4639,14 +4799,24 @@ void static BitcoinMiner(CWallet *pwallet)
         // Create new block
         //
         unsigned int nTransactionsUpdatedLast = nTransactionsUpdated;
-        CBlockIndex* pindexPrev = pindexBest;
 
         unique_ptr<CBlock> pblock(CreateNewBlock(reservekey));
         if (!pblock.get())
             return;
+        // The block's own parent, looked up under the lock: reading pindexBest here, outside the lock and before the block
+        // was built, could name a different tip than the one the block is built on if a block arrived in between.
+        CBlockIndex* pindexPrev = nullptr;
+        {
+            LOCK(cs_main);
+            auto mi = mapBlockIndex.find(pblock->hashPrevBlock);
+            if (mi != mapBlockIndex.end())
+                pindexPrev = mi->second;
+        }
+        if (!pindexPrev)
+            continue;   // the tip moved away under us: build again
         IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
 
-        LogPrintf("Running BitcoinMiner with %d transactions in block\n", pblock->vtx.size());
+        LogPrintf("Running BitcoinMiner with %d transactions in block\n", (int)pblock->vtx.size());
 
 
         //
@@ -4737,8 +4907,11 @@ void static BitcoinMiner(CWallet *pwallet)
                 break;
             if (nTransactionsUpdated != nTransactionsUpdatedLast && GetTime() - nStart > 60)
                 break;
-            if (pindexPrev != pindexBest)
-                break;
+            {
+                LOCK(cs_main);
+                if (pindexPrev != pindexBest)
+                    break;
+            }
 
             // Update nTime every few seconds
             pblock->UpdateTime(pindexPrev);

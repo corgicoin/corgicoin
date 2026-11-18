@@ -119,6 +119,25 @@ rpcport=62555
 
 ## Version History
 
+### Unreleased
+- **New for operators** (thanks @colneech-dev for everything in this release):
+  - `-walletnotify=<cmd>` runs a command with the txid when a wallet transaction is new or changes (#151)
+  - `-walletkdf=scrypt` derives the wallet passphrase key with scrypt (memory hard, about 32 MiB per unlock). A wallet encrypted or re-passphrased with it can be opened only by 4.11.0.0 and later (#152)
+  - `-blockmaxsize`, `-blockprioritysize`: once the priority area (default 27 kB) is full, blocks this node makes fill by fee per byte (#154)
+  - `-maxinboundpergroup=<n>` limits inbound connections from one /16 (default no limit; many honest peers behind one CGNAT or server farm can be refused when set) (#166)
+  - `-maxuploadtarget=<MiB>` keeps a day's upload under a limit: blocks a week older than the tip stop at 90%, new blocks are always sent (#175)
+  - `-minimumchainwork=<hex>`: below it the node never counts itself as synced, so it does not mine or serve templates (#173)
+  - `-logformat=json`, and `-logips=0` to replace public IPv4 addresses in the log by `[ip]` (addresses are still logged by default; IPv6 and onion addresses are never masked) (#167)
+  - `-feefilter=<sat/kB>` (BIP 133, off by default), and the node honours the filters peers send it (#164)
+- **New RPCs:** `getrpcinfo`, `logging [include] [exclude]` (#155), `getmetrics` (Prometheus text; it is an authenticated RPC, so a scrape needs an exporter) (#179), `gettxoutsetinfo [index|blocks]` (slow: holds the main lock) (#171), `exportblocks <file> [start] [end]` (a `-loadblock` bootstrap file; a relative name is in the data directory, an existing file is never overwritten) (#172), `estimatefee <blocks>` (advisory: the wallet does not use it) (#177)
+- **Fixes:** a send the memory pool would refuse no longer marks the wallet's coins spent (#177); a node with a damaged block index or wallet stops before starting the network and RPC (#162); a corrupt `peers.dat` is discarded instead of loaded out of bounds (#156); the node's own miner takes the block it built as its parent (#163); peers that announce themselves as Dogecoin nodes are disconnected (#168); network alerts are retired: read and dropped, not shown or relayed (#169); a malformed message header can no longer inject lines into `debug.log` (#174); 27 log format strings fixed (#165)
+- **Build, release and packaging:** `_FORTIFY_SOURCE=3`, `-fcf-protection`, non-executable stack, Windows ASLR/DEP, and source paths mapped out of binaries (#157); a systemd unit, a Dockerfile (pinned base image) and a logrotate file, with exchange, pool and packaging notes (#158); release manifests with a detached signature and a verifier that takes the signer's fingerprint (#159); `contrib/seeds/makeseeds.py` (#160); the functional suite under ASan and UBSan in CI (#161); fuzz targets (#170); more tests (#176)
+- **Behaviour changes:**
+  - The P2P protocol version is 70013 (feefilter). v4.9 and v4.10 nodes and merged-mining pools are unaffected (#164)
+  - `getblocktemplate`, `getwork` and the miner fill blocks by fee rate after the priority area (#154)
+  - `-maxuploadtarget` and `-maxinboundpergroup` are off unless set
+- **Not in this release:** replace-by-fee (#181, to come as its own change), headers-first sync (#184), the LevelDB unspent set and pruning (#185), the SQLite wallet (#140) and watch-only/encrypted backups (#183) need more work first. libsecp256k1 (#186) was not merged: it carries the lax DER change refused in #145
+
 ### v4.10.0.0 — Security Hardening (upgrade every node)
 - **Upgrade now.** Every earlier release can be crashed by a single peer message (`getheaders` across a merged-mined block). This release fixes that and many other robustness and security issues found in review. It also raises the Berkeley DB lock table, so upgrade every node, miners and pools first. Read *Behaviour changes* below before upgrading: an example or `#`-containing `rpcpassword` now refuses to start the node
 - **Security fixes** (thanks @colneech-dev for everything in this release):

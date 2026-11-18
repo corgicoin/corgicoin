@@ -1,0 +1,17 @@
+# logrotate for corgicoind's debug.log (put in /etc/logrotate.d/corgicoin).
+#
+# The node writes debug.log itself and reopens it when it gets SIGHUP, so copytruncate is not needed (and would lose lines).
+# Not for a node run under systemd with -printtoconsole: that one logs to the journal, which rotates itself.
+# Adjust the path to the data directory.
+/var/lib/corgicoin/regtest/debug.log /var/lib/corgicoin/debug.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 corgicoin corgicoin
+    postrotate
+        pkill -HUP -x corgicoind || true
+    endscript
+}

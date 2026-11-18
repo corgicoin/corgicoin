@@ -46,10 +46,27 @@ class AssertionFailed(Exception):
     pass
 
 
+_port_window = {"next": None}
+
+
 def free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    """A port that nothing is listening on and that other test processes are unlikely to take.
+
+    Asking the OS for port 0 and closing the socket handed the same number to two tests running side by side (and to the OS's
+    own outgoing connections, which use 32768 and up) before either node had bound it. Each process now takes ports in turn from
+    a block of its own below that range, picked from its process id, and checks that it can bind each one.
+    """
+    if _port_window["next"] is None:
+        _port_window["next"] = 12000 + (os.getpid() % 400) * 40
+    while True:
+        port = _port_window["next"]
+        _port_window["next"] = port + 1 if port < 31900 else 12000
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+        return port
 
 
 def wait_until(predicate, timeout=30, interval=0.25, what="condition"):

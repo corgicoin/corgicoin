@@ -75,6 +75,84 @@ bool fTestNet = false;
 bool fRegTest = false;
 bool fNoListen = false;
 bool fLogTimestamps = false;
+bool fLogIPs = true;     // -logips, read at start-up (default on); true until then so early lines are not altered
+bool fLogJson = false;
+
+std::string MaskLogIPs(const std::string& str)
+{
+    std::string out;
+    out.reserve(str.size());
+    const size_t n = str.size();
+    size_t i = 0;
+    auto isdig = [&](size_t k) { return k < n && str[k] >= '0' && str[k] <= '9'; };
+    while (i < n)
+    {
+        const bool fStart = isdig(i) && (i == 0 || !(isalnum((unsigned char)str[i - 1]) || str[i - 1] == '.' || str[i - 1] == '_'));
+        if (fStart)
+        {
+            // up to four groups of one to three digits
+            size_t j = i;
+            int nGroups = 0;
+            int v[4] = {0, 0, 0, 0};
+            bool fOk = true;
+            while (nGroups < 4)
+            {
+                size_t s = j;
+                int val = 0;
+                while (isdig(j) && j - s < 3) { val = val * 10 + (str[j] - '0'); j++; }
+                if (j == s) { fOk = false; break; }
+                v[nGroups++] = val;
+                if (nGroups < 4)
+                {
+                    if (j < n && str[j] == '.') j++;
+                    else { fOk = false; break; }
+                }
+            }
+            // a fifth group, or a longer number, makes it something else (a version, a hash)
+            if (fOk && (isdig(j) || (j + 1 < n && str[j] == '.' && isdig(j + 1))))
+                fOk = false;
+            if (fOk && v[0] <= 255 && v[1] <= 255 && v[2] <= 255 && v[3] <= 255)
+            {
+                const bool fPrivate = v[0] == 0 || v[0] == 10 || v[0] == 127 || (v[0] == 192 && v[1] == 168) ||
+                                      (v[0] == 172 && v[1] >= 16 && v[1] <= 31) || (v[0] == 169 && v[1] == 254);
+                if (!fPrivate)
+                {
+                    out += "[ip]";
+                    if (j < n && str[j] == ':' && isdig(j + 1))
+                    {
+                        j++;
+                        while (isdig(j)) j++;
+                    }
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        out += str[i++];
+    }
+    return out;
+}
+
+std::string LogLineToJson(const std::string& strLine, int64 nTime)
+{
+    std::string esc;
+    for (unsigned char c : strLine)
+    {
+        switch (c)
+        {
+        case '"':  esc += "\\\""; break;
+        case '\\': esc += "\\\\"; break;
+        case '\t': esc += "\\t"; break;
+        case '\r': esc += "\\r"; break;
+        default:
+            if (c < 0x20)
+                esc += strprintf("\\u%04x", c);
+            else
+                esc += (char)c;
+        }
+    }
+    return "{\"time\":\"" + DateTimeStrFormat("%Y-%m-%dT%H:%M:%SZ", nTime) + "\",\"msg\":\"" + esc + "\"}";
+}
 CMedianFilter<int64> vTimeOffsets(200,0);
 bool fReopenDebugLog = false;
 
@@ -227,7 +305,13 @@ int OutputDebugStringF(const char* pszFormat, ...)
         // print to console
         va_list arg_ptr;
         va_start(arg_ptr, pszFormat);
-        ret = vprintf(pszFormat, arg_ptr);
+        if (fLogIPs)
+            ret = vprintf(pszFormat, arg_ptr);
+        else
+        {
+            const std::string strMasked = MaskLogIPs(vstrprintf(pszFormat, arg_ptr));
+            ret = fputs(strMasked.c_str(), stdout) < 0 ? -1 : (int)strMasked.size();
+        }
         va_end(arg_ptr);
     }
     else
@@ -262,11 +346,30 @@ int OutputDebugStringF(const char* pszFormat, ...)
             // of a message that has several.
             va_list arg_ptr;
             va_start(arg_ptr, pszFormat);
-            const std::string strMessage = vstrprintf(pszFormat, arg_ptr);
+            std::string strMessage = vstrprintf(pszFormat, arg_ptr);
             va_end(arg_ptr);
+            if (!fLogIPs)
+                strMessage = MaskLogIPs(strMessage);
 
             std::string strOut;
             strOut.reserve(strMessage.size() + 32);
+            if (fLogJson)
+            {
+                // a line at a time: what has no newline yet waits for the rest of it
+                static std::string strPartial;
+                for (char c : strMessage)
+                {
+                    if (c == '\n')
+                    {
+                        strOut += LogLineToJson(strPartial, GetTime());
+                        strOut += '\n';
+                        strPartial.clear();
+                    }
+                    else
+                        strPartial += c;
+                }
+            }
+            else
             for (char c : strMessage)
             {
                 if (fLogTimestamps && fStartedNewLine)

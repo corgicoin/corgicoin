@@ -280,6 +280,8 @@ std::string HelpMessage()
         "  -debug                 " + _("Output extra debugging information. Implies all other -debug* options") + "\n" +
         "  -debugnet              " + _("Output extra network debugging information") + "\n" +
         "  -logtimestamps         " + _("Prepend debug output with timestamp") + "\n" +
+        "  -logformat=<fmt>       " + _("debug.log line format: text (default) or json (one object per line, with time and msg)") + "\n" +
+        "  -logips=<0|1>          " + _("Write peers' public IPv4 addresses to the log; 0 replaces them by [ip], keeping private and loopback ones. IPv6 and onion addresses are always written (default: 1)") + "\n" +
         "  -printtoconsole        " + _("Send trace/debug info to console instead of debug.log file") + "\n" +
 #ifdef WIN32
         "  -printtodebugger       " + _("Send trace/debug info to debugger") + "\n" +
@@ -295,6 +297,13 @@ std::string HelpMessage()
         "  -rpcmaxconnections=<n> " + _("Most JSON-RPC connections served at once; more get HTTP 503 (default: 64)") + "\n" +
         "  -rpcbind=<ip>          " + _("Listen for JSON-RPC connections on this address only (repeatable; default: loopback, or every interface if -rpcallowip is set)") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
+        "  -walletnotify=<cmd>    " + _("Execute command when a wallet transaction is new or changes (%s in cmd is replaced by the transaction id)") + "\n" +
+        "  -blockmaxsize=<n>      " + _("Largest block, in bytes, this node makes (default: the most it may, 500000)") + "\n" +
+        "  -blockprioritysize=<n> " + _("Bytes of each block it fills with the highest-priority (old, large-valued) transactions before it goes by fee per byte (default: 27000)") + "\n" +
+        "  -maxinboundpergroup=<n> " + _("Accept at most n inbound connections from one network group (the /16 of an IPv4 address); 0: no limit (default: 0)") + "\n" +
+        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
+        "  -maxuploadtarget=<MiB> " + _("Try to keep what the node sends in 24 hours under this many MiB: past 90% it stops serving blocks a week older than the tip (and lets the peers that ask go); new blocks are always sent (default: 0, no limit)") + "\n" +
+        "  -feefilter=<n>         " + _("Ask peers (protocol 70013) not to announce transactions that pay less than n satoshi per kB; 0 asks nothing (default: 0)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
@@ -308,6 +317,7 @@ std::string HelpMessage()
         "  -maxmempoolkb=<n>      " + _("Keep the transaction memory pool under <n> kB, dropping the lowest fee rate first (default: 100000)") + "\n" +
         "  -mempoolexpiry=<n>     " + _("Drop transactions that have waited <n> hours in the memory pool (default: 72)") + "\n" +
         "  -walletcompat          " + _("Record the old low minimum version in HD wallets so releases from before HD wallets can open them (they ignore the HD seed: use only on purpose)") + "\n" +
+        "  -walletkdf=scrypt      " + _("Derive the wallet passphrase key with scrypt (memory hard) when encrypting or changing the passphrase. Releases before 4.11 cannot open such a wallet; a wallet that has it keeps it (default: the older iterated hash)") + "\n" +
         "  -maxtxfee=<amt>        " + _("Refuse to make a transaction that pays more than <amt> in fees (default: 10000)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
         "  -checkblocks=<n>       " + _("How many blocks to check at startup (default: 2500, 0 = all)") + "\n" +
@@ -445,6 +455,11 @@ bool AppInit2()
     fPrintToConsole = GetBoolArg("-printtoconsole");
     fPrintToDebugger = GetBoolArg("-printtodebugger");
     fLogTimestamps = GetBoolArg("-logtimestamps");
+    fLogIPs = GetBoolArg("-logips", true);
+    if (GetArg("-logformat", "text") == "json")
+        fLogJson = true;
+    else if (GetArg("-logformat", "text") != "text")
+        return InitError(_("-logformat must be text or json"));
 
     if (mapArgs.count("-timeout"))
     {
@@ -476,6 +491,22 @@ bool AppInit2()
         nMaxTxFee = nMax;
         if (nTransactionFee > nMaxTxFee)
             return InitError(_("-paytxfee is more than -maxtxfee. Lower one of them."));
+    }
+
+    if (mapArgs.count("-minimumchainwork"))
+    {
+        const std::string strWork = mapArgs["-minimumchainwork"];
+        if (strWork.empty() || strWork.size() > 64 || strWork.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+            return InitError(strprintf(_("Invalid -minimumchainwork=<hex>: '%s'"), strWork.c_str()));
+        bnMinimumChainWork.SetHex(strWork);
+    }
+
+    if (mapArgs.count("-maxuploadtarget"))
+    {
+        const int64 nMiB = GetArg("-maxuploadtarget", 0);
+        if (nMiB < 0 || nMiB > 1000000)
+            return InitError(_("-maxuploadtarget must be a number of MiB per day, 0 for no limit"));
+        SetMaxUploadTarget((uint64)nMiB * 1024 * 1024);
     }
 
     if (mapArgs.count("-mininput"))
@@ -667,6 +698,10 @@ bool AppInit2()
             strErrors << _("Error rolling back an invalidated block (see debug.log)") << "\n";
     }
 
+    // a block index that did not load is fatal: stop here, before the wallet, the network and RPC are started on top of it
+    if (!strErrors.str().empty())
+        return InitError(strErrors.str());
+
     // as LoadBlockIndex can take several minutes, it's possible the user
     // requested to kill corgicoin-qt during the last operation. If so, exit.
     // As the program has not fully started yet, Shutdown() is possibly overkill.
@@ -778,6 +813,9 @@ bool AppInit2()
 
     LogPrintf("%s", strErrors.str().c_str());
     LogPrintf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
+    // likewise a wallet that did not load properly: do not go on to start the node and RPC server with it
+    if (!strErrors.str().empty())
+        return InitError(strErrors.str());
 
     RegisterWallet(pwalletMain.get());
 
@@ -821,7 +859,10 @@ bool AppInit2()
     {
         CAddrDB adb;
         if (!adb.Read(addrman))
+        {
+            addrman.Clear();   // a read that failed part way leaves counts that do not match the tables
             LogPrintf("Invalid or missing peers.dat; recreating\n");
+        }
     }
 
     LogPrintf("Loaded %i addresses from peers.dat  %" PRI64d "ms\n",
@@ -837,11 +878,11 @@ bool AppInit2()
     RandAddSeedPerfmon();
 
     //// debug print
-    LogPrintf("mapBlockIndex.size() = %d\n",   mapBlockIndex.size());
+    LogPrintf("mapBlockIndex.size() = %d\n",   (int)mapBlockIndex.size());
     LogPrintf("nBestHeight = %d\n",            nBestHeight);
-    LogPrintf("setKeyPool.size() = %d\n",      pwalletMain->setKeyPool.size());
-    LogPrintf("mapWallet.size() = %d\n",       pwalletMain->mapWallet.size());
-    LogPrintf("mapAddressBook.size() = %d\n",  pwalletMain->mapAddressBook.size());
+    LogPrintf("setKeyPool.size() = %d\n",      (int)pwalletMain->setKeyPool.size());
+    LogPrintf("mapWallet.size() = %d\n",       (int)pwalletMain->mapWallet.size());
+    LogPrintf("mapAddressBook.size() = %d\n",  (int)pwalletMain->mapAddressBook.size());
 
     {
         std::string strZMQError;
@@ -860,10 +901,7 @@ bool AppInit2()
     uiInterface.InitMessage(_("Done loading"));
     LogPrintf("Done loading\n");
 
-    if (!strErrors.str().empty())
-        return InitError(strErrors.str());
-
-     // Add wallet transactions that aren't already in a block to mapTransactions
+    // Add wallet transactions that aren't already in a block to mapTransactions
     pwalletMain->ReacceptWalletTransactions();
 
 #if !defined(QT_GUI)
