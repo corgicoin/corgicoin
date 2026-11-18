@@ -4534,17 +4534,27 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
         uint64 nBlockTx = 0;
         int nBlockSigOps = 100;
 
-        // The fee per byte a queued transaction would pay now (what it spends is found in the chain or in what is already in the block)
+        // The fee per byte a queued transaction pays. The pool recorded each entry's fee when it was accepted, so this reads it
+        // there: looking the inputs up again (from disk, for every queued transaction, each time the queue is re-sorted) cost
+        // seconds under cs_main on a full pool. Only an entry whose fee was not worked out (put back after a reorganisation)
+        // is looked up, in the chain or in what the block already holds.
         auto FeeRateOf = [&](CTransaction& t) -> double {
-            map<uint256, CTxIndex> mapCopy(mapTestPool);
-            MapPrevTx mapIn;
-            bool fBad = false;
-            if (!t.FetchInputs(txdb, mapCopy, false, true, mapIn, fBad))
-                return 0;
+            const uint256 hashTx = t.GetHash();
             double dUnused = 0;
             int64 nDelta = 0;
-            mempool.ApplyDeltas(t.GetHash(), dUnused, nDelta);
-            const int64 nFee = t.GetValueIn(mapIn) - t.GetValueOut() + nDelta;
+            mempool.ApplyDeltas(hashTx, dUnused, nDelta);
+            int64 nFee;
+            auto itEntry = mempool.mapEntry.find(hashTx);
+            if (itEntry != mempool.mapEntry.end() && itEntry->second.fFeeKnown)
+                nFee = itEntry->second.nFee + nDelta;
+            else
+            {
+                MapPrevTx mapIn;
+                bool fBad = false;
+                if (!t.FetchInputs(txdb, mapTestPool, false, true, mapIn, fBad))
+                    return 0;
+                nFee = t.GetValueIn(mapIn) - t.GetValueOut() + nDelta;
+            }
             return (double)nFee / std::max<unsigned int>(1, ::GetSerializeSize(t, SER_NETWORK, PROTOCOL_VERSION));
         };
 
