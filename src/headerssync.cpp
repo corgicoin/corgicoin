@@ -208,6 +208,9 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
 {
     if (!HeadersFirstWith(pfrom))
         return true;
+    // whatever this message holds, the request it answers is over; it is asked again below only if there may be more. (An empty answer, a
+    // bad header or one that does not connect used to leave the flag set, and three such peers kept header sync from every other peer.)
+    pfrom->fSyncing = false;
     vector<CBlock> vHeaders;
     vRecv >> vHeaders;
     if (vHeaders.size() > MAX_HEADERS_RESULTS)
@@ -260,9 +263,10 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
     LogPrintf("headers-first: %u headers from %s, best header %d\n", (unsigned)vHeaders.size(), pfrom->addr.ToString().c_str(), pindexBestHeader ? pindexBestHeader->nHeight : -1);
 
     if (vHeaders.size() == MAX_HEADERS_RESULTS && pindexLast)
+    {
+        pfrom->fSyncing = true;
         PushGetHeaders(pfrom, pindexLast);          // there may be more
-    else
-        pfrom->fSyncing = false;
+    }
     return true;
 }
 
