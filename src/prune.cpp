@@ -214,10 +214,11 @@ void PruneBlockFiles()
         std::filesystem::remove(BlockFilePath(nFile), ec);
         if (ec)
             LogPrintf("prune: could not delete %s: %s (it is listed as pruned and will be deleted at the next start)\n", BlockFilePath(nFile).string().c_str(), ec.message().c_str());
+        const int nHighest = mapMaxHeight[nFile];       // before the entry goes (indexing a missing one would put it back, at 0)
         mapFileMaxHeight.erase(nFile);
         nTotal -= item.second;
         nDeleted++;
-        LogPrintf("prune: deleted block file %04u (its highest block is %d, the tip %d)\n", nFile, mapMaxHeight[nFile], nBestHeight);
+        LogPrintf("prune: deleted block file %04u (its highest block is %d, the tip %d)\n", nFile, nHighest, nBestHeight);
     }
     if (nDeleted)
         LogPrintf("prune: %u files deleted, %u MiB of blocks left\n", nDeleted, (unsigned)(nTotal / (1024 * 1024)));
@@ -235,6 +236,8 @@ bool RescanNeedsPrunedBlocks(const CBlockIndex* pindexStart)
 
 void PruneNoteBlock(unsigned int nFile, int nHeight)
 {
+    if (nPruneHeightCache >= 0 && nHeight < nPruneHeightCache)
+        nPruneHeightCache = nHeight;    // a block came in below the lowest one on disk (a side branch)
     if (!fFileMapBuilt || nFile == 0)
         return;                 // not worked out yet: it will be, from the block index, which holds this block by then
     int& nMax = mapFileMaxHeight[nFile];

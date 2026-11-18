@@ -189,14 +189,15 @@ size_t HeaderOnlyCount()
     return mapHeaderIndex.size();
 }
 
-CBlockIndex* HeadersTakeIndexFor(const uint256& hash)
+CBlockIndex* HeadersFindIndexFor(const uint256& hash)
 {
     auto mh = mapHeaderIndex.find(hash);
-    if (mh == mapHeaderIndex.end())
-        return nullptr;
-    CBlockIndex* pindex = mh->second;
-    mapHeaderIndex.erase(mh);
-    return pindex;
+    return mh == mapHeaderIndex.end() ? nullptr : mh->second;
+}
+
+void HeadersDropEntry(const uint256& hash)
+{
+    mapHeaderIndex.erase(hash);
 }
 
 bool HeadersAssumeValid(const CBlockIndex* pindex)

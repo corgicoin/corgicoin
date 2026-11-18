@@ -2102,7 +2102,8 @@ bool CBlock::ConnectBlockWith(CTxDB& txdb, CBlockIndex* pindex, bool fMayUseCoin
         if (!scriptBatch.Run(nScriptThreads))
         {
             LogPrintf("ConnectBlock() : a script check of block %s failed\n", pindex->GetBlockHash().ToString().substr(0, 20).c_str());
-            return false;
+            // not run again the plain way on a pruned node (see ConnectBlock), so the peer that sent it is penalised here
+            return fPruneMode ? DoS(100, false) : false;
         }
     }
 
@@ -2567,7 +2568,8 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
         return LogError("AddToBlockIndex() : %s already exists", hash.ToString().substr(0,20).c_str());
 
     // Construct new block index object
-    CBlockIndex* pindexNew = HeadersTakeIndexFor(hash);     // headers-first held its header: the same entry, now with its data
+    CBlockIndex* pindexNew = HeadersFindIndexFor(hash);     // headers-first held its header: the same entry, now with its data
+    const bool fFromHeader = pindexNew != nullptr;
     if (pindexNew)
     {
         pindexNew->nFile = nFile;
@@ -2578,7 +2580,9 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     if (!pindexNew)
         return LogError("AddToBlockIndex() : new CBlockIndex failed");
     auto mi = mapBlockIndex.insert({hash, pindexNew}).first;
-    pindexNew->phashBlock = &((*mi).first);
+    pindexNew->phashBlock = &((*mi).first);         // now in the block index's key, so the header entry (which it pointed into) can go
+    if (fFromHeader)
+        HeadersDropEntry(hash);
     auto miPrev = mapBlockIndex.find(hashPrevBlock);
     if (miPrev != mapBlockIndex.end())
     {

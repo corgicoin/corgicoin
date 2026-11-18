@@ -309,18 +309,69 @@ bool Rebuild(const CBlockIndex* ptip)
     return true;
 }
 
-// The set is for a block that is on the chain, below the tip (the set was written after the index lost its last blocks to a crash, or
-// the other way round): apply the blocks above it, instead of every block since the first. False if the marker is not on this chain or a
-// block cannot be read or does not apply; the caller then rebuilds (which a pruned node cannot).
+// The set is for a block that is in the block index but is not the chain's tip (a crash between the commit of the index and the commit of the
+// set, in either order, perhaps in the middle of a reorganisation): take the blocks of the set's own branch off, newest first, with the undo
+// data kept for each, back to the fork point with the chain, then apply the chain's blocks above it: instead of every block since the first.
+// False, with the set as it was (or at a consistent earlier tip), if a block cannot be read, its undo data is missing or a block does not
+// apply; the caller then rebuilds, which a pruned node cannot (it does not try, and leaves the set alone: see CoinsInit).
 bool CatchUp(const CBlockIndex* pMarker, const CBlockIndex* ptip)
 {
-    std::vector<const CBlockIndex*> vChain;
-    for (const CBlockIndex* p = ptip; p && p != pMarker; p = p->pprev)
-        vChain.push_back(p);
-    if (vChain.empty() || vChain.back()->pprev != pMarker)
+    // the fork point: the newest block that both are built on
+    const CBlockIndex* a = pMarker;
+    const CBlockIndex* b = ptip;
+    while (a && b && a != b)
+    {
+        if (a->nHeight > b->nHeight)
+            a = a->pprev;
+        else if (b->nHeight > a->nHeight)
+            b = b->pprev;
+        else
+        {
+            a = a->pprev;
+            b = b->pprev;
+        }
+    }
+    if (!a || a != b)
         return false;
-    LogPrintf("COINS: the set is %d blocks behind the chain; applying them\n", (int)vChain.size());
+    const CBlockIndex* pFork = a;
+    std::vector<const CBlockIndex*> vChain;
+    for (const CBlockIndex* p = ptip; p && p != pFork; p = p->pprev)
+        vChain.push_back(p);
     ClearPending();
+    int nBack = 0;
+    for (const CBlockIndex* p = pMarker; p != pFork; p = p->pprev)
+    {
+        CBlock block;
+        CBlockUndo undo;
+        if (!block.ReadFromDisk(p, true, false) || !GetUndo(p->GetBlockHash(), undo))
+        {
+            LogPrintf("COINS: block %d of the set's own branch cannot be taken off (no block data or no undo data)\n", p->nHeight);
+            ClearPending();
+            return false;
+        }
+        ApplyDisconnect(block, p->GetBlockHash(), undo);
+        if (fTxnBroken)
+        {
+            LogPrintf("COINS: the set's own branch does not come off cleanly at height %d\n", p->nHeight);
+            ClearPending();
+            return false;
+        }
+        mapPendingUndo.erase(p->GetBlockHash());
+        setPendingUndoErase.insert(p->GetBlockHash());
+        nBack++;
+    }
+    LogPrintf("COINS: the set is %d blocks off the chain's branch and %d behind its tip; fixing\n", nBack, (int)vChain.size());
+    if (vChain.empty())
+    {
+        // only blocks to take off: the set is now for the fork point, which is the tip
+        if (!WritePending(ptip->GetBlockHash()))
+        {
+            ClearPending();
+            return false;
+        }
+        LogPrintf("COINS: caught up\n");
+        return true;
+    }
     int nSince = 0;
     for (auto it = vChain.rbegin(); it != vChain.rend(); ++it)
     {
@@ -440,6 +491,13 @@ bool CoinsInit()
         auto mi = mapBlockIndex.find(hashBest);
         if (mi != mapBlockIndex.end() && CatchUp(mi->second, pindexBest))
             return true;
+    }
+    if (fPruneMode)
+    {
+        // A pruned node cannot rebuild the set (it needs every block), and a rebuild starts by wiping it: leave it as it is, say why, and stop.
+        LogPrintf("COINS: the set cannot be brought up to date from the blocks that are left, and a pruned node cannot rebuild it\n");
+        GiveUp();
+        return false;
     }
     if (!Rebuild(pindexBest))
     {
