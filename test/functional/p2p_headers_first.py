@@ -6,6 +6,7 @@ blocks from both peers at once (a window ahead of its tip) rather than from one 
 Bad input is refused: headers that do not connect, headers with the wrong difficulty, and a headers message that is too long.
 """
 import struct
+import time
 
 from mininode import P2PConnection
 from test_framework import CorgiTestFramework, assert_equal, wait_until
@@ -36,9 +37,17 @@ class HeadersFirstTest(CorgiTestFramework):
 
     def run_test(self):
         a, b, c, d = self.nodes
-        for _ in range(BLOCKS // 300):          # in batches: one RPC call has two minutes, and a loaded machine needs more for 2100 blocks
-            a.generate(300)
-        a.generate(BLOCKS % 300)
+        # In batches: one RPC call has two minutes, and a loaded machine needs more for 2100 blocks. A fast machine has the opposite
+        # trouble: blocks mined faster than one in a few seconds run their timestamps ahead of the clock (each must be later than
+        # the median of the last eleven), and a block more than five minutes ahead is refused. So wait for the clock between batches.
+        left = BLOCKS
+        while left > 0:
+            n = min(left, 100)
+            a.generate(n)
+            left -= n
+            ahead = a.getblock(a.getbestblockhash())["time"] - int(time.time())
+            if ahead > 100:
+                time.sleep(ahead - 50)
         self.connect_nodes(1, 0)
         self.sync_blocks([a, b], timeout=240)
         assert_equal(b.getblockcount(), BLOCKS)
