@@ -5049,7 +5049,8 @@ Value getmetrics(const Array& params, bool fHelp)
         throw runtime_error(
             "getmetrics\n"
             "Returns node metrics as text in the Prometheus exposition format (one gauge or counter per line), for a scraper.\n"
-            "Blocks, headers of the best chain, peers (in and out), memory pool size, traffic, uptime and RPC calls in flight.");
+            "Blocks and difficulty of the best chain, peers (in and out), memory pool size, traffic, uptime and RPC calls in flight.\n"
+            "It is an RPC like any other (authenticated): a Prometheus scrape needs an exporter that calls it.");
     int nIn = 0, nOut = 0;
     {
         LOCK(cs_vNodes);
