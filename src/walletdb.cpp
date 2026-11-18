@@ -66,26 +66,23 @@ void CWalletDB::ListAccountCreditDebit(const string& strAccount, list<CAccountin
 {
     bool fAllAccounts = (strAccount == "*");
 
-    Dbc* pcursor = GetCursor();
+    std::unique_ptr<CWalletStorage::Cursor> pcursor = storage->OpenCursor();
     if (!pcursor)
         throw runtime_error("CWalletDB::ListAccountCreditDebit() : cannot create DB cursor");
-    unsigned int fFlags = DB_SET_RANGE;
+    bool fFirst = true;
     while(true)
     {
-        // Read next record
+        // Read next record (the first: the first one at or after the start of the accounting entries asked for)
         CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-        if (fFlags == DB_SET_RANGE)
+        if (fFirst)
             ssKey << std::make_tuple(string("acentry"), (fAllAccounts? string("") : strAccount), uint64(0));
         CDataStream ssValue(SER_DISK, CLIENT_VERSION);
-        int ret = ReadAtCursor(pcursor, ssKey, ssValue, fFlags);
-        fFlags = DB_NEXT;
-        if (ret == DB_NOTFOUND)
+        CWalletStorage::Cursor::Result ret = fFirst ? pcursor->Seek(ssKey, ssValue) : pcursor->Next(ssKey, ssValue);
+        fFirst = false;
+        if (ret == CWalletStorage::Cursor::END)
             break;
-        else if (ret != 0)
-        {
-            pcursor->close();
+        else if (ret != CWalletStorage::Cursor::OK)
             throw runtime_error("CWalletDB::ListAccountCreditDebit() : error scanning DB");
-        }
 
         // Unserialize
         string strType;
@@ -100,8 +97,6 @@ void CWalletDB::ListAccountCreditDebit(const string& strAccount, list<CAccountin
         ssValue >> acentry;
         entries.push_back(acentry);
     }
-
-    pcursor->close();
 }
 
 
@@ -124,7 +119,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
         }
 
         // Get cursor
-        Dbc* pcursor = GetCursor();
+        std::unique_ptr<CWalletStorage::Cursor> pcursor = storage->OpenCursor();
         if (!pcursor)
         {
             LogPrintf("Error getting wallet database cursor\n");
@@ -136,10 +131,10 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
             // Read next record
             CDataStream ssKey(SER_DISK, CLIENT_VERSION);
             CDataStream ssValue(SER_DISK, CLIENT_VERSION);
-            int ret = ReadAtCursor(pcursor, ssKey, ssValue);
-            if (ret == DB_NOTFOUND)
+            CWalletStorage::Cursor::Result ret = pcursor->Next(ssKey, ssValue);
+            if (ret == CWalletStorage::Cursor::END)
                 break;
-            else if (ret != 0)
+            else if (ret != CWalletStorage::Cursor::OK)
             {
                 LogPrintf("Error reading next record from wallet database\n");
                 return DB_CORRUPT;
@@ -339,7 +334,6 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 }
             }
         }
-        pcursor->close();
     }
 
     for (uint256 hash : vWalletUpgrade)
@@ -369,6 +363,10 @@ void ThreadFlushWalletDB(void* parg)
         return;
     fOneThread = true;
     if (!GetBoolArg("-flushwallet", true))
+        return;
+    // Berkeley DB keeps changes in its log until they are flushed into the file, and that is what the loop below does. A SQLite wallet has nothing
+    // to flush: every commit that returned is in the file already.
+    if (IsSqliteWalletFile(strFile))
         return;
 
     unsigned int nLastSeen = nWalletDBUpdated;
@@ -424,34 +422,5 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
 {
     if (!wallet.fFileBacked)
         return false;
-    while (!fShutdown)
-    {
-        {
-            LOCK(bitdb.cs_db);
-            if (!bitdb.mapFileUseCount.count(wallet.strWalletFile) || bitdb.mapFileUseCount[wallet.strWalletFile] == 0)
-            {
-                // Flush log data to the dat file
-                bitdb.CloseDb(wallet.strWalletFile);
-                bitdb.CheckpointLSN(wallet.strWalletFile);
-                bitdb.mapFileUseCount.erase(wallet.strWalletFile);
-
-                // Copy wallet.dat
-                std::filesystem::path pathSrc = GetDataDir() / wallet.strWalletFile;
-                std::filesystem::path pathDest(strDest);
-                if (std::filesystem::is_directory(pathDest))
-                    pathDest /= wallet.strWalletFile;
-
-                try {
-                    std::filesystem::copy_file(pathSrc, pathDest, std::filesystem::copy_options::overwrite_existing);
-                    LogPrintf("copied wallet.dat to %s\n", pathDest.string().c_str());
-                    return true;
-                } catch(const std::filesystem::filesystem_error &e) {
-                    LogPrintf("error copying wallet.dat to %s - %s\n", pathDest.string().c_str(), e.what());
-                    return false;
-                }
-            }
-        }
-        Sleep(100);
-    }
-    return false;
+    return BackupWalletStorage(wallet.strWalletFile, strDest);
 }

@@ -28,6 +28,12 @@
 using namespace std;
 using namespace boost;
 
+/** A wallet file is a plain file name in the data directory. */
+static bool IsPlainFileName(const std::string& str)
+{
+    return !str.empty() && str != "." && str != ".." && str.find_first_of("/\\:") == std::string::npos;
+}
+
 std::unique_ptr<CWallet> pwalletMain;
 CClientUIInterface uiInterface;
 
@@ -118,6 +124,82 @@ void HandleSIGHUP(int)
 // Start
 //
 #if !defined(QT_GUI)
+/** -migratewallet: write a SQLite wallet from a wallet.dat, and say how it went. Returns the exit status.
+ *
+ *  The wallet.dat is not opened where it is. It is copied into a new directory of its own, in the temporary files, and everything (the Berkeley DB
+ *  environment, its log, the new wallet) is made there; only the finished, compared, new file is copied back, and only if it does not exist yet. So
+ *  nothing in the data directory changes but that file, and a Berkeley DB of a newer version than the one that wrote the wallet cannot leave anything
+ *  behind that the older one cannot read. (To read a wallet.dat of an old version: run this with a corgicoind built with the newest Berkeley DB.) */
+static int MigrateWalletCommand()
+{
+    namespace fs = std::filesystem;
+    const std::string strFrom = GetArg("-wallet", "wallet.dat");
+    const std::string strTo = GetArg("-migrateto", "wallet.sqlite");
+    if (!IsPlainFileName(strFrom) || !IsPlainFileName(strTo))
+    {
+        fprintf(stderr, "Error: -wallet and -migrateto are file names in the data directory\n");
+        return 1;
+    }
+    if (!SqliteWalletAvailable())
+    {
+        fprintf(stderr, "Error: this build has no SQLite support (build with -DUSE_SQLITE=ON)\n");
+        return 1;
+    }
+
+    // The data directory the node uses, worked out here: GetDataDir() remembers its answer, and has to be given the scratch directory
+    fs::path dirReal = mapArgs.count("-datadir") ? fs::absolute(mapArgs["-datadir"]) : GetDefaultDataDir();
+    if (GetBoolArg("-regtest", false))
+        dirReal /= "regtest";
+    else if (GetBoolArg("-testnet", false))
+        dirReal /= "testnet3";
+    std::error_code ec;
+    if (!fs::is_regular_file(dirReal / strFrom, ec))
+    {
+        fprintf(stderr, "Error: %s does not exist\n", (dirReal / strFrom).string().c_str());
+        return 1;
+    }
+    if (fs::exists(dirReal / strTo, ec))
+    {
+        fprintf(stderr, "Error: %s exists already; it is never overwritten\n", (dirReal / strTo).string().c_str());
+        return 1;
+    }
+
+    const fs::path dirWork = fs::temp_directory_path(ec) / strprintf("corgicoin-migrate-%" PRI64d "-%u", GetTime(), (unsigned int)GetRand(1000000000));
+    fs::create_directories(dirWork, ec);
+    fs::copy_file(dirReal / strFrom, dirWork / strFrom, ec);
+    if (ec)
+    {
+        fprintf(stderr, "Error: cannot copy %s to %s: %s\n", (dirReal / strFrom).string().c_str(), dirWork.string().c_str(), ec.message().c_str());
+        return 1;
+    }
+
+    // From here on the process works in the scratch directory alone
+    mapArgs["-datadir"] = dirWork.string();
+    mapArgs.erase("-regtest");
+    mapArgs.erase("-testnet");
+    std::string strError;
+    bool fOk = MigrateWalletStorage(strFrom, strTo, strError);
+    bitdb.Flush(true);
+    if (fOk)
+    {
+        fs::copy_file(dirWork / strTo, dirReal / strTo, fs::copy_options::none, ec);
+        if (ec)
+        {
+            strError = "cannot copy the new wallet to " + (dirReal / strTo).string() + ": " + ec.message();
+            fOk = false;
+        }
+    }
+    fs::remove_all(dirWork, ec);
+    if (!fOk)
+    {
+        fprintf(stderr, "Error: %s\n", strError.c_str());
+        return 1;
+    }
+    printf("Wrote %s from %s (%s was only read, from a copy, and is as it was). Start with -wallet=%s to use it.\n",
+           (dirReal / strTo).string().c_str(), strFrom.c_str(), strFrom.c_str(), strTo.c_str());
+    return 0;
+}
+
 bool AppInit(int argc, char* argv[])
 {
     bool fRet = false;
@@ -128,6 +210,9 @@ bool AppInit(int argc, char* argv[])
         //
         // If Qt is used, parameters/corgicoin.conf are parsed in qt/bitcoin.cpp's main()
         ParseParameters(argc, argv);
+        // (before anything asks for the data directory: the migration works in a directory of its own)
+        if (GetBoolArg("-migratewallet", false))
+            exit(MigrateWalletCommand());
         if (!std::filesystem::is_directory(GetDataDir(false)))
         {
             fprintf(stderr, "Error: Specified directory does not exist\n");
@@ -284,6 +369,8 @@ std::string HelpMessage()
         "  -zmqpubrawblock=<address>  " + _("Publish each new best block, serialized") + "\n" +
         "  -zmqpubhashtx=<address>    " + _("Publish the txid of each transaction entering the memory pool or a block") + "\n" +
         "  -zmqpubrawtx=<address>     " + _("Publish each such transaction, serialized") + "\n" +
+        "  -wallet=<file>         " + _("Wallet file in the data directory (default: wallet.dat; a name that ends in .sqlite is a SQLite wallet, in a build with SQLite)") + "\n" +
+        "  -migratewallet         " + _("Convert wallet.dat (or -wallet=<file>) into a new SQLite wallet, -migrateto=<file> (default: wallet.sqlite), and exit. The old wallet is only read, from a copy; stop the node first") + "\n" +
         "  -upgradewallet         " + _("Upgrade wallet to latest format") + "\n" +
         "  -keypool=<n>           " + _("Set key pool size to <n> (default: 100)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
@@ -673,14 +760,19 @@ bool AppInit2()
     LogPrintf("Loading wallet...\n");
     nStart = GetTimeMillis();
     bool fFirstRun;
-    pwalletMain = std::make_unique<CWallet>("wallet.dat");
+    const std::string strWalletFile = GetArg("-wallet", "wallet.dat");
+    if (!IsPlainFileName(strWalletFile))
+        return InitError(strprintf(_("Invalid -wallet=<file>: '%s' is not a file name in the data directory"), strWalletFile.c_str()));
+    if (!WalletStorageAvailable(strWalletFile))
+        return InitError(strprintf(_("-wallet=%s is a SQLite wallet, and this build has no SQLite support (build with -DUSE_SQLITE=ON)"), strWalletFile.c_str()));
+    pwalletMain = std::make_unique<CWallet>(strWalletFile);
     int nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
     if (nLoadWalletRet != DB_LOAD_OK)
     {
         if (nLoadWalletRet == DB_CORRUPT)
-            strErrors << _("Error loading wallet.dat: Wallet corrupted") << "\n";
+            strErrors << strprintf(_("Error loading %s: Wallet corrupted"), strWalletFile.c_str()) << "\n";
         else if (nLoadWalletRet == DB_TOO_NEW)
-            strErrors << _("Error loading wallet.dat: Wallet requires newer version of CorgiCoin") << "\n";
+            strErrors << strprintf(_("Error loading %s: Wallet requires newer version of CorgiCoin"), strWalletFile.c_str()) << "\n";
         else if (nLoadWalletRet == DB_NEED_REWRITE)
         {
             strErrors << _("Wallet needed to be rewritten: restart CorgiCoin to complete") << "\n";
@@ -688,7 +780,7 @@ bool AppInit2()
             return InitError(strErrors.str());
         }
         else
-            strErrors << _("Error loading wallet.dat") << "\n";
+            strErrors << strprintf(_("Error loading %s"), strWalletFile.c_str()) << "\n";
     }
 
     if (GetBoolArg("-upgradewallet", fFirstRun))
@@ -730,7 +822,7 @@ bool AppInit2()
         pindexRescan = pindexGenesisBlock;
     else
     {
-        CWalletDB walletdb("wallet.dat");
+        CWalletDB walletdb(pwalletMain->strWalletFile);
         CBlockLocator locator;
         if (walletdb.ReadBestBlock(locator))
             pindexRescan = locator.GetBlockIndex();
