@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""-maxuploadtarget: a node that has sent what it promised in a day stops sending blocks and lets the asking peer go.
+"""-maxuploadtarget: a node that has sent what it promised in a day stops sending old blocks and lets the asking peer go.
 
-The target here is 1 MiB. A peer asks for the tip block again and again; the node serves it until most of the target is gone,
-then, for blocks the node counts as old (here: older than a second, the regtest-only -testhistoricalblockage), it stops and
-disconnects the peer, and getnettotals says so. A peer that asks for nothing is left alone.
+The target here is 1 MiB. A peer asks for an old block again and again; the node serves it until most of the target is gone,
+then, for blocks the node counts as old (older than the tip by a second here, the regtest-only -testhistoricalblockage), it
+stops and disconnects the peer, and getnettotals says so. New blocks are still sent. A peer that asks for nothing is left alone.
 """
 import time
 
@@ -17,6 +17,9 @@ class UploadTargetTest(CorgiTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
+        node.generate(1)
+        old = bytes.fromhex(node.getblockhash(1))[::-1]
+        time.sleep(3)       # "old" is measured from the tip's time: the blocks on top are more than the (test) second later
         node.generate(5)
         tip = bytes.fromhex(node.getbestblockhash())[::-1]
 
@@ -31,11 +34,10 @@ class UploadTargetTest(CorgiTestFramework):
         asker = P2PConnection(node.p2p_port)
         wait_until(lambda: quiet.got_verack and asker.got_verack, timeout=20, what="the handshakes")
 
-        time.sleep(2)       # the tip is now older than the (test) time after which a block counts as old
         self.log("a peer asks for the same old block again and again: it is served until the target is nearly spent")
         for _ in range(40):
             try:
-                asker.send_inv([(2, tip)] * 5000, command="getdata")
+                asker.send_inv([(2, old)] * 5000, command="getdata")
             except OSError:         # the node let go of it mid-send: that is what is being asked for
                 break
             if asker.closed:
@@ -46,6 +48,13 @@ class UploadTargetTest(CorgiTestFramework):
         assert_equal(info["serve_historical_blocks"], False)         # nine tenths are gone
         assert info["bytes_left_in_cycle"] < 1024 * 1024 // 5, info
         assert_equal(quiet.closed, False)                           # the peer that asked for nothing was left alone
+
+        self.log("with the target spent, the newest block is still sent: a miner's own block must reach the network")
+        late = P2PConnection(node.p2p_port)
+        wait_until(lambda: late.got_verack, timeout=20, what="the handshake")
+        late.send_inv([(2, tip)], command="getdata")
+        wait_until(lambda: late.counts.get("block", 0) >= 1, timeout=20, what="the tip block")
+        assert_equal(late.closed, False)
 
         self.log("a node with no target says it has none")
         node.stop()

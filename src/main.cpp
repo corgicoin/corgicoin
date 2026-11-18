@@ -3303,16 +3303,17 @@ static void ProcessGetData(CNode* pfrom)
             auto mi = mapBlockIndex.find(inv.hash);
             if (mi != mapBlockIndex.end())
             {
-                // -maxuploadtarget: a node that has sent what it promised does not send blocks. A peer that asks for old ones
-                // while the target is nearly spent is not told no, it is let go (it can fetch them from someone with bandwidth).
+                // -maxuploadtarget: once the target is nearly spent, a peer that asks for old blocks is let go (it can fetch them from
+                // someone with bandwidth). New blocks are always sent, whatever the target: a miner's or pool's own block that
+                // nobody is given is orphaned. "Old" is measured from the tip's time, not the clock, so the tip of a chain that has
+                // not moved for a week is still new.
                 int64 nOldSeconds = 7 * 24 * 60 * 60;
                 if (fRegTest && mapArgs.count("-testhistoricalblockage"))
                     nOldSeconds = std::max<int64>(1, GetArg("-testhistoricalblockage", nOldSeconds));    // test hook, regtest only
-                const bool fHistorical = (*mi).second->GetBlockTime() < GetTime() - nOldSeconds;
-                if (UploadTargetReached(fHistorical))
+                const bool fHistorical = pindexBest && (*mi).second->GetBlockTime() < pindexBest->GetBlockTime() - nOldSeconds;
+                if (fHistorical && UploadTargetReached(true))
                 {
-                    LogPrintf("upload target reached: not sending %s block to %s, disconnecting\n",
-                              fHistorical ? "an old" : "a", pfrom->addr.ToString().c_str());
+                    LogPrintf("upload target reached: not sending an old block to %s, disconnecting\n", pfrom->addr.ToString().c_str());
                     pfrom->fDisconnect = true;
                     return;
                 }
