@@ -12,7 +12,7 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 
 class EstimateFeeTest(CorgiTestFramework):
     num_nodes = 1
-    extra_args = [["-blockmaxsize=3500", "-blockprioritysize=0"]]
+    extra_args = [["-blockmaxsize=2200", "-blockprioritysize=0"]]
 
     def run_test(self):
         node = self.nodes[0]
@@ -27,7 +27,7 @@ class EstimateFeeTest(CorgiTestFramework):
         assert_raises_rpc_error(-8, "1 to 25", node.estimatefee, 0)
         assert_raises_rpc_error(-8, "1 to 25", node.estimatefee, 26)
 
-        self.log("rounds of 12 transactions paying 1 to 12 coins, one block each (it holds about 8)")
+        self.log("rounds of 12 transactions paying 1 to 12 coins, a block holds about 8, so the rest wait for the next")
         used = 0
         for _ in range(16):
             for fee in range(1, 13):
@@ -35,7 +35,9 @@ class EstimateFeeTest(CorgiTestFramework):
                 used += 1
                 raw = node.createrawtransaction([{"txid": c["txid"], "vout": c["vout"]}], {dest: c["amount"] - Decimal(fee)})
                 node.sendrawtransaction(node.signrawtransaction(raw)["hex"])
-            node.generate(1)
+            node.generate(1)                        # the best payers go in; the cheap ones wait
+            while node.getmempoolinfo()["size"] > 0:
+                node.generate(1)                    # and go in a block later (an estimator only learns from what confirms)
 
         self.log("the next-block estimate is dear, the 25-block one is cheap, and none is under the minimum")
         fast, slow = node.estimatefee(1), node.estimatefee(25)
