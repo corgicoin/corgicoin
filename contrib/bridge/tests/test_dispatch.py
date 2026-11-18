@@ -7,6 +7,8 @@ recoverable (manually) without double-sending."""
 from decimal import Decimal
 from unittest.mock import Mock
 
+import pytest
+
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 
@@ -171,3 +173,33 @@ def test_a_submitted_but_unconfirmed_reward_is_not_called_dispatched(tmp_path):
     assert entry["sol_sig"] == "the-signature"
     # and it is not paid again by a later scan
     assert state.already_processed(burn.key)
+
+
+def _dispatcher_with(confirm_result):
+    from solders.hash import Hash
+    from solders.signature import Signature
+    client = Mock()
+    client.get_latest_blockhash.return_value.value.blockhash = Hash.default()
+    client.send_transaction.return_value.value = Signature.default()
+    client.confirm_transaction.return_value = confirm_result
+    dispatcher = bridge.SolanaDispatcher(client)
+    dispatcher._account_exists = lambda address: True
+    return dispatcher
+
+
+def test_a_final_transaction_that_failed_on_chain_is_not_a_payment():
+    """Finalized is not succeeded: a failed transaction is final too and paid nothing."""
+    dispatcher = _dispatcher_with(Mock(value=[Mock(err="InstructionError(0, Custom(1))")]))
+    with pytest.raises(RuntimeError, match="failed on chain"):
+        dispatcher.send_reward(_make_partner(), _make_burn().sol_dest, Decimal("1"))
+
+
+def test_a_final_transaction_with_no_error_is_a_payment():
+    dispatcher = _dispatcher_with(Mock(value=[Mock(err=None)]))
+    assert dispatcher.send_reward(_make_partner(), _make_burn().sol_dest, Decimal("1"))
+
+
+def test_no_status_after_confirming_is_unconfirmed():
+    dispatcher = _dispatcher_with(Mock(value=[None]))
+    with pytest.raises(bridge.DispatchUnconfirmed):
+        dispatcher.send_reward(_make_partner(), _make_burn().sol_dest, Decimal("1"))

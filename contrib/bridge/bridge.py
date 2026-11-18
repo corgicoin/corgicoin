@@ -289,9 +289,17 @@ class SolanaDispatcher:
         sol_sig = str(resp.value)
         # "submitted" is not "paid": a transaction whose blockhash expires is dropped with no error. Wait for it to be final.
         try:
-            self._client.confirm_transaction(resp.value, commitment=Finalized, sleep_seconds=2)
+            conf = self._client.confirm_transaction(resp.value, commitment=Finalized, sleep_seconds=2)
         except Exception as e:
             raise DispatchUnconfirmed(sol_sig) from e
+        # Finalized is not "succeeded": a transaction that failed on chain (say the destination account was created by someone
+        # else between preflight and execution) is final too, and paid nothing. Only a status with no error is a payment.
+        statuses = getattr(conf, "value", None) or [None]
+        status = statuses[0]
+        if status is None:
+            raise DispatchUnconfirmed(sol_sig)
+        if status.err is not None:
+            raise RuntimeError(f"reward transaction {sol_sig} is final but failed on chain: {status.err}")
         return sol_sig
 
     def treasury_balance(self, partner: Partner) -> Decimal | None:
@@ -475,7 +483,7 @@ def reconcile_mark_dispatched(state: "State", txid: str, sol_sig: str) -> int:
     return 0
 
 
-def reconcile_reset(state: "State", txid: str) -> int:
+def reconcile_reset(state: "State", txid: str, force: bool = False) -> int:
     entry = state.processed.get(txid)
     if entry is None:
         print(f"error: txid {txid} not found in state.json", file=sys.stderr)
@@ -488,6 +496,11 @@ def reconcile_reset(state: "State", txid: str) -> int:
         print(f"error: txid {txid} has status {entry.get('status')!r}, not resettable",
               file=sys.stderr)
         return 2
+    if entry.get("status") == "unconfirmed" and not force:
+        print(f"error: {txid} is unconfirmed: its reward ({entry.get('sol_sig')}) may have landed, and a reset pays it again. "
+              f"Look the signature up on Solana first; if it landed use --mark-dispatched, if it did not, --reset it with --force.",
+              file=sys.stderr)
+        return 2
     burn_height = entry.get("height")
     state.processed.pop(txid)
     # Rewind so the next tick re-scans the block this burn was in. Without
@@ -496,6 +509,9 @@ def reconcile_reset(state: "State", txid: str) -> int:
     # are protected by the already_processed check.
     if isinstance(burn_height, int) and state.last_height >= burn_height:
         state.last_height = max(0, burn_height - 1)
+        # the kept hash is of the old last_height: left as it is, the next tick reads the rewind as a reorganisation
+        # deeper than the wait, raises the alarm and rewinds a further 150 blocks
+        state.last_hash = None
     state.save()
     print(f"reset {txid} (entry removed; last_height={state.last_height} for reprocess)")
     return 0
@@ -516,8 +532,11 @@ def main() -> int:
                      help="list pending and dispatch_error entries, then exit")
     rec.add_argument("--mark-dispatched", nargs=2, metavar=("TXID", "SOL_SIG"),
                      help="mark a pending/dispatch_error entry as dispatched and exit")
-    rec.add_argument("--reset", metavar="TXID",
-                     help="delete a pending/dispatch_error entry and rewind for reprocess, then exit")
+    rec.add_argument("--reset", metavar="KEY",
+                     help="delete a pending/dispatch_error/over_limit/treasury_low entry (txid:vout, as --list-pending prints it) "
+                          "and rewind for reprocess, then exit")
+    parser.add_argument("--force", action="store_true",
+                        help="with --reset: also reset an unconfirmed entry (only after checking its signature did not land)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -534,7 +553,7 @@ def main() -> int:
         return rc
     if args.reset:
         s = State(state_path)
-        return reconcile_reset(s, args.reset)
+        return reconcile_reset(s, args.reset, force=args.force)
 
     rpc = CorgiRPC(
         url=os.environ.get("CORGI_RPC_URL", "http://127.0.0.1:62555"),

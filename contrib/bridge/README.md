@@ -158,14 +158,17 @@ mid-dispatch or a Solana RPC error), use these instead of editing
 python bridge.py --list-pending
 
 # Confirmed the reward landed on Solana — promote to dispatched
-python bridge.py --mark-dispatched <CORG_TXID> <SOL_SIG>
+python bridge.py --mark-dispatched <TXID:VOUT> <SOL_SIG>
 
 # Confirmed the reward did NOT land — delete the entry and rewind so the
 # next tick reprocesses it from scratch
-python bridge.py --reset <CORG_TXID>
+python bridge.py --reset <TXID:VOUT>
 ```
 
-`--reset` refuses already-`dispatched` entries (would double-send), and
+Entries are keyed `txid:vout` (one transaction can hold several burns); `--list-pending` prints the keys.
+
+`--reset` refuses already-`dispatched` entries (would double-send), refuses `unconfirmed` ones unless `--force` is given (the
+reward may have landed: look its signature up first, and use `--mark-dispatched` if it did), and
 auto-rewinds `last_height` to `entry.height - 1` so the bridge re-scans
 the burn's block on next tick.
 

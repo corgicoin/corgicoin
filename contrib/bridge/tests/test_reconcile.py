@@ -133,3 +133,32 @@ def test_reset_refuses_missing(tmp_path, capsys):
     state = bridge.State(tmp_path / "state.json")
     assert bridge.reconcile_reset(state, "nope") == 2
     assert "not found" in capsys.readouterr().err
+
+
+def test_reset_forgets_the_last_hash_it_rewound_past(tmp_path):
+    """The kept hash belongs to the old last_height: left in place, the next tick takes the rewind for a deep reorg."""
+    state = _seed_state(tmp_path, {
+        "tx-1": {"status": "treasury_low", "partner": "CORG", "height": 18391},
+    })
+    state.last_height = 18400
+    state.last_hash = "hash-of-18400"
+    state.save()
+
+    assert bridge.reconcile_reset(state, "tx-1") == 0
+
+    reloaded = bridge.State(tmp_path / "state.json")
+    assert reloaded.last_height == 18390
+    assert reloaded.last_hash is None
+
+
+def test_reset_refuses_unconfirmed_without_force(tmp_path, capsys):
+    """An unconfirmed reward may have landed: a reset would pay the burn a second time."""
+    state = _seed_state(tmp_path, {
+        "tx-1": {"status": "unconfirmed", "partner": "CORG", "sol_sig": "sig", "height": 18391},
+    })
+    assert bridge.reconcile_reset(state, "tx-1") == 2
+    assert "--force" in capsys.readouterr().err
+    assert bridge.State(tmp_path / "state.json").already_processed("tx-1")
+
+    assert bridge.reconcile_reset(state, "tx-1", force=True) == 0
+    assert not bridge.State(tmp_path / "state.json").already_processed("tx-1")
