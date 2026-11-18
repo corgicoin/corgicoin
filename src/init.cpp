@@ -28,6 +28,12 @@
 using namespace std;
 using namespace boost;
 
+/** A wallet file is a plain file name in the data directory. */
+static bool IsPlainFileName(const std::string& str)
+{
+    return !str.empty() && str != "." && str != ".." && str.find_first_of("/\\:") == std::string::npos;
+}
+
 std::unique_ptr<CWallet> pwalletMain;
 CClientUIInterface uiInterface;
 
@@ -118,12 +124,6 @@ void HandleSIGHUP(int)
 // Start
 //
 #if !defined(QT_GUI)
-/** A wallet file is a plain file name in the data directory. */
-static bool IsPlainFileName(const std::string& str)
-{
-    return !str.empty() && str != "." && str != ".." && str.find_first_of("/\\:") == std::string::npos;
-}
-
 /** -migratewallet: write a SQLite wallet from a wallet.dat, and say how it went. Returns the exit status.
  *
  *  The wallet.dat is not opened where it is. It is copied into a new directory of its own, in the temporary files, and everything (the Berkeley DB
