@@ -75,7 +75,7 @@ bool fTestNet = false;
 bool fRegTest = false;
 bool fNoListen = false;
 bool fLogTimestamps = false;
-bool fLogIPs = true;     // set from -logips at start-up (the default there is off); true until then so early lines are not altered
+bool fLogIPs = true;     // -logips, read at start-up (default on); true until then so early lines are not altered
 bool fLogJson = false;
 
 std::string MaskLogIPs(const std::string& str)

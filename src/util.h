@@ -125,7 +125,7 @@ extern bool fTestNet;
 extern bool fRegTest;   // -regtest: private instant-mining chain; implies fTestNet
 extern bool fNoListen;
 extern bool fLogTimestamps;
-extern bool fLogIPs;      // -logips: public IPv4 addresses are written to the log (default: they are replaced by [ip])
+extern bool fLogIPs;      // -logips: public IPv4 addresses are written to the log (default); -logips=0 replaces them by [ip]
 extern bool fLogJson;     // -logformat=json: one JSON object per line in debug.log
 /** Replace public IPv4 addresses (with their port) by [ip]; private and loopback ones, and version numbers like v4.8.0.0, stay. */
 std::string MaskLogIPs(const std::string& str);
