@@ -2,7 +2,7 @@
 """-walletnotify runs a command with the transaction id when a wallet transaction is new or changes.
 
 The command here appends the id to a file. A transaction sent from the wallet is announced when it is made, and again when
-it confirms (it changed). A transaction that is not the wallet's is not announced.
+it confirms (it changed).
 """
 import os
 

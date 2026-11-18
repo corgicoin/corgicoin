@@ -811,8 +811,16 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
             if (!strCmd.empty())
             {
                 boost::replace_all(strCmd, "%s", hash.GetHex());
-                std::thread t(runCommand, strCmd);
-                t.detach();
+                // a rescan can start thousands of these at once: running out of threads must not throw into AddToWallet's callers
+                try
+                {
+                    std::thread t(runCommand, strCmd);
+                    t.detach();
+                }
+                catch (const std::system_error& e)
+                {
+                    LogPrintf("-walletnotify: could not start the command for %s: %s\n", hash.ToString().c_str(), e.what());
+                }
             }
         }
 #ifndef QT_GUI
