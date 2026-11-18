@@ -4141,20 +4141,32 @@ public:
         if (nTimeoutSeconds > 0 && !fUseSSL)
         {
             // (With TLS the decrypted bytes may already be waiting inside the TLS layer, where poll() cannot see them.)
+            // The wait is cut into short slices that look at fShutdown: on Windows, shutdown() from another thread
+            // (RPCAbortConnections) does not wake a select() on the socket, so an idle keep-alive client held the node
+            // for the whole timeout at exit.
+            const int64 nDeadline = GetTimeMillis() + (int64)nTimeoutSeconds * 1000;
+            int nReady = 0;
+            while (nReady == 0)
+            {
+                if (fShutdown)
+                    return -1;
+                const int64 nLeft = nDeadline - GetTimeMillis();
+                if (nLeft <= 0)
+                    return -1;       // end of stream: the caller treats the connection as finished
+                const int nSliceMs = (int)std::min<int64>(nLeft, 250);
 #ifdef WIN32
-            // (select, not WSAPoll: WSAPoll needs Windows Vista, and this is built for XP: _WIN32_WINNT in compat.h. One socket in the set
-            // is far below the limit of a set, whatever the number of connections.)
-            fd_set fdsRead;
-            FD_ZERO(&fdsRead);
-            FD_SET(stream.next_layer().native_handle(), &fdsRead);
-            struct timeval tv = { nTimeoutSeconds, 0 };
-            const int nReady = select(0, &fdsRead, nullptr, nullptr, &tv);
+                // (select, not WSAPoll: WSAPoll needs Windows Vista, and this is built for XP: _WIN32_WINNT in compat.h. One socket
+                // in the set is far below the limit of a set, whatever the number of connections.)
+                fd_set fdsRead;
+                FD_ZERO(&fdsRead);
+                FD_SET(stream.next_layer().native_handle(), &fdsRead);
+                struct timeval tv = { 0, nSliceMs * 1000 };
+                nReady = select(0, &fdsRead, nullptr, nullptr, &tv);
 #else
-            struct pollfd pfd = { stream.next_layer().native_handle(), POLLIN, 0 };
-            const int nReady = poll(&pfd, 1, nTimeoutSeconds * 1000);
+                struct pollfd pfd = { stream.next_layer().native_handle(), POLLIN, 0 };
+                nReady = poll(&pfd, 1, nSliceMs);
 #endif
-            if (nReady == 0)
-                return -1;           // end of stream: the caller treats the connection as finished
+            }
         }
         if (fUseSSL) return stream.read_some(asio::buffer(s, n));
         return stream.next_layer().read_some(asio::buffer(s, n));
