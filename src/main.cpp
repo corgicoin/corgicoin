@@ -3326,7 +3326,13 @@ static void ProcessGetData(CNode* pfrom)
             {
                 CBlock block;
                 // already accepted, so its proof of work was checked: do not pay for it again on every read
-                block.ReadFromDisk((*mi).second, true, false);
+                if (!block.ReadFromDisk((*mi).second, true, false))
+                {
+                    // pruned, or the file is damaged: say nothing for it (an empty block would be taken for a bad one), and carry on
+                    LogPrintf("getdata : block %s is not available%s
+", inv.hash.ToString().substr(0,20).c_str(), IsBlockPruned((*mi).second) ? " (pruned)" : "");
+                    continue;
+                }
                 pfrom->PushMessage("block", block);
 
                 // Trigger them to send a getblocks request for the next batch of inventory
@@ -3358,12 +3364,7 @@ static void ProcessGetData(CNode* pfrom)
     }
 }
 
-                if (!block.ReadFromDisk((*mi).second, true, false))
-                {
-                    // pruned, or the file is damaged: say nothing for it (an empty block would be taken for a bad one), and carry on
-                    LogPrintf("getdata : block %s is not available%s\n", inv.hash.ToString().substr(0,20).c_str(), IsBlockPruned((*mi).second) ? " (pruned)" : "");
-                    continue;
-                }
+
 bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<CService, CPubKey> mapReuseKey;
@@ -3645,51 +3646,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         {
             pfrom->Misbehaving(20);
             return LogError("getdata queue of %d items is full", pfrom->vRecvGetData.size());
-            if (fShutdown)
-                return true;
-            LogPrint(LOG_NET, "received getdata for: %s\n", inv.ToString().c_str());
-
-            if (inv.type == static_cast<int>(MsgType::Block))
-            {
-                // Send block from disk
-                auto mi = mapBlockIndex.find(inv.hash);
-                if (mi != mapBlockIndex.end())
-                {
-                    CBlock block;
-                    if (!block.ReadFromDisk((*mi).second))
-                    {
-                        // pruned, or the file is damaged: say nothing for it (an empty block would be taken for a bad one), and carry on
-                        LogPrintf("getdata : block %s is not available%s\n", inv.hash.ToString().substr(0,20).c_str(), IsBlockPruned((*mi).second) ? " (pruned)" : "");
-                        continue;
-                    }
-                    pfrom->PushMessage("block", block);
-
-                    // Trigger them to send a getblocks request for the next batch of inventory
-                    if (inv.hash == pfrom->hashContinue)
-                    {
-                        // Bypass PushInventory, this must send even if redundant,
-                        // and we want it right after the last block so they don't
-                        // wait for other stuff first.
-                        vector<CInv> vInv;
-                        vInv.emplace_back(static_cast<int>(MsgType::Block), hashBestChain);
-                        pfrom->PushMessage("inv", vInv);
-                        pfrom->hashContinue = 0;
-                    }
-                }
-            }
-            else if (inv.IsKnownType())
-            {
-                // Send stream from relay memory
-                {
-                    LOCK(cs_mapRelay);
-                    auto mi = mapRelay.find(inv);
-                    if (mi != mapRelay.end())
-                        pfrom->PushMessage(inv.GetCommand(), (*mi).second);
-                }
-            }
-
-            // Track requests for our stuff
-            Inventory(inv.hash);
         }
         pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
         ProcessGetData(pfrom);
