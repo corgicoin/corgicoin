@@ -18,6 +18,7 @@
 #include "compat_boost.h"
 #include "logging.h"
 #include "zmqnotify.h"
+#include <cstdlib>
 #include <filesystem>
 #include <boost/interprocess/sync/file_lock.hpp>
 
@@ -95,7 +96,11 @@ void Shutdown(void* parg)
         fExit = true;
 #ifndef QT_GUI
         // ensure non UI client get's exited here, but let Bitcoin-Qt reach return 0; in bitcoin.cpp
-        exit(0);
+        // _Exit, not exit: everything that has to reach the disk is flushed and closed above, and exit() would run the static
+        // destructors while threads that StopNode does not count (the external IP lookup, a late log line) may still lock the
+        // mutexes being destroyed: an intermittent abort at exit ("mutex lock failed", status -6)
+        fflush(nullptr);
+        std::_Exit(0);
 #endif
     }
     else
