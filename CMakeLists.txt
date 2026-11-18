@@ -286,6 +286,24 @@ if(USE_ZMQ)
     endif()
 endif()
 
+# Signature verification with libsecp256k1 (the library Bitcoin Core uses) instead of OpenSSL. OFF by default: whether a signature is valid is
+# consensus, so this is an option to be run and compared (src/fuzz/secp_diff.cpp checks it against OpenSSL's own ECDSA_verify, the check master
+# makes) before any release turns it on. The signature is read with the strictness OpenSSL has (see IsCanonicalDERSignature in src/key.cpp).
+# contrib/build-secp256k1.sh builds the pinned release. The library is linked through ZMQ_LIBRARIES, which every target already uses.
+option(USE_LIBSECP256K1 "Verify signatures with libsecp256k1 instead of OpenSSL" OFF)
+if(USE_LIBSECP256K1)
+    find_library(SECP256K1_LIBRARY secp256k1)
+    find_path(SECP256K1_INCLUDE_DIR secp256k1.h)
+    if(NOT SECP256K1_LIBRARY OR NOT SECP256K1_INCLUDE_DIR)
+        message(FATAL_ERROR "libsecp256k1 not found. Build the pinned release with contrib/build-secp256k1.sh <prefix> and pass "
+                            "-DSECP256K1_INCLUDE_DIR=<prefix>/include -DSECP256K1_LIBRARY=<prefix>/lib/libsecp256k1.a, or install "
+                            "libsecp256k1-dev, or leave -DUSE_LIBSECP256K1 off.")
+    endif()
+    add_definitions(-DUSE_LIBSECP256K1)
+    include_directories(${SECP256K1_INCLUDE_DIR})
+    list(APPEND ZMQ_LIBRARIES ${SECP256K1_LIBRARY})
+endif()
+
 # Daemon executable
 add_executable(corgicoind ${DAEMON_SOURCES} ${JSON_SOURCES})
 add_dependencies(corgicoind generate_build_info)
@@ -581,6 +599,27 @@ if(BUILD_FUZZ)
     endif()
     if(USE_UPNP)
         target_link_libraries(fuzz_corgicoin ${MINIUPNPC_LIBRARY})
+    endif()
+endif()
+
+# Differential check of the node's signature verification (CKey::Verify) against OpenSSL's ECDSA_verify on the raw bytes, which is what master
+# does (src/fuzz/secp_diff.cpp). With -DUSE_LIBSECP256K1=ON it compares libsecp256k1 with OpenSSL; with it off it checks the harness itself.
+option(BUILD_SECP_DIFF "Build the signature verification differential" OFF)
+if(BUILD_SECP_DIFF)
+    find_library(SECP256K1_LIBRARY secp256k1 REQUIRED)
+    find_path(SECP256K1_INCLUDE_DIR secp256k1.h REQUIRED)
+    set(DIFF_DAEMON_SOURCES ${DAEMON_SOURCES})
+    list(REMOVE_ITEM DIFF_DAEMON_SOURCES src/init.cpp)
+    add_executable(secp_diff src/fuzz/secp_diff.cpp ${DIFF_DAEMON_SOURCES} ${JSON_SOURCES})
+    add_dependencies(secp_diff generate_build_info)
+    target_include_directories(secp_diff PRIVATE ${SECP256K1_INCLUDE_DIR})
+    target_link_libraries(secp_diff ${SECP256K1_LIBRARY} ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
+        Threads::Threads ${CMAKE_DL_LIBS})
+    if(LINUX)
+        target_link_libraries(secp_diff rt)
+    endif()
+    if(USE_UPNP)
+        target_link_libraries(secp_diff ${MINIUPNPC_LIBRARY})
     endif()
 endif()
 
