@@ -2933,8 +2933,8 @@ Value getblock(const Array& params, bool fHelp)
 
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
+    if (!block.ReadFromDisk(pblockindex, true))
         throw JSONRPCError(-1, IsBlockPruned(pblockindex) ? "Block not available (pruned data)" : "Block not found on disk");
-    block.ReadFromDisk(pblockindex, true);
 
     if (!fVerbose)
     {
