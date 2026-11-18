@@ -1142,7 +1142,6 @@ public:
     bool ConnectBlock(CTxDB& txdb, CBlockIndex* pindex);
     bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true, bool fCheckPoW=true);
     bool ConnectBlockWith(CTxDB& txdb, CBlockIndex* pindex, bool fMayUseCoins, bool fMayBatch, bool& fUsedCoins, bool& fBatched);
-    bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true);
     bool SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew);
     bool AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos);
     bool CheckBlock() const;
