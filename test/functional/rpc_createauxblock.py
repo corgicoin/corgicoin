@@ -121,8 +121,12 @@ class CreateAuxBlockTest(CorgiTestFramework):
         self.log("the reward of a merged-mined block can be spent once it matures")
         n0.generate(WALLET_MATURITY)
         self.sync_blocks()
-        assert n1.getbalance() > 1000       # node1's only coins are that merged-mined reward
-        txid = n1.sendtoaddress(n0.getnewaddress(), 1000)
+        # node1's only coins are that merged-mined reward. Rewards are random, from 1 to a million coins, so the amount sent is
+        # taken from it (a fixed 1000 failed about one run in a thousand)
+        reward = coinbase["vout"][0]["value"]
+        assert_equal(n1.getbalance(), reward)
+        send = int(reward) // 2 if reward >= 4 else 1
+        txid = n1.sendtoaddress(n0.getnewaddress(), send)
         self.sync_mempools()
         n0.generate(1)
         self.sync_blocks()

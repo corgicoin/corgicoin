@@ -54,7 +54,13 @@ class RPCHTTPAuthTest(CorgiTestFramework):
         }
         for label, value in refused.items():
             self.log("refuses: %s" % label)
-            status, _ = self.post(node, value)
+            try:
+                status, _ = self.post(node, value)
+            except (ConnectionResetError, BrokenPipeError):
+                # the server answers an over-long header with 431 and closes while the client may still be sending it:
+                # the client then sees the reset before it can read the reply. Either way the request was refused.
+                assert label == "very long value", "connection reset for %s" % label
+                status = 431
             # a header line over 8 KiB is refused outright (431) now; everything else is a 401
             assert_equal(status, 431 if label == "very long value" else 401, "for %s" % label)
             # the server must still be alive and serving authenticated requests

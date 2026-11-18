@@ -42,7 +42,7 @@ class BootstrapExportTest(CorgiTestFramework):
 
         self.log("a relative name is in the data directory")
         info = source.exportblocks("relative.dat", 0, 5)
-        assert_equal(info["file"], os.path.join(source.datadir, "regtest", "relative.dat"))
+        assert_equal(os.path.normpath(info["file"]), os.path.normpath(os.path.join(source.datadir, "regtest", "relative.dat")))
         assert os.path.exists(info["file"])
 
         self.log("a range can be written: blocks 100 to 110 are 11 blocks")
