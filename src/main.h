@@ -110,7 +110,9 @@ bool HeadersFirstWith(const CNode* pnode);
 /** The block's entry in the header index, taken out of it (nullptr if there is none): when a block whose header was taken before arrives,
  *  that same entry becomes its block index entry, so every block is held once, not once as a header and once as a block, and every
  *  pointer to the header (the header chain, a peer's best known block, the entries above it) is still the block's. */
-CBlockIndex* HeadersTakeIndexFor(const uint256& hash);
+CBlockIndex* HeadersFindIndexFor(const uint256& hash);
+/** Drop the header index's entry for the block once the block index entry stands on its own key (see CBlock::AddToBlockIndex). */
+void HeadersDropEntry(const uint256& hash);
 /** How many headers are held that are not (yet) blocks. */
 size_t HeaderOnlyCount();
 bool HaveHeaderFor(const uint256& hash);
