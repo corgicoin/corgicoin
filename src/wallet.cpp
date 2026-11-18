@@ -359,14 +359,17 @@ bool CWallet::AddCScript(const CScript& redeemScript)
     return CWalletDB(strWalletFile).WriteCScript(Hash160(redeemScript), redeemScript);
 }
 
-// Milliseconds since nStart, at least 1: the key-derivation calibration divides by this, and a fast machine can finish
-// a short derivation inside one clock tick
 // -walletkdf=scrypt: encrypt, and change the passphrase of, a wallet with the memory-hard derivation
+static_assert(CLIENT_VERSION >= static_cast<int>(WalletFeature::FEATURE_SCRYPT_KDF),
+              "a release with scrypt wallets must be numbered at least FEATURE_SCRYPT_KDF, or it cannot open its own");
+
 static bool WantScryptKDF()
 {
     return GetArg("-walletkdf", "") == "scrypt";
 }
 
+// Milliseconds since nStart, at least 1: the key-derivation calibration divides by this, and a fast machine can finish
+// a short derivation inside one clock tick
 static double ElapsedMillis(int64 nStart)
 {
     int64 nElapsed = GetTimeMillis() - nStart;
@@ -2011,9 +2014,15 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
         if (GetBoolArg("-walletcompat", false))
         {
             // Put the old number back, so that an older release can open the wallet (the gate cannot otherwise be undone)
-            if (nWalletVersion > static_cast<int>(WalletFeature::FEATURE_HD_LEGACY))
+            // but never below what a scrypt passphrase needs: an older release would open the wallet and then call the right
+            // passphrase incorrect
+            int nCompat = static_cast<int>(WalletFeature::FEATURE_HD_LEGACY);
+            for (const MasterKeyMap::value_type& pMasterKey : mapMasterKeys)
+                if (pMasterKey.second.nDerivationMethod == WALLET_DERIVATION_SCRYPT)
+                    nCompat = std::max(nCompat, static_cast<int>(WalletFeature::FEATURE_SCRYPT_KDF));
+            if (nWalletVersion > nCompat)
             {
-                nWalletVersion = static_cast<int>(WalletFeature::FEATURE_HD_LEGACY);
+                nWalletVersion = nCompat;
                 if (fFileBacked)
                     CWalletDB(strWalletFile).WriteMinVersion(nWalletVersion);
             }

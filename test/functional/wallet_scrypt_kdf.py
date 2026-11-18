@@ -8,7 +8,7 @@ moves to it when the option is given at the change).
 """
 from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_error
 
-SCRYPT_VERSION = 4090000
+SCRYPT_VERSION = 4110000
 
 
 class ScryptKDFTest(CorgiTestFramework):
@@ -65,6 +65,12 @@ class ScryptKDFTest(CorgiTestFramework):
         node.start()
         node.walletpassphrase("third passphrase", 60)
         assert_equal(node.getwalletinfo()["walletversion"], SCRYPT_VERSION)
+
+        self.log("-walletcompat lowers an HD wallet's version, but not below what its scrypt passphrase needs")
+        node.stop()
+        node.start(["-walletcompat"])
+        assert_equal(node.getwalletinfo()["walletversion"], SCRYPT_VERSION)
+        node.walletpassphrase("third passphrase", 60)
 
 
 if __name__ == "__main__":

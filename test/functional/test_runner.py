@@ -74,6 +74,7 @@ TESTS = [
     "rpc_hostile_inputs.py",
     "wallet_hd_phrase.py",
     "wallet_hd_version_gate.py",
+    "wallet_scrypt_kdf.py",
     "wallet_hd_restore.py",
     "wallet_hd_lock_secrets.py",
     "wallet_hdseed_index.py",

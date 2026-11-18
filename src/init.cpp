@@ -298,7 +298,6 @@ std::string HelpMessage()
         "  -rpcbind=<ip>          " + _("Listen for JSON-RPC connections on this address only (repeatable; default: loopback, or every interface if -rpcallowip is set)") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
         "  -walletnotify=<cmd>    " + _("Execute command when a wallet transaction is new or changes (%s in cmd is replaced by the transaction id)") + "\n" +
-        "  -walletkdf=scrypt      " + _("Derive the wallet passphrase key with scrypt (memory hard) when encrypting or changing the passphrase. Releases before 4.9 cannot open such a wallet; a wallet that has it keeps it (default: the older iterated hash)") + "\n" +
         "  -blockmaxsize=<n>      " + _("Largest block, in bytes, this node makes (default: the most it may, 500000)") + "\n" +
         "  -blockprioritysize=<n> " + _("Bytes of each block it fills with the highest-priority (old, large-valued) transactions before it goes by fee per byte (default: 27000)") + "\n" +
         "  -maxinboundpergroup=<n> " + _("Accept at most n inbound connections from one network group (the /16 of an IPv4 address); 0: no limit (default: 0)") + "\n" +
@@ -318,6 +317,7 @@ std::string HelpMessage()
         "  -maxmempoolkb=<n>      " + _("Keep the transaction memory pool under <n> kB, dropping the lowest fee rate first (default: 100000)") + "\n" +
         "  -mempoolexpiry=<n>     " + _("Drop transactions that have waited <n> hours in the memory pool (default: 72)") + "\n" +
         "  -walletcompat          " + _("Record the old low minimum version in HD wallets so releases from before HD wallets can open them (they ignore the HD seed: use only on purpose)") + "\n" +
+        "  -walletkdf=scrypt      " + _("Derive the wallet passphrase key with scrypt (memory hard) when encrypting or changing the passphrase. Releases before 4.11 cannot open such a wallet; a wallet that has it keeps it (default: the older iterated hash)") + "\n" +
         "  -maxtxfee=<amt>        " + _("Refuse to make a transaction that pays more than <amt> in fees (default: 10000)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
         "  -checkblocks=<n>       " + _("How many blocks to check at startup (default: 2500, 0 = all)") + "\n" +

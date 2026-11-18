@@ -127,6 +127,7 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | `rpc_invalidateblock_deep.py` | invalidateblock 400 blocks deep fits the database lock table (-dbmaxlocks) |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
 | `wallet_hd_version_gate.py` | an HD wallet records 4.5.0.0 as its minimum client version, so releases before HD refuse it |
+| `wallet_scrypt_kdf.py` | `-walletkdf=scrypt`: a scrypt passphrase key, the wallet marked 4.11.0.0 so older releases refuse it, kept across passphrase changes and under `-walletcompat` |
 | `wallet_hd_lock_secrets.py` | an encrypted HD wallet wipes its recovery phrase and master key from memory when it locks |
 | `wallet_hd_restore.py` | restoring a phrase derives ahead, rescans, finds coins on late keys, and continues after the last used address |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |
