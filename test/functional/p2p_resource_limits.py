@@ -27,8 +27,13 @@ class ResourceLimitsTest(CorgiTestFramework):
         assert_equal(node.getmemoryinfo()["askedfor"], 0)
 
         self.log("500000 announced transactions that never arrive: the node remembers at most 50000")
-        for _ in range(10):
+        # One message at a time: each is 1.8 MB, and ten sent back to back pass the node's 5 MB receive buffer before it has
+        # processed the first, which disconnects the peer (flood control, as it should) on a slow machine or under the
+        # sanitizers. A ping after each, answered in order, says when the node has got through it.
+        for i in range(10):
             peer.send_inv([(1, os.urandom(32)) for _ in range(50000)])
+            peer.send("ping", struct.pack("<Q", i))
+            wait_until(lambda: peer.counts.get("pong", 0) >= i + 1, timeout=120, what="the node to process announcement %d" % (i + 1))
         wait_until(lambda: node.getmemoryinfo()["askedfor"] >= 50000 or node.getpeerinfo()[0]["banscore"] > 0,
                    timeout=60, what="the node to take in the announcements")
         # let it finish the backlog
