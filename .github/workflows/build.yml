@@ -63,6 +63,45 @@ jobs:
           name: corgicoind-linux-x64
           path: build/corgicoind
 
+  build-linux-secp256k1:
+    # Signature verification with libsecp256k1 (-DUSE_LIBSECP256K1=ON, off by default): the pinned release is built, the unit tests and the
+    # signature functional tests run with it, and secp_diff checks it against OpenSSL's ECDSA_verify (what master uses) on a million cases.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y \
+            build-essential \
+            cmake \
+            libboost-all-dev \
+            libssl-dev \
+            libdb++-dev \
+            libminiupnpc-dev
+
+      - name: Build libsecp256k1 (the pinned release, static)
+        run: contrib/build-secp256k1.sh "$HOME/secp"
+
+      - name: Build daemon and the differential
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DUSE_LIBSECP256K1=ON -DBUILD_SECP_DIFF=ON \
+            -DSECP256K1_INCLUDE_DIR=$HOME/secp/include -DSECP256K1_LIBRARY=$HOME/secp/lib/libsecp256k1.a
+          make -j$(nproc)
+
+      - name: Run tests
+        run: |
+          cd build
+          ./test_corgicoin
+          ./secp_diff 1000000 1
+          ./secp_diff 1000000 2
+
+      - name: Run the signature functional tests (regtest)
+        run: python3 test/functional/test_runner.py --corgicoind build/corgicoind rpc_standard_signatures.py rpc_sighash_single.py rpc_multisig_limits.py wallet_send.py feature_regtest_basics.py
+
   sanitizers:
     # Unit tests under AddressSanitizer (memory errors, leaks), UBSan (undefined behaviour) and the
     # standard library's assertions (-D_GLIBCXX_ASSERTIONS), which stop on out-of-range vector access

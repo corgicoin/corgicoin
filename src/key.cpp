@@ -9,6 +9,9 @@
 
 #include <openssl/ecdsa.h>
 #include <openssl/obj_mac.h>
+#ifdef USE_LIBSECP256K1
+#include <secp256k1.h>
+#endif
 
 #include "key.h"
 
@@ -440,6 +443,61 @@ bool CKey::SetCompactSignature(uint256 hash, const std::vector<unsigned char>& v
     return fRecovered;
 }
 
+#ifdef USE_LIBSECP256K1
+// Whether a signature is valid is consensus, and master asks OpenSSL's ECDSA_verify, which reads the signature, writes it again and refuses it
+// if the bytes differ: only a canonical DER encoding passes. The same rule is applied here before libsecp256k1 reads it, so the two accept the
+// same encodings (secp_diff compares them): a sequence of two positive integers in minimal form, short-form lengths, and nothing after it.
+// What is left to the library, as to OpenSSL, is the range of r and s, the public key, and the arithmetic.
+static bool IsCanonicalDERSignature(const std::vector<unsigned char>& sig)
+{
+    const size_t n = sig.size();
+    if (n < 8 || sig[0] != 0x30 || sig[1] >= 0x80 || (size_t)sig[1] + 2 != n)
+        return false;
+    size_t pos = 2;
+    for (int i = 0; i < 2; i++)
+    {
+        if (pos + 2 > n || sig[pos] != 0x02 || sig[pos + 1] == 0 || sig[pos + 1] >= 0x80)
+            return false;
+        const size_t len = sig[pos + 1];
+        pos += 2;
+        if (pos + len > n)
+            return false;
+        if (sig[pos] & 0x80)
+            return false;                                   // negative
+        if (len > 1 && sig[pos] == 0x00 && !(sig[pos + 1] & 0x80))
+            return false;                                   // a zero that minimal form does not have
+        pos += len;
+    }
+    return pos == n;
+}
+
+bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
+{
+    static secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    if (vchSig.empty() || !fSet || !IsCanonicalDERSignature(vchSig))
+        return false;
+    std::vector<unsigned char> pub;
+    try
+    {
+        pub = GetPubKey().Raw();
+    }
+    catch (const key_error&)
+    {
+        // A "key" with no serialisation: the single byte 0x00, which OpenSSL reads as the point at infinity. Master accepts signatures made
+        // to verify under it (anyone can make one), libsecp256k1 has no such key; to stay exactly as master is, this case is left to OpenSSL.
+        return ECDSA_verify(0, (unsigned char*)&hash, sizeof(hash), &vchSig[0], vchSig.size(), pkey) == 1;
+    }
+    secp256k1_pubkey pk;
+    if (pub.empty() || !secp256k1_ec_pubkey_parse(ctx, &pk, &pub[0], pub.size()))
+        return false;
+    secp256k1_ecdsa_signature sg;
+    if (!secp256k1_ecdsa_signature_parse_der(ctx, &sg, &vchSig[0], vchSig.size()))
+        return false;
+    // OpenSSL does not insist on a low S, and a transaction with a high S is valid: the library insists until told
+    secp256k1_ecdsa_signature_normalize(ctx, &sg, &sg);
+    return secp256k1_ecdsa_verify(ctx, &sg, (const unsigned char*)&hash, &pk) == 1;
+}
+#else
 bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
 {
     // -1 = error, 0 = bad sig, 1 = good
@@ -450,6 +508,7 @@ bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
 
     return true;
 }
+#endif
 
 bool CKey::VerifyCompact(uint256 hash, const std::vector<unsigned char>& vchSig)
 {
