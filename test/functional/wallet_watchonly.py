@@ -14,19 +14,21 @@ class WatchOnlyTest(CorgiTestFramework):
 
     def pay(self, keys, dest, amount):
         """Pay dest from a coin the test has not itself paid to a watched address.
-        """Pay dest from a coin that is not at one of the addresses in avoid (the wallet's own choice could spend a watched one).
 
         The wallet's own choice could spend a watched coin. listunspent gives no address on this node, so the outputs the
         test made are remembered and left alone."""
         if not hasattr(self, "watched_coins"):
             self.watched_coins = set()
         coin = [u for u in keys.listunspent() if (u["txid"], u["vout"]) not in self.watched_coins and u["amount"] > amount + 1][0]
+        outs = {dest: Decimal(amount), keys.getnewaddress(): coin["amount"] - Decimal(amount) - Decimal(1)}
+        raw = keys.createrawtransaction([{"txid": coin["txid"], "vout": coin["vout"]}], outs)
         txid = keys.sendrawtransaction(keys.signrawtransaction(raw)["hex"])
         dest_form = keys.validateaddress(dest)["address"]
         for v in keys.getrawtransaction(txid, 1)["vout"]:
             if dest_form in (v["scriptPubKey"].get("addresses") or []):
                 self.watched_coins.add((txid, v["n"]))
         return txid
+
     def run_test(self):
         keys, watcher = self.nodes
         keys.generate(101)
@@ -35,7 +37,6 @@ class WatchOnlyTest(CorgiTestFramework):
 
         cold = keys.getnewaddress()
         paid = self.pay(keys, cold, 5)       # before the import: history that a rescan must find
-        paid = keys.sendtoaddress(cold, 5)           # before the import: history that a rescan must find
         keys.generate(1)
         self.sync_blocks()
 
@@ -54,11 +55,10 @@ class WatchOnlyTest(CorgiTestFramework):
 
         self.log("it is not the watcher's money: not in its balance, and not spent when it sends")
         assert_equal(watcher.getbalance(), 0)
-        assert_raises_rpc_error(-6, None, watcher.sendtoaddress, keys.getnewaddress(), 1)
+        assert_raises_rpc_error(-4, "Insufficient funds", watcher.sendtoaddress, keys.getnewaddress(), 1)
 
         self.log("a payment after the import is followed live")
         self.pay(keys, cold, 2)
-        keys.sendtoaddress(cold, 2)
         keys.generate(1)
         self.sync_blocks()
         assert_equal(watcher.getwatchonlybalance(), Decimal(7))
@@ -75,6 +75,7 @@ class WatchOnlyTest(CorgiTestFramework):
         self.log("the import survives a restart")
         watcher.stop()
         watcher.start()
+        self.connect_nodes(1, 0)
         assert_equal(watcher.validateaddress(cold)["iswatchonly"], True)
         assert_equal(watcher.getwatchonlybalance(), Decimal(2))
 
@@ -82,7 +83,6 @@ class WatchOnlyTest(CorgiTestFramework):
         addr2 = keys.getnewaddress()
         pub = keys.validateaddress(addr2)["pubkey"]
         self.pay(keys, addr2, 3)
-        keys.sendtoaddress(addr2, 3)
         keys.generate(1)
         self.sync_blocks()
         watcher.importpubkey(pub)
