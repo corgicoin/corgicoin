@@ -2044,6 +2044,7 @@ Value keypoolrefill(const Array& params, bool fHelp)
 
 void ThreadTopUpKeyPool(void* parg)
 {
+    WalletThreadGuard guard;
     // Make this thread recognisable as the key-topping-up thread
     RenameThread("corgicoin-key-top");
 
@@ -2064,6 +2065,7 @@ void ThreadTopUpKeyPool(void* parg)
 
 void ThreadCleanWalletPassphrase(void* parg)
 {
+    WalletThreadGuard guard;
     // Make this thread recognisable as the wallet relocking thread
     RenameThread("corgicoin-lock-wa");
 
@@ -2087,8 +2089,14 @@ void ThreadCleanWalletPassphrase(void* parg)
                 break;
 
             LEAVE_CRITICAL_SECTION(cs_nWalletUnlockTime);
-            Sleep(nToSleep);
+            // in short steps, so that a shutdown is not held up for the rest of the unlock time
+            Sleep(std::min<int64>(nToSleep, 250));
             ENTER_CRITICAL_SECTION(cs_nWalletUnlockTime);
+            if (fShutdown)
+            {
+                LEAVE_CRITICAL_SECTION(cs_nWalletUnlockTime);
+                return;     // the wallet is about to be freed: nothing to lock
+            }
 
         } while(1);
 
@@ -2159,9 +2167,16 @@ Value walletpassphrase(const Array& params, bool fHelp)
             "walletpassphrase <passphrase> <timeout>\n"
             "Stores the wallet decryption key in memory for <timeout> seconds.");
 
-    CreateThread(ThreadTopUpKeyPool, nullptr);
+    nWalletThreadsRunning++;
+    if (!CreateThread(ThreadTopUpKeyPool, nullptr))
+        nWalletThreadsRunning--;
     int64* pnSleepTime = new int64(nSleepSeconds);
-    CreateThread(ThreadCleanWalletPassphrase, pnSleepTime);
+    nWalletThreadsRunning++;
+    if (!CreateThread(ThreadCleanWalletPassphrase, pnSleepTime))
+    {
+        nWalletThreadsRunning--;
+        delete pnSleepTime;
+    }
 
     return Value::null;
 }

@@ -356,6 +356,7 @@ static void FlushWalletDBLoop(const string& strFile);
 
 void ThreadFlushWalletDB(void* parg)
 {
+    WalletThreadGuard guard;
     // Make this thread recognisable as the wallet flushing thread
     RenameThread("corgicoin-wallet");
 
@@ -389,6 +390,8 @@ static void FlushWalletDBLoop(const string& strFile)
     while (!fShutdown)
     {
         Sleep(500);
+        if (fShutdown)
+            break;          // (the databases are being closed: do not touch bitdb now)
 
         if (nLastSeen != nWalletDBUpdated)
         {

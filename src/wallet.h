@@ -50,6 +50,15 @@ enum class WalletFeature
  *  records and top the key pool up with random keys that the recovery phrase does not cover, so use it only to open a
  *  wallet in an old release on purpose. */
 WalletFeature HDWalletFeature();
+
+/** Wallet background threads still running (the flush thread, key pool top-ups, the relock timer). Shutdown() waits for them before it
+ *  frees the wallet and the process exits: one still running then locks a mutex that is being destroyed (an abort at exit). The
+ *  code that starts such a thread counts it before starting it, and the thread uncounts itself when it ends (WalletThreadGuard). */
+extern std::atomic<int> nWalletThreadsRunning;
+struct WalletThreadGuard
+{
+    ~WalletThreadGuard() { nWalletThreadsRunning--; }
+};
 WalletFeature LatestWalletFeature();
 
 // BIP44 coin type for CorgiCoin HD derivation: m/44'/HD_COIN_TYPE'/0'/0/index.

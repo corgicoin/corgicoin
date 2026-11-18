@@ -509,6 +509,8 @@ public:
     )
 };
 
+std::atomic<int> nWalletThreadsRunning(0);
+
 WalletFeature HDWalletFeature()
 {
     return GetBoolArg("-walletcompat", false) ? WalletFeature::FEATURE_HD_LEGACY : WalletFeature::FEATURE_HD;
@@ -1950,7 +1952,9 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
             SetMinVersion(WalletFeature::FEATURE_HD);
     }
 
-    CreateThread(ThreadFlushWalletDB, &strWalletFile);
+    nWalletThreadsRunning++;
+    if (!CreateThread(ThreadFlushWalletDB, &strWalletFile))
+        nWalletThreadsRunning--;
     return DB_LOAD_OK;
 }
 

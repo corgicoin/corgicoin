@@ -81,6 +81,10 @@ void Shutdown(void* parg)
         bitdb.Flush(false);
         StopNode();
         ZMQShutdown();
+        // the wallet threads that StopNode does not count (flush, key pool top-up, relock timer) must be gone before the
+        // wallet is freed and exit() destroys the mutexes they lock
+        while (nWalletThreadsRunning > 0)
+            Sleep(20);
         bitdb.Flush(true);
         std::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain.get());
