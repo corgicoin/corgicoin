@@ -4249,7 +4249,8 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                 {
                     LOCK(mempool.cs);
                     auto itEntry = mempool.mapEntry.find(inv.hash);
-                    if (itEntry != mempool.mapEntry.end() &&
+                    // (an entry put back after a reorganisation has no fee worked out: it reads 0, and is announced as before)
+                    if (itEntry != mempool.mapEntry.end() && itEntry->second.fFeeKnown &&
                         (double)itEntry->second.nFee * 1000.0 / std::max<unsigned int>(1, itEntry->second.nSize) < (double)pto->nMinFeeFilter)
                         continue;
                 }
