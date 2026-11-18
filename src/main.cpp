@@ -2583,6 +2583,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
     }
     pindexNew->bnChainWork = (pindexNew->pprev ? pindexNew->pprev->bnChainWork : 0) + pindexNew->GetBlockWork();
+    PruneNoteBlock(pindexNew->nFile, pindexNew->nHeight);
     pindexNew->fFailedChain = setInvalidatedBlocks.count(hash) || (pindexNew->pprev && pindexNew->pprev->fFailedChain);
 
     CTxDB txdb;

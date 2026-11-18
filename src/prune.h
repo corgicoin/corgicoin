@@ -28,6 +28,9 @@ unsigned int PrunedFileCount();
 /** The height of the lowest block whose data is still on disk (0 if nothing is pruned). */
 int PruneHeight();
 
+/** A block was written to file nFile at this height (keeps the per-file highest block that pruning goes by). */
+void PruneNoteBlock(unsigned int nFile, int nHeight);
+
 /** After the tip moved: delete the oldest block files while the rest is over the target. Cheap when there is nothing to do. */
 void PruneBlockFiles();
 

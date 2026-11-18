@@ -19,6 +19,8 @@ uint64 nPruneTargetBytes = 0;
 std::set<unsigned int> setPrunedFiles;      // numbers of the block files that were deleted
 int nLastPruneCheckHeight = 0;
 int nPruneHeightCache = -1;                // -1: not worked out since the last file went
+std::map<unsigned int, int> mapFileMaxHeight;   // file -> its highest block
+bool fFileMapBuilt = false;
 unsigned int nLastPruneCheckFile = 0;
 
 std::filesystem::path PrunedListPath() { return GetDataDir() / "blkpruned.dat"; }
@@ -160,16 +162,21 @@ void PruneBlockFiles()
     nLastPruneCheckFile = nCurrentFile;
     nLastPruneCheckHeight = nBestHeight;
 
-    // per file: the highest block in it
-    std::map<unsigned int, int> mapMaxHeight;
-    for (const auto& item : mapBlockIndex)
+    // per file: the highest block in it (worked out from the block index once, then kept by PruneNoteBlock as blocks are added)
+    if (!fFileMapBuilt)
     {
-        const CBlockIndex* pindex = item.second;
-        if (pindex->nFile == 0 || IsBlockFilePruned(pindex->nFile))
-            continue;
-        int& nMax = mapMaxHeight[pindex->nFile];
-        nMax = std::max(nMax, pindex->nHeight);
+        mapFileMaxHeight.clear();
+        for (const auto& item : mapBlockIndex)
+        {
+            const CBlockIndex* pindex = item.second;
+            if (pindex->nFile == 0 || IsBlockFilePruned(pindex->nFile))
+                continue;
+            int& nMax = mapFileMaxHeight[pindex->nFile];
+            nMax = std::max(nMax, pindex->nHeight);
+        }
+        fFileMapBuilt = true;
     }
+    std::map<unsigned int, int>& mapMaxHeight = mapFileMaxHeight;
     uint64 nTotal = 0;
     std::map<unsigned int, uint64> mapSize;
     for (const auto& item : mapMaxHeight)
@@ -207,6 +214,7 @@ void PruneBlockFiles()
         std::filesystem::remove(BlockFilePath(nFile), ec);
         if (ec)
             LogPrintf("prune: could not delete %s: %s (it is listed as pruned and will be deleted at the next start)\n", BlockFilePath(nFile).string().c_str(), ec.message().c_str());
+        mapFileMaxHeight.erase(nFile);
         nTotal -= item.second;
         nDeleted++;
         LogPrintf("prune: deleted block file %04u (its highest block is %d, the tip %d)\n", nFile, mapMaxHeight[nFile], nBestHeight);
@@ -223,4 +231,12 @@ bool RescanNeedsPrunedBlocks(const CBlockIndex* pindexStart)
         if (IsBlockPruned(pindex))
             return true;
     return false;
+}
+
+void PruneNoteBlock(unsigned int nFile, int nHeight)
+{
+    if (!fFileMapBuilt || nFile == 0)
+        return;                 // not worked out yet: it will be, from the block index, which holds this block by then
+    int& nMax = mapFileMaxHeight[nFile];
+    nMax = std::max(nMax, nHeight);
 }
