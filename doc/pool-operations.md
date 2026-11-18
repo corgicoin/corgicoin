@@ -13,17 +13,16 @@ there with no peers).
   the pool's pocket. A deeper margin is cheap insurance on a chain with a small hash rate.
 - Pay from a wallet that is separate from the one that receives the block rewards. The receiving address can be fixed with
   `-mineraddress=<address>` (the node's own miner) or by the address you pass to `createauxblock`.
-- The receiving side can be a watch-only wallet: `importaddress <address>` lets a server follow rewards to a cold address without
-  its key (`getwatchonlybalance`, `listwatchonlyunspent`); the node never spends them.
 - Before paying, read `gettransaction` for each reward: `confirmations`, and `conflicted`. Use `sendmany` and keep each transaction
-  under 100 kB. The wallet refuses fees above `-maxtxfee` (default 1000 coins).
+  under 100 kB. The wallet refuses fees above `-maxtxfee` (default 10000 coins).
 
 ## Knowing when there is a new block
 
-Poll `getblocktemplate` (its `longpollid` changes with the tip; the call does not wait, so poll about once a second), or be told:
+Poll `getblocktemplate` (about once a second; it does not long-poll), or be told:
 `-blocknotify="<command> %s"` runs a command with the new best block's hash, and a ZeroMQ build can publish `hashblock`
 (`doc/mining.md`). `-walletnotify="<command> %s"` runs a command when a wallet transaction is new or changes, for payout
-tracking. A block that the node cannot connect is marked failed and remembered across restarts; `reconsiderblock` lifts it.
+tracking. A block that the node cannot connect is marked failed until the node restarts; one marked with `invalidateblock` stays marked
+across restarts, and `reconsiderblock` lifts either.
 
 ## Watching the node
 

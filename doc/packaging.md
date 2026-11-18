@@ -22,8 +22,8 @@ is killed before it finishes, the databases may have to be recovered on the next
 
 - Under systemd or Docker the node runs with `-printtoconsole` and logs go to the journal or `docker logs`, which rotate themselves.
 - For a node that logs to `debug.log`, use the logrotate file: the node reopens its log when it gets SIGHUP.
-- `-logformat=json` writes one JSON object per line (`time`, `msg`) for log collectors; peers' public IPv4 addresses are replaced
-  by `[ip]` unless `-logips` is given. This only masks IPv4 addresses that appear as text in the log; do not rely on it as a
+- `-logformat=json` writes one JSON object per line (`time`, `msg`) for log collectors. With `-logips=0`, peers' public IPv4
+  addresses are replaced by `[ip]` (addresses are logged by default). This only masks IPv4 addresses that appear as text in the log; do not rely on it as a
   privacy guarantee.
 
 ## Credentials

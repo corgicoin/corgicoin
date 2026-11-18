@@ -62,7 +62,7 @@ block, and reverse any credit whose block is no longer in the best chain (`getbl
 ## Withdrawals
 
 - Use `sendmany` to pay several customers in one transaction. A transaction over 100 kB is not relayed (standardness).
-- The wallet refuses a fee above `-maxtxfee` (default 1000 coins, new in this series), which guards against a fee typed a decimal
+- The wallet refuses a fee above `-maxtxfee` (default 10000 coins, new in this series), which guards against a fee typed a decimal
   place wrong. Set it to something sensible for your own withdrawals.
 - A send that the memory pool would refuse no longer leaves the wallet's coins marked as spent (fixed in this series); in older
   releases, restart the wallet or `abandontransaction` if a send failed after it was recorded.
@@ -73,10 +73,9 @@ block, and reverse any credit whose block is no longer in the best chain (`getbl
 
 ### Cold storage
 
-A hot wallet server can follow a cold address without holding its key: `importaddress <address>` (new in this series) makes the
-node track what is paid to it and spent from it; `getwatchonlybalance` and `listwatchonlyunspent` report it. The node never spends
-a watch-only coin. Sign on an offline machine with `signrawtransaction` and send with `sendrawtransaction`; a refused send now
-says why (`TX rejected: <reason>`).
+Keep the cold keys on an offline machine. Build the transaction with `createrawtransaction` on the online node, sign it offline
+with `signrawtransaction` (passing the inputs it spends), and send it with `sendrawtransaction`. `testmempoolaccept` says why a
+transaction would be refused before you send it.
 
 ## Talking to the node safely
 

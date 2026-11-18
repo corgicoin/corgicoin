@@ -7,19 +7,19 @@
 # for a local check. --stop-timeout 600: closing the databases can take minutes, and docker's default of ten seconds
 # kills the node in the middle of it.
 
-FROM debian:12-slim AS build
+FROM debian:12-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS build
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake libboost-all-dev libssl-dev \
         libdb++-dev libminiupnpc-dev git ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY . /src
-WORKDIR /src/build
+WORKDIR /src/build-docker
 RUN cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=OFF && make -j"$(nproc)" corgicoind
 
-FROM debian:12-slim
+FROM debian:12-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 RUN apt-get update && apt-get install -y --no-install-recommends libboost-system1.74.0 libboost-filesystem1.74.0 \
         libboost-thread1.74.0 libboost-program-options1.74.0 libboost-chrono1.74.0 libssl3 libdb5.3++ libminiupnpc17 \
         && rm -rf /var/lib/apt/lists/* \
     && useradd --system --home /data --shell /usr/sbin/nologin corgicoin && mkdir /data && chown corgicoin /data
-COPY --from=build /src/build/corgicoind /usr/local/bin/corgicoind
+COPY --from=build /src/build-docker/corgicoind /usr/local/bin/corgicoind
 USER corgicoin
 VOLUME /data
 EXPOSE 62556
