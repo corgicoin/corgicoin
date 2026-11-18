@@ -62,12 +62,20 @@ $("openBtn").onclick = async () => {
   await refresh();
 };
 
+// 404 is the server saying it has never seen the address. Anything else (429 when the rate limit is hit, a 5xx) means it did
+// not answer, and must not be read as "empty": the balance would be wrong, the scan would stop early and coins would be left
+// out of a send without a word.
+function serverError(r) {
+  return new Error(r.status === 429
+    ? "The server is busy (too many requests). Wait a minute and try again."
+    : `The server did not answer (HTTP ${r.status}). Try again.`);
+}
+
 async function fetchAddr(addr) {
-  try {
-    const r = await fetch("/api/address/" + encodeURIComponent(addr));
-    if (!r.ok) return { balance: 0, received: 0 };
-    return await r.json();
-  } catch { return { balance: 0, received: 0 }; }
+  const r = await fetch("/api/address/" + encodeURIComponent(addr));
+  if (r.status === 404) return { balance: 0, received: 0 };
+  if (!r.ok) throw serverError(r);
+  return await r.json();
 }
 
 function addRow(body, a, bal, recv) {
@@ -91,21 +99,27 @@ async function refresh() {
   // Scan until GAP_LIMIT addresses in a row have never received anything (and at least the number asked for): a phrase
   // used in the desktop wallet beyond the first few addresses has coins further along.
   let scanned = 0, lastUsed = -1;
-  while (true) {
-    if (scanned >= wallet.accounts.length) {
-      if (wallet.accounts.length >= MAX_ADDRESSES || scanned - 1 - lastUsed >= GAP_LIMIT) break;
-      for (let i = 0; i < GAP_LIMIT && wallet.accounts.length < MAX_ADDRESSES; i++)
-        wallet.accounts.push(await deriveAddress(wallet.seed, wallet.accounts.length, wallet.net));
+  try {
+    while (true) {
+      if (scanned >= wallet.accounts.length) {
+        if (wallet.accounts.length >= MAX_ADDRESSES || scanned - 1 - lastUsed >= GAP_LIMIT) break;
+        for (let i = 0; i < GAP_LIMIT && wallet.accounts.length < MAX_ADDRESSES; i++)
+          wallet.accounts.push(await deriveAddress(wallet.seed, wallet.accounts.length, wallet.net));
+      }
+      const a = wallet.accounts[scanned];
+      const info = await fetchAddr(a.address);
+      const bal = info.balance || 0, recv = info.received || 0;
+      a._received = recv;
+      total += bal;
+      if (recv > 0) lastUsed = scanned;
+      addRow(body, a, bal, recv);
+      scanned++;
+      if (scanned >= wallet.accounts.length && scanned - 1 - lastUsed >= GAP_LIMIT) break;
     }
-    const a = wallet.accounts[scanned];
-    const info = await fetchAddr(a.address);
-    const bal = info.balance || 0, recv = info.received || 0;
-    a._received = recv;
-    total += bal;
-    if (recv > 0) lastUsed = scanned;
-    addRow(body, a, bal, recv);
-    scanned++;
-    if (scanned >= wallet.accounts.length && scanned - 1 - lastUsed >= GAP_LIMIT) break;
+  } catch (e) {
+    $("totalBal").textContent = "?";
+    $("balNote").textContent = `⚠ The scan stopped after ${scanned} addresses: ${e.message || "the server could not be reached."}`;
+    return;
   }
   const firstUnused = wallet.accounts.find((a) => a._received === 0);
   $("totalBal").textContent = fmt(total);
@@ -128,18 +142,18 @@ async function loadUtxos() {
   for (const a of wallet.accounts) {
     a.utxos = [];
     let list = [];
-    try {
-      const r = await fetch("/api/address/" + encodeURIComponent(a.address) + "/utxos");
-      if (r.ok) { const j = await r.json(); list = j.utxos || []; }
-    } catch {}
+    const ru = await fetch("/api/address/" + encodeURIComponent(a.address) + "/utxos");
+    if (ru.ok) { const j = await ru.json(); list = j.utxos || []; }
+    else if (ru.status !== 404) throw serverError(ru);   // a busy server is not "no coins"
     const script = p2pkhScript(await hash160(a.pubKey));
     for (const u of list) {
+      if (!raw.has(u.txid)) {
+        const r = await fetch("/api/rawtx/" + encodeURIComponent(u.txid));
+        if (r.status === 404) { refused++; continue; }      // it listed a coin it cannot show
+        if (!r.ok) throw serverError(r);
+        raw.set(u.txid, (await r.json()).hex);
+      }
       try {
-        if (!raw.has(u.txid)) {
-          const r = await fetch("/api/rawtx/" + encodeURIComponent(u.txid));
-          if (!r.ok) throw new Error("no transaction from the server");
-          raw.set(u.txid, (await r.json()).hex);
-        }
         const value = await verifiedValue(raw.get(u.txid), u, script);
         a.utxos.push({ txid: u.txid, vout: u.vout, value: value.toString() });
         total += value;

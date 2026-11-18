@@ -411,8 +411,9 @@ PAGE_ADDRESS = """{% extends "base" %}{% block body %}
 <div class="cards">
   <div class="card"><div class="muted">Balance</div><div class="v">{{ fmt(balance) }}</div></div>
   <div class="card"><div class="muted">Received</div><div class="v">{{ fmt(received) }}</div></div>
-  <div class="card"><div class="muted">Outputs</div><div class="v">{{ outs|length }}</div></div>
+  <div class="card"><div class="muted">Outputs</div><div class="v">{{ n_outputs }}</div></div>
 </div>
+{% if n_outputs > outs|length %}<p class="muted">Showing the latest {{ outs|length }} of {{ n_outputs }} outputs.</p>{% endif %}
 <table>
 <tr><th>Txid</th><th class="num">Value</th><th>Height</th><th>Status</th></tr>
 {% for o in outs %}
@@ -538,13 +539,19 @@ def svg_line_chart(values, color="#4caf50", w=920, h=220, pad=34, fmt="{:.4g}"):
     )
 
 
-def create_app(rpc: CorgiRPC, db_path: Path, show_peer_addresses: bool = False) -> Flask:
+def create_app(rpc: CorgiRPC, db_path: Path, show_peer_addresses: bool = False, trust_proxy: bool = False) -> Flask:
     app = Flask(__name__)
+    if trust_proxy:
+        # Behind a reverse proxy every request comes from the proxy: take the client address from the X-Forwarded-For it
+        # sets (one hop), so the rate limits are per client and not one limit shared by everyone. Only with a proxy in
+        # front: without one, any client could set the header to whatever it likes.
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
     app.jinja_loader = None  # templates are inline
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY
 
     # A fixed window per client address and kind of request. (Behind a reverse proxy every client has the proxy's address:
-    # then the proxy should do this, and these limits are a floor.)
+    # run with --trust-proxy there, or these limits are shared by every client.)
     hits = defaultdict(int)
     window = {"start": 0}
 
@@ -657,13 +664,17 @@ def create_app(rpc: CorgiRPC, db_path: Path, show_peer_addresses: bool = False) 
     @app.route("/address/<addr>")
     def address(addr):
         d = db()
+        # as /api/address does: totals over every output from the database, and only the latest MAX_ADDRESS_ROWS listed
+        tot = d.execute(
+            "SELECT COUNT(*) n, COALESCE(SUM(value),0) received, "
+            "COALESCE(SUM(CASE WHEN spent_txid IS NULL THEN value ELSE 0 END),0) balance FROM outputs WHERE address=?",
+            (addr,)).fetchone()
+        if not tot["n"]:
+            abort(404)
         outs = d.execute(
             "SELECT o.*, t.height FROM outputs o JOIN txs t ON t.txid=o.txid "
-            "WHERE o.address=? ORDER BY t.height DESC", (addr,)).fetchall()
-        if not outs:
-            abort(404)
-        received = sum(o["value"] for o in outs)
-        balance = sum(o["value"] for o in outs if not o["spent_txid"])
+            "WHERE o.address=? ORDER BY t.height DESC LIMIT ?", (addr, MAX_ADDRESS_ROWS)).fetchall()
+        received, balance = tot["received"], tot["balance"]
         bech = None
         try:
             info = rpc.call("validateaddress", addr)
@@ -671,7 +682,7 @@ def create_app(rpc: CorgiRPC, db_path: Path, show_peer_addresses: bool = False) 
         except Exception:
             pass
         return render_template_string(
-            PAGE_ADDRESS, addr=addr, outs=outs, received=received,
+            PAGE_ADDRESS, addr=addr, outs=outs, received=received, n_outputs=tot["n"],
             balance=balance, bech32=bech, **helpers())
 
     @app.route("/richlist")
@@ -933,6 +944,8 @@ def main():
     ap.add_argument("--show-peer-addresses", action="store_true",
                     help="list the node's peers by address on /network (off: they are numbered)")
     ap.add_argument("--dev", action="store_true", help="use Flask's development server instead of waitress")
+    ap.add_argument("--trust-proxy", action="store_true",
+                    help="behind a reverse proxy: rate-limit by the X-Forwarded-For client address (never without a proxy)")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -945,7 +958,7 @@ def main():
     db_path = Path(args.db)
     open_db(db_path).close()  # create schema before threads race
     Indexer(rpc, db_path).start()
-    app = create_app(rpc, db_path, show_peer_addresses=args.show_peer_addresses)
+    app = create_app(rpc, db_path, show_peer_addresses=args.show_peer_addresses, trust_proxy=args.trust_proxy)
     if args.bind not in ("127.0.0.1", "::1", "localhost"):
         log.warning("Binding to %s: the wallet page takes recovery phrases. Put the explorer behind a reverse proxy over HTTPS "
                     "and keep --bind 127.0.0.1.", args.bind)
