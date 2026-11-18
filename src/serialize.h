@@ -741,7 +741,7 @@ public:
         Init(nTypeIn, nVersionIn);
     }
 
-    CDataStream(const std::vector<unsigned char>& vchIn, int nTypeIn, int nVersionIn) : vch(reinterpret_cast<const char*>(vchIn.data()), reinterpret_cast<const char*>(vchIn.data()) + vchIn.size())   // not &end()[0]: that dereferences the end, and a null reference for an empty vector
+    CDataStream(const std::vector<unsigned char>& vchIn, int nTypeIn, int nVersionIn) : vch(vchIn.begin(), vchIn.end())
     {
         Init(nTypeIn, nVersionIn);
     }

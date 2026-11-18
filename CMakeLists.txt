@@ -570,6 +570,8 @@ if(BUILD_FUZZ)
     add_dependencies(fuzz_corgicoin generate_build_info)
     if(FUZZ_LIBFUZZER)
         target_compile_definitions(fuzz_corgicoin PRIVATE FUZZ_LIBFUZZER)
+        # coverage instrumentation on every source the target compiles, not only at link time: without it libFuzzer runs blind
+        target_compile_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer-no-link)
         target_link_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer)
     endif()
     target_link_libraries(fuzz_corgicoin ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
