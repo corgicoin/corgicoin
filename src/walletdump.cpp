@@ -107,7 +107,7 @@ bool DumpWalletToFile(CWallet* pwallet, const std::filesystem::path& path, bool 
 static void RescanWallet(CWallet* pwallet)
 {
     // a pruned node cannot look through blocks it no longer has; the key is in the wallet, but what it received before is not found
-    if (RescanNeedsPrunedBlocks(pindexStart))
+    if (RescanNeedsPrunedBlocks(pindexGenesisBlock))
         throw std::runtime_error("The wallet cannot be rescanned from there: some of those blocks were pruned. Newer transactions will be found, older ones will not.");
     pwallet->ScanForWalletTransactions(pindexGenesisBlock, true);
     pwallet->ReacceptWalletTransactions();

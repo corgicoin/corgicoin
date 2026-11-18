@@ -70,7 +70,7 @@ bool FromBlocks(UtxoSummary& out, std::string& strError)
     for (auto it = vChain.rbegin(); it != vChain.rend(); ++it)
     {
         CBlock block;
-        if (!block.ReadFromDisk(*it, true, false))
+        if (!block.ReadFromDisk(*it, true))
         {
             strError = strprintf("block %d could not be read", (*it)->nHeight);
             return false;

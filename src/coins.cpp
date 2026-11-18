@@ -284,7 +284,7 @@ bool Rebuild(const CBlockIndex* ptip)
         if (pindex->nHeight > 0)          // the genesis block's output can never be spent and the index never holds it
         {
             CBlock block;
-            if (!block.ReadFromDisk(pindex, true, false))
+            if (!block.ReadFromDisk(pindex, true))
             {
                 LogPrintf("COINS: block %d could not be read while rebuilding\n", pindex->nHeight);
                 return false;
@@ -326,7 +326,7 @@ bool CatchUp(const CBlockIndex* pMarker, const CBlockIndex* ptip)
     {
         const CBlockIndex* pindex = *it;
         CBlock block;
-        if (!block.ReadFromDisk(pindex, true, false))
+        if (!block.ReadFromDisk(pindex, true))
         {
             LogPrintf("COINS: block %d could not be read while catching up\n", pindex->nHeight);
             ClearPending();
