@@ -25,6 +25,12 @@ if ! echo "$STATUS" | grep -q '^\[GNUPG:\] VALIDSIG '; then
     echo "FAIL: no valid signature on SHA256SUMS (wrong key, changed manifest, or the public key was not given)" >&2
     exit 1
 fi
+# gpg still prints VALIDSIG for a signature by a revoked or expired key (next to REVKEYSIG / EXPKEYSIG): require GOODSIG and none
+# of those
+if ! echo "$STATUS" | grep -q '^\[GNUPG:\] GOODSIG ' || echo "$STATUS" | grep -q -E '^\[GNUPG:\] (REVKEYSIG|EXPKEYSIG|EXPSIG|BADSIG|ERRSIG|KEYREVOKED)( |$)'; then
+    echo "FAIL: the signature is not good, or the key is revoked or expired" >&2
+    exit 1
+fi
 SIGNED_BY=$(echo "$STATUS" | awk '/^\[GNUPG:\] VALIDSIG /{print $12}' | head -1)     # the primary key's fingerprint
 SUBKEY=$(echo "$STATUS" | awk '/^\[GNUPG:\] VALIDSIG /{print $3}' | head -1)
 if [ "$SIGNED_BY" != "$FPR" ] && [ "$SUBKEY" != "$FPR" ]; then
