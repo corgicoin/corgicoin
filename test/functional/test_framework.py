@@ -137,6 +137,10 @@ class TestNode:
         self._exit_noted = False
         self._killed = False
         self._abnormal_exit = False
+        # a release that is already out (the second build of feature_cross_binary): its exit status and stderr are not under
+        # test. Releases up to v4.9 can abort while exiting (a thread locks a mutex exit() is destroying); that is fixed in
+        # this tree and cannot be fixed in a binary that has shipped.
+        self.old_release = False
         self.rpc = RPCProxy(self.rpc_port)
         os.makedirs(datadir, exist_ok=True)
         with open(os.path.join(datadir, "corgicoin.conf"), "w") as f:
@@ -201,12 +205,17 @@ class TestNode:
         if self.process is None or self.process.poll() is None or self._exit_noted:
             return
         self._exit_noted = True
+        if self.process.returncode != 0 and self.old_release:
+            print("[note] node%d (an earlier release) exited with status %s; not counted" % (self.index, self.process.returncode))
+            return
         if self.process.returncode != 0:
             self._abnormal_exit = True
             self.problems.append("node%d exited with status %s" % (self.index, self.process.returncode))
 
     def check_stderr(self):
         """Record sanitizer output or abort messages found on stderr."""
+        if self.old_release:
+            return
         if self.stderr_file is not None and not self.stderr_file.closed:
             self.stderr_file.flush()
         try:
