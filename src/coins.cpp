@@ -34,6 +34,7 @@ uint64 nCheckFailures = 0;
 uint64 nBlocksFromSet = 0;
 bool fStale = false;                // a write failed: the set is behind the index until the next start rebuilds it
 bool fTxnBroken = false;            // a change in this transaction could not be applied: the set must be rebuilt once it commits
+bool fDistrust = false;             // the set refused an input the chain may well hold: the index decides until the set has been rebuilt
 
 std::string Key(char chType, const uint256& hash)
 {
@@ -305,6 +306,7 @@ bool Rebuild(const CBlockIndex* ptip)
         }
     }
     LogPrintf("COINS: rebuilt\n");
+    fDistrust = false;
     return true;
 }
 
@@ -325,7 +327,17 @@ bool CoinsEnabled()
 bool CoinsUsable()
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
-    return pdb != nullptr && !fStale && !fTxnBroken;
+    return pdb != nullptr && !fStale && !fTxnBroken && !fDistrust;
+}
+
+void CoinsDistrust(const char* pszWhy)
+{
+    std::lock_guard<std::mutex> lock(mutexCoins);
+    if (!pdb)
+        return;
+    nCheckFailures++;
+    LogPrintf("COINS: the unspent set refused an input of a block (%s). It is not used until it has been rebuilt from the blocks; the index decides\n", pszWhy);
+    fDistrust = true;
 }
 
 CoinsFetchResult CoinsFetchInputs(const CTransaction& tx, std::vector<CCoinInput>& vIn, unsigned int& nBad)
@@ -414,7 +426,7 @@ void CoinsTxnCommit()
         ClearPending();
         return;
     }
-    const bool fBroken = fTxnBroken;
+    const bool fBroken = fTxnBroken || fDistrust;
     const bool fHaveBest = fHavePendingBest;
     const uint256 hashBest = hashPendingBest;
     if (!fHaveBest)

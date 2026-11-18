@@ -98,6 +98,8 @@ void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo);
 uint64 CoinsCheckFailures();
 /** How many blocks have had their inputs checked against the set (-coinsvalidate) since the node started. */
 void CoinsNoteBlockFromSet();
+/** The set refused an input that the index may hold: stop using it (the index decides) until it has been rebuilt at the next commit. */
+void CoinsDistrust(const char* pszWhy);
 uint64 CoinsBlocksFromSet();
 void CoinsDisconnectBlock(const CBlock& block, const CBlockIndex* pindex);
 
