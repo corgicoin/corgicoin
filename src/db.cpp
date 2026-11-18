@@ -85,8 +85,12 @@ bool CDBEnv::Open(std::filesystem::path pathEnv_)
     dbenv.set_cachesize(nDbCache / 1024, (nDbCache % 1024)*1048576, 1);
     dbenv.set_lg_bsize(1048576);
     dbenv.set_lg_max(10485760);
-    dbenv.set_lk_max_locks(10000);
-    dbenv.set_lk_max_objects(10000);
+    // Every txindex read and write inside a block or reorganisation holds a lock until it commits, and the table was
+    // 10000: a big block, or a deep reorganisation or invalidateblock, could exhaust it on some nodes and not others
+    // (the March 2013 Bitcoin fork). 537000 is what Bitcoin 0.8 and 0.7.3 moved to.
+    const int nMaxLocks = static_cast<int>(std::min<int64>(std::max<int64>(GetArg("-dbmaxlocks", 537000), 10000), 100000000)); // never below the old 10000
+    dbenv.set_lk_max_locks(nMaxLocks);
+    dbenv.set_lk_max_objects(nMaxLocks);
     dbenv.set_errfile(fopen(pathErrorFile.string().c_str(), "a")); /// debug
     dbenv.set_flags(DB_AUTO_COMMIT, 1);
     dbenv.set_flags(DB_TXN_WRITE_NOSYNC, 1);
@@ -241,6 +245,10 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                 bitdb.mapFileUseCount.erase(strFile);
 
                 bool fSuccess = true;
+                unsigned int nRecordsRead = 0, nRecordsWritten = 0;
+                // Test hooks (regtest only): "cursor" makes the cursor fail to open, "swap" makes moving the copy into
+                // place fail, the way database errors would
+                const string strFault = fRegTest ? GetArg("-testrewritefault", "") : string();
                 LogPrintf("Rewriting %s...\n", strFile.c_str());
                 string strFileRes = strFile + ".rewrite";
                 { // surround usage of db with extra {}
@@ -259,8 +267,15 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                         fSuccess = false;
                     }
     
-                    Dbc* pcursor = db.GetCursor();
-                    if (pcursor)
+                    // No cursor means nothing was read. That is a failure, not an empty wallet: carrying on used to
+                    // copy nothing, report success, and replace the real file with the empty copy
+                    Dbc* pcursor = strFault == "cursor" ? nullptr : db.GetCursor();
+                    if (!pcursor)
+                    {
+                        LogPrintf("Rewrite: cannot open a cursor on %s\n", strFile.c_str());
+                        fSuccess = false;
+                    }
+                    else
                         while (fSuccess)
                         {
                             CDataStream ssKey(SER_DISK, CLIENT_VERSION);
@@ -280,6 +295,7 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                             if (pszSkip &&
                                 strncmp(&ssKey[0], pszSkip, std::min(ssKey.size(), strlen(pszSkip))) == 0)
                                 continue;
+                            nRecordsRead++;
                             if (strncmp(&ssKey[0], "\x07version", 8) == 0)
                             {
                                 // Update version:
@@ -291,7 +307,15 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                             int ret2 = pdbCopy->put(nullptr, &datKey, &datValue, DB_NOOVERWRITE);
                             if (ret2 > 0)
                                 fSuccess = false;
+                            else
+                                nRecordsWritten++;
                         }
+                    // Every record that was read must be in the copy
+                    if (fSuccess && nRecordsRead != nRecordsWritten)
+                    {
+                        LogPrintf("Rewrite: read %u records of %s but wrote %u\n", nRecordsRead, strFile.c_str(), nRecordsWritten);
+                        fSuccess = false;
+                    }
                     if (fSuccess)
                     {
                         db.Close();
@@ -302,15 +326,48 @@ bool CDB::Rewrite(const string& strFile, const char* pszSkip)
                 }
                 if (fSuccess)
                 {
+                    // The original is kept under another name until the copy is in place, never removed first: a
+                    // crash between a remove and a rename used to leave only <file>.rewrite, and the next start
+                    // then created a fresh empty wallet.dat beside it. Now there is always a complete file under
+                    // one of the two names, and startup refuses to run when only the original is there (init.cpp).
+                    // Not <file>.bak: users keep their own backups under that name, and the rename refuses a target
+                    // that exists, so every rewrite (the one after encryption included) would fail.
+                    const string strBackup = strFile + ".rewrite-orig";
+                    std::error_code ecExists;
                     Db dbA(&bitdb.dbenv, 0);
-                    if (dbA.remove(strFile.c_str(), nullptr, 0))
+                    if (std::filesystem::exists(GetDataDir() / strBackup, ecExists))
+                    {
+                        LogPrintf("Rewrite: %s is left over from an earlier rewrite; remove it (it is the wallet as it was before that rewrite)\n", strBackup.c_str());
                         fSuccess = false;
-                    Db dbB(&bitdb.dbenv, 0);
-                    if (dbB.rename(strFileRes.c_str(), nullptr, strFile.c_str(), 0))
+                    }
+                    else if (dbA.rename(strFile.c_str(), nullptr, strBackup.c_str(), 0))
                         fSuccess = false;
+                    else
+                    {
+                        Db dbB(&bitdb.dbenv, 0);
+                        if (strFault == "swap" || dbB.rename(strFileRes.c_str(), nullptr, strFile.c_str(), 0))
+                        {
+                            fSuccess = false;
+                            Db dbRestore(&bitdb.dbenv, 0);
+                            if (dbRestore.rename(strBackup.c_str(), nullptr, strFile.c_str(), 0))
+                                LogPrintf("Rewrite: CANNOT PUT %s BACK; the original is %s\n", strFile.c_str(), strBackup.c_str());
+                        }
+                        else
+                        {
+                            // the original still holds whatever the rewrite was meant to remove (after encryption: plaintext key slack)
+                            Db dbRemove(&bitdb.dbenv, 0);
+                            if (dbRemove.remove(strBackup.c_str(), nullptr, 0))
+                                LogPrintf("Rewrite: could not remove %s; delete it by hand\n", strBackup.c_str());
+                        }
+                    }
                 }
                 if (!fSuccess)
-                    LogPrintf("Rewriting of %s FAILED!\n", strFileRes.c_str());
+                {
+                    LogPrintf("Rewriting of %s FAILED, %s is unchanged\n", strFileRes.c_str(), strFile.c_str());
+                    // a half-made copy must not be mistaken for a recovery file later
+                    Db dbDiscard(&bitdb.dbenv, 0);
+                    dbDiscard.remove(strFileRes.c_str(), nullptr, 0);
+                }
                 return fSuccess;
             }
         }

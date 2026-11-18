@@ -38,7 +38,7 @@ def test_non_burn_output_is_skipped():
     rpc = Mock(spec=bridge.CorgiRPC)
     rpc.call.side_effect = [
         {"vout": [{"scriptPubKey": {"hex": "76a914..."}, "value": 5.0}]},
-        RuntimeError("scriptPubKey is not a valid bridge burn payload"),
+        bridge.RPCError("scriptPubKey is not a valid bridge burn payload", -3),
     ]
     assert bridge.extract_burns(rpc, "abc", height=1) == []
 
@@ -51,9 +51,36 @@ def test_mixed_outputs_returns_only_burn():
             {"scriptPubKey": {"hex": "76a914..."}, "value": 1234.5},   # change
             {"scriptPubKey": {"hex": "6a27..."}, "value": 1.0},         # burn
         ]},
-        RuntimeError("not a bridge burn"),  # change output
+        bridge.RPCError("not a bridge burn", -3),  # change output
         _decoded(),                          # burn output
     ]
     burns = bridge.extract_burns(rpc, SMOKE_TXID, height=18391)
     assert len(burns) == 1
     assert burns[0].amount_corg == Decimal("1.0")
+
+
+def test_other_rpc_errors_are_not_mistaken_for_a_non_burn():
+    """A node that is loading or erroring says nothing about the output. Skipping it would lose a burn for good (the
+    scan moves on), so the error ends the tick instead and the same blocks are scanned again."""
+    import pytest
+    rpc = Mock(spec=bridge.CorgiRPC)
+    rpc.call.side_effect = [
+        {"vout": [{"scriptPubKey": {"hex": "6a27..."}, "value": 1.0}]},
+        bridge.RPCError("Loading block index...", -28),
+    ]
+    with pytest.raises(bridge.RPCError):
+        bridge.extract_burns(rpc, SMOKE_TXID, height=18391)
+
+
+def test_several_burns_in_one_transaction_have_separate_keys():
+    rpc = Mock(spec=bridge.CorgiRPC)
+    rpc.call.side_effect = [
+        {"vout": [{"scriptPubKey": {"hex": "6a27a"}, "value": 1.0}, {"scriptPubKey": {"hex": "76a9"}, "value": 5.0},
+                  {"scriptPubKey": {"hex": "6a27b"}, "value": 2.0}]},
+        _decoded(),
+        bridge.RPCError("not a bridge burn", -3),
+        _decoded(),
+    ]
+    burns = bridge.extract_burns(rpc, SMOKE_TXID, height=1)
+    assert [b.vout for b in burns] == [0, 2]
+    assert len({b.key for b in burns}) == 2

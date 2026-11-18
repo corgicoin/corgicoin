@@ -15,10 +15,14 @@ this at mainnet without a lot more paranoia than exists here today.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import logging
 import os
+import shlex
 import signal
+import stat
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -28,6 +32,7 @@ from typing import Any
 
 import requests
 from solana.rpc.api import Client as SolanaClient
+from solana.rpc.commitment import Finalized
 from solana.rpc.types import TxOpts
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
@@ -42,14 +47,37 @@ from spl.token.instructions import (
 
 log = logging.getLogger("bridge")
 
-DEFAULT_CONFIRMATIONS = 10   # devnet PoC depth; revisit before mainnet
+DEFAULT_CONFIRMATIONS = 50   # blocks to wait; at least the 30-block coinbase maturity and the wallet's 50
 DEFAULT_POLL_SECONDS  = 30
+NOT_A_BURN_CODE       = -3   # decodeburn's JSON-RPC error for a script that is not a bridge burn payload
 DEFAULT_SOLANA_RPC    = "https://api.devnet.solana.com"
 
 
 # ---------------------------------------------------------------------------
 # CorgiCoin JSON-RPC client
 # ---------------------------------------------------------------------------
+
+def alert(message: str) -> None:
+    """Tell the operator something needs a person (BRIDGE_ALERT_CMD: a command, which gets the message as its last argument).
+
+    The log has the same words, but nobody reads a log at night. A failing command is logged and does not stop the bridge.
+    """
+    command = os.environ.get("BRIDGE_ALERT_CMD", "").strip()
+    if not command:
+        return
+    try:
+        subprocess.run(shlex.split(command) + [message], timeout=30, check=False)
+    except Exception as e:     # an alert that cannot be sent must not stop the bridge from doing its work
+        log.error("could not run BRIDGE_ALERT_CMD: %s", e)
+
+
+class RPCError(RuntimeError):
+    """corgicoind answered with a JSON-RPC error. .code is its error code (None if it had none)."""
+
+    def __init__(self, message: str, code: int | None = None):
+        super().__init__(message)
+        self.code = code
+
 
 class CorgiRPC:
     """Tiny JSON-RPC wrapper for corgicoind."""
@@ -68,12 +96,14 @@ class CorgiRPC:
             timeout=30,
         )
         try:
-            body = resp.json()
+            # amounts as Decimal, not float: a float is only exact to about 15 digits
+            body = resp.json(parse_float=Decimal)
         except ValueError:
             resp.raise_for_status()
             raise RuntimeError(f"corgicoind RPC non-JSON response on {method}: {resp.text[:200]}")
         if body.get("error"):
-            raise RuntimeError(f"corgicoind RPC error on {method}: {body['error']}")
+            err = body["error"]
+            raise RPCError(f"corgicoind RPC error on {method}: {err}", err.get("code") if isinstance(err, dict) else None)
         return body["result"]
 
 
@@ -88,10 +118,18 @@ class Partner:
     decimals: int
     reward_ratio: Decimal
     treasury: Keypair
+    # optional limits, in the partner token (None: no limit). A burn over max_reward_per_burn, or one that would take the
+    # day's total over max_reward_per_day, is not paid: it is recorded as "over_limit" for the operator to look at.
+    max_reward_per_burn: Decimal | None = None
+    max_reward_per_day: Decimal | None = None
 
     @classmethod
     def from_config(cls, tag: str, cfg: dict, keys_dir: Path) -> "Partner":
         keypair_path = keys_dir / cfg["treasury_keypair"]
+        # The treasury key is a hot key. A file that other users of the machine can read is a key they can take.
+        if os.name == "posix" and keypair_path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+            raise SystemExit("refusing to start: %s can be read by other users (mode %o). chmod 600 it."
+                             % (keypair_path, stat.S_IMODE(keypair_path.stat().st_mode)))
         with keypair_path.open() as f:
             secret = json.load(f)
         return cls(
@@ -100,6 +138,8 @@ class Partner:
             decimals=int(cfg["decimals"]),
             reward_ratio=Decimal(str(cfg["reward_ratio"])),
             treasury=Keypair.from_bytes(bytes(secret)),
+            max_reward_per_burn=Decimal(str(cfg["max_reward_per_burn"])) if "max_reward_per_burn" in cfg else None,
+            max_reward_per_day=Decimal(str(cfg["max_reward_per_day"])) if "max_reward_per_day" in cfg else None,
         )
 
 
@@ -122,10 +162,20 @@ class State:
         else:
             data = {}
         self.last_height: int = int(data.get("last_height", 0))
+        self.last_hash: str | None = data.get("last_hash")
         self.processed: dict[str, dict] = dict(data.get("processed", {}))
+        # reward paid so far each UTC day, per partner: {"2026-11-13": {"CORG": "123.4"}}
+        self.paid_by_day: dict[str, dict[str, str]] = dict(data.get("paid_by_day", {}))
 
-    def already_processed(self, txid: str) -> bool:
-        return txid in self.processed
+    def already_processed(self, key: str) -> bool:
+        return key in self.processed
+
+    def paid_today(self, partner: str, today: str) -> Decimal:
+        return Decimal(self.paid_by_day.get(today, {}).get(partner, "0"))
+
+    def add_paid(self, partner: str, today: str, amount: Decimal) -> None:
+        day = self.paid_by_day.setdefault(today, {})
+        day[partner] = str(Decimal(day.get(partner, "0")) + amount)
 
     def record(self, txid: str, entry: dict) -> None:
         self.processed[txid] = entry
@@ -133,7 +183,10 @@ class State:
     def save(self) -> None:
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         with tmp.open("w") as f:
-            json.dump({"last_height": self.last_height, "processed": self.processed}, f, indent=2)
+            json.dump({"last_height": self.last_height, "last_hash": self.last_hash,
+                       "processed": self.processed, "paid_by_day": self.paid_by_day}, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())    # the file must be on disk before it replaces the old one
         tmp.replace(self._path)
 
 
@@ -148,24 +201,37 @@ class Burn:
     partner: str
     sol_dest: Pubkey
     amount_corg: Decimal
+    vout: int = 0           # which output of the transaction (a transaction can hold several burns)
+
+    @property
+    def key(self) -> str:
+        """The key of this burn in state.json. Per output: keyed by txid alone, a second burn in the same transaction
+        replaced the first one's record."""
+        return f"{self.txid}:{self.vout}"
 
 
 def extract_burns(rpc: CorgiRPC, txid: str, height: int) -> list[Burn]:
     """Pull the tx, scan every output, delegate parsing to decodeburn RPC."""
     tx = rpc.call("getrawtransaction", txid, 1)
     burns: list[Burn] = []
-    for vout in tx.get("vout", []):
+    for n, vout in enumerate(tx.get("vout", [])):
         script_hex = vout["scriptPubKey"]["hex"]
         try:
             decoded = rpc.call("decodeburn", script_hex)
-        except RuntimeError:
-            continue  # not a bridge burn
+        except RPCError as e:
+            # Only the daemon saying "this script is not a bridge burn" means the output is not one. Any other error (the
+            # node loading or restarting, an internal error) says nothing about the output, and skipping it would lose the
+            # burn for good, because the scan moves on. Let it end the tick: the same blocks are scanned again next time.
+            if e.code == NOT_A_BURN_CODE:
+                continue
+            raise
         burns.append(Burn(
             txid=txid,
             height=height,
             partner=decoded["partner"],
             sol_dest=Pubkey.from_string(decoded["sol_dest_base58"]),
             amount_corg=Decimal(str(vout["value"])),
+            vout=n,
         ))
     return burns
 
@@ -174,9 +240,19 @@ def extract_burns(rpc: CorgiRPC, txid: str, height: int) -> list[Burn]:
 # Solana dispatch
 # ---------------------------------------------------------------------------
 
+class DispatchUnconfirmed(RuntimeError):
+    """The reward transaction was submitted (.sol_sig) but did not reach finality in time. It may still land or it may
+    have expired: the operator has to look it up before paying again."""
+
+    def __init__(self, sol_sig: str):
+        super().__init__(f"reward transaction {sol_sig} was submitted but not confirmed")
+        self.sol_sig = sol_sig
+
+
 class SolanaDispatcher:
-    def __init__(self, client: SolanaClient):
+    def __init__(self, client: SolanaClient, confirm_timeout: int = 90):
         self._client = client
+        self._confirm_timeout = confirm_timeout
 
     def send_reward(self, partner: Partner, dest: Pubkey, reward_tokens: Decimal) -> str:
         """Transfer `reward_tokens` of partner's SPL token from treasury to dest.
@@ -210,7 +286,31 @@ class SolanaDispatcher:
             instructions, treasury_pub, [partner.treasury], blockhash,
         )
         resp = self._client.send_transaction(tx, opts=TxOpts(skip_preflight=False))
-        return str(resp.value)
+        sol_sig = str(resp.value)
+        # "submitted" is not "paid": a transaction whose blockhash expires is dropped with no error. Wait for it to be final.
+        try:
+            conf = self._client.confirm_transaction(resp.value, commitment=Finalized, sleep_seconds=2)
+        except Exception as e:
+            raise DispatchUnconfirmed(sol_sig) from e
+        # Finalized is not "succeeded": a transaction that failed on chain (say the destination account was created by someone
+        # else between preflight and execution) is final too, and paid nothing. Only a status with no error is a payment.
+        statuses = getattr(conf, "value", None) or [None]
+        status = statuses[0]
+        if status is None:
+            raise DispatchUnconfirmed(sol_sig)
+        if status.err is not None:
+            raise RuntimeError(f"reward transaction {sol_sig} is final but failed on chain: {status.err}")
+        return sol_sig
+
+    def treasury_balance(self, partner: Partner) -> Decimal | None:
+        """The partner token the treasury holds, in whole tokens; None if it cannot be found out (then the payment is tried)."""
+        try:
+            ata = get_associated_token_address(partner.treasury.pubkey(), partner.token_mint)
+            amount = self._client.get_token_account_balance(ata).value.amount
+            return Decimal(amount) / (Decimal(10) ** partner.decimals)
+        except Exception as e:
+            log.warning("could not read the treasury balance for %s: %s", partner.tag, e)
+            return None
 
     def _account_exists(self, pubkey: Pubkey) -> bool:
         info = self._client.get_account_info(pubkey).value
@@ -224,6 +324,22 @@ class SolanaDispatcher:
 def tick(rpc: CorgiRPC, partners: dict[str, Partner], dispatcher: SolanaDispatcher,
          state: State, confirmations: int) -> None:
     tip = int(rpc.call("getblockcount"))
+
+    # Is the block we stopped at still on the chain? If a reorganisation was deeper than the confirmations we wait, burns we
+    # have already paid for may be gone from the chain. We cannot take a reward back: say so loudly, and scan the blocks
+    # that replaced them (what was paid is protected by the per-burn records).
+    if state.last_height > 0 and state.last_hash:
+        if rpc.call("getblockhash", state.last_height) != state.last_hash:
+            rewind = max(0, state.last_height - 3 * max(confirmations, 10))
+            log.error("REORG deeper than %d blocks: block %d is no longer %s. Rewinding the scan to height %d. Rewards for burns "
+                      "in blocks that were replaced may have been paid for burns that no longer exist: review state.json.",
+                      confirmations, state.last_height, state.last_hash, rewind)
+            alert("CorgiCoin bridge: a reorganisation deeper than %d blocks replaced block %d. Rewards may have been paid for burns "
+                  "that no longer exist: review state.json." % (confirmations, state.last_height))
+            state.last_height = rewind
+            state.last_hash = None
+            state.save()
+
     safe_tip = tip - confirmations
     if safe_tip <= state.last_height:
         return
@@ -233,10 +349,13 @@ def tick(rpc: CorgiRPC, partners: dict[str, Partner], dispatcher: SolanaDispatch
         block = rpc.call("getblock", block_hash)
         for txid in block.get("tx", []):
             if state.already_processed(txid):
-                continue
+                continue    # a record made before burns were keyed per output: the whole transaction counts as done
             for burn in extract_burns(rpc, txid, height):
+                if state.already_processed(burn.key):
+                    continue
                 process_burn(burn, partners, dispatcher, state)
         state.last_height = height
+        state.last_hash = block_hash
         state.save()
 
 
@@ -244,8 +363,8 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
                  dispatcher: SolanaDispatcher, state: State) -> None:
     partner = partners.get(burn.partner)
     if partner is None:
-        log.warning("ignoring burn %s: unknown partner %r", burn.txid, burn.partner)
-        state.record(burn.txid, {
+        log.warning("ignoring burn %s: unknown partner %r", burn.key, burn.partner)
+        state.record(burn.key, {
             "status": "skipped_unknown_partner",
             "partner": burn.partner, "height": burn.height,
             "amount_corg": str(burn.amount_corg),
@@ -254,6 +373,7 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
         return
 
     reward = burn.amount_corg * partner.reward_ratio
+    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     base_entry = {
         "partner": partner.tag,
         "height": burn.height,
@@ -266,21 +386,55 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
     # send_reward dispatching and recording the result, the next tick will see
     # this entry as already_processed and refuse to re-dispatch. The operator
     # reconciles manually (see README).
-    state.record(burn.txid, {**base_entry, "status": "pending"})
+    # Payout limits: a treasury is a hot key, and the reward is whatever was burned. A burn over a limit is not paid.
+    over = None
+    if partner.max_reward_per_burn is not None and reward > partner.max_reward_per_burn:
+        over = f"reward {reward} is over max_reward_per_burn {partner.max_reward_per_burn}"
+    elif partner.max_reward_per_day is not None and state.paid_today(partner.tag, today) + reward > partner.max_reward_per_day:
+        over = f"reward {reward} would take today's total past max_reward_per_day {partner.max_reward_per_day}"
+    if over:
+        log.error("NOT paying burn %s: %s. Recorded as over_limit; pay it by hand or raise the limit, then mark it dispatched.",
+                  burn.key, over)
+        state.record(burn.key, {**base_entry, "status": "over_limit", "error": over})
+        state.save()
+        alert("CorgiCoin bridge: burn %s NOT paid, %s. Pay it by hand or raise the limit." % (burn.key, over))
+        return
+
+    # A treasury that does not hold the reward cannot pay it: say so before anything is recorded as pending.
+    balance = dispatcher.treasury_balance(partner)
+    if isinstance(balance, Decimal) and balance < reward:
+        msg = "treasury holds %s %s, the reward is %s" % (balance, partner.tag, reward)
+        log.error("NOT paying burn %s: %s. Recorded as treasury_low; fund the treasury, then reset it to be paid.", burn.key, msg)
+        state.record(burn.key, {**base_entry, "status": "treasury_low", "error": msg})
+        state.save()
+        alert("CorgiCoin bridge: burn %s NOT paid, %s. Fund the treasury, then --reset it." % (burn.key, msg))
+        return
+
+    state.record(burn.key, {**base_entry, "status": "pending"})
     state.save()
 
     try:
         sol_sig = dispatcher.send_reward(partner, burn.sol_dest, reward)
+    except DispatchUnconfirmed as e:
+        log.error("reward for %s was submitted as %s but is not confirmed: marked unconfirmed, look the signature up before "
+                  "paying again", burn.key, e.sol_sig)
+        state.record(burn.key, {**base_entry, "status": "unconfirmed", "sol_sig": e.sol_sig, "error": str(e)})
+        state.add_paid(partner.tag, today, reward)      # count it: it may well have landed
+        state.save()
+        alert("CorgiCoin bridge: reward for %s was submitted as %s but is not confirmed. Look the signature up before paying again." % (burn.key, e.sol_sig))
+        return
     except Exception as e:
         log.error("dispatch failed for %s -> %s: %s — marked dispatch_error, manual review required",
-                  burn.txid, burn.partner, e)
-        state.record(burn.txid, {**base_entry, "status": "dispatch_error", "error": str(e)})
+                  burn.key, burn.partner, e)
+        state.record(burn.key, {**base_entry, "status": "dispatch_error", "error": str(e)})
         state.save()
+        alert("CorgiCoin bridge: payment for %s failed (%s). Manual review needed." % (burn.key, e))
         return
 
     log.info("dispatched %s %s -> %s (corg tx %s, sol sig %s)",
-             reward, partner.tag, burn.sol_dest, burn.txid, sol_sig)
-    state.record(burn.txid, {**base_entry, "status": "dispatched", "sol_sig": sol_sig})
+             reward, partner.tag, burn.sol_dest, burn.key, sol_sig)
+    state.record(burn.key, {**base_entry, "status": "dispatched", "sol_sig": sol_sig})
+    state.add_paid(partner.tag, today, reward)
     state.save()
 
 
@@ -288,7 +442,7 @@ def process_burn(burn: Burn, partners: dict[str, Partner],
 # Reconciliation (operator actions on stuck entries)
 # ---------------------------------------------------------------------------
 
-RECONCILABLE_STATUSES = ("pending", "dispatch_error")
+RECONCILABLE_STATUSES = ("pending", "dispatch_error", "unconfirmed", "over_limit", "treasury_low")
 
 
 def reconcile_list_pending(state: "State") -> int:
@@ -329,7 +483,7 @@ def reconcile_mark_dispatched(state: "State", txid: str, sol_sig: str) -> int:
     return 0
 
 
-def reconcile_reset(state: "State", txid: str) -> int:
+def reconcile_reset(state: "State", txid: str, force: bool = False) -> int:
     entry = state.processed.get(txid)
     if entry is None:
         print(f"error: txid {txid} not found in state.json", file=sys.stderr)
@@ -342,6 +496,11 @@ def reconcile_reset(state: "State", txid: str) -> int:
         print(f"error: txid {txid} has status {entry.get('status')!r}, not resettable",
               file=sys.stderr)
         return 2
+    if entry.get("status") == "unconfirmed" and not force:
+        print(f"error: {txid} is unconfirmed: its reward ({entry.get('sol_sig')}) may have landed, and a reset pays it again. "
+              f"Look the signature up on Solana first; if it landed use --mark-dispatched, if it did not, --reset it with --force.",
+              file=sys.stderr)
+        return 2
     burn_height = entry.get("height")
     state.processed.pop(txid)
     # Rewind so the next tick re-scans the block this burn was in. Without
@@ -350,6 +509,9 @@ def reconcile_reset(state: "State", txid: str) -> int:
     # are protected by the already_processed check.
     if isinstance(burn_height, int) and state.last_height >= burn_height:
         state.last_height = max(0, burn_height - 1)
+        # the kept hash is of the old last_height: left as it is, the next tick reads the rewind as a reorganisation
+        # deeper than the wait, raises the alarm and rewinds a further 150 blocks
+        state.last_hash = None
     state.save()
     print(f"reset {txid} (entry removed; last_height={state.last_height} for reprocess)")
     return 0
@@ -370,8 +532,11 @@ def main() -> int:
                      help="list pending and dispatch_error entries, then exit")
     rec.add_argument("--mark-dispatched", nargs=2, metavar=("TXID", "SOL_SIG"),
                      help="mark a pending/dispatch_error entry as dispatched and exit")
-    rec.add_argument("--reset", metavar="TXID",
-                     help="delete a pending/dispatch_error entry and rewind for reprocess, then exit")
+    rec.add_argument("--reset", metavar="KEY",
+                     help="delete a pending/dispatch_error/over_limit/treasury_low entry (txid:vout, as --list-pending prints it) "
+                          "and rewind for reprocess, then exit")
+    parser.add_argument("--force", action="store_true",
+                        help="with --reset: also reset an unconfirmed entry (only after checking its signature did not land)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -388,7 +553,7 @@ def main() -> int:
         return rc
     if args.reset:
         s = State(state_path)
-        return reconcile_reset(s, args.reset)
+        return reconcile_reset(s, args.reset, force=args.force)
 
     rpc = CorgiRPC(
         url=os.environ.get("CORGI_RPC_URL", "http://127.0.0.1:62555"),
@@ -420,11 +585,16 @@ def main() -> int:
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
+    failures = 0
     while not stopping:
         try:
             tick(rpc, partners, dispatcher, state, args.confirmations)
+            failures = 0
         except Exception as e:
             log.exception("tick failed: %s", e)
+            failures += 1
+            if failures == 5:       # once, not on every try after it
+                alert("CorgiCoin bridge: the last %d ticks failed (%s). Is corgicoind or Solana reachable?" % (failures, e))
         if args.once:
             return 0
         for _ in range(args.poll_seconds):

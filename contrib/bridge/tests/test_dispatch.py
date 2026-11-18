@@ -7,6 +7,8 @@ recoverable (manually) without double-sending."""
 from decimal import Decimal
 from unittest.mock import Mock
 
+import pytest
+
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 
@@ -48,7 +50,7 @@ def test_known_partner_dispatches_and_records(tmp_path):
     assert args[1] == burn.sol_dest
     assert args[2] == Decimal("1.0")  # 1.0 CORG * 1.0 ratio
 
-    entry = state.processed[burn.txid]
+    entry = state.processed[burn.key]
     assert entry["status"] == "dispatched"
     assert entry["partner"] == "CORG"
     assert entry["sol_sig"] == "fake-sol-sig"
@@ -62,7 +64,7 @@ def test_unknown_partner_is_recorded_as_skipped(tmp_path):
     bridge.process_burn(burn, {}, dispatcher, state)
 
     dispatcher.send_reward.assert_not_called()
-    entry = state.processed[burn.txid]
+    entry = state.processed[burn.key]
     assert entry["status"] == "skipped_unknown_partner"
     assert entry["partner"] == "WHAT"
 
@@ -81,12 +83,12 @@ def test_dispatch_failure_records_dispatch_error(tmp_path):
 
     bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
 
-    entry = state.processed[burn.txid]
+    entry = state.processed[burn.key]
     assert entry["status"] == "dispatch_error"
     assert "treasury empty" in entry["error"]
     assert entry["partner"] == "CORG"
     # already_processed must return True so reprocess on restart is blocked
-    assert state.already_processed(burn.txid)
+    assert state.already_processed(burn.key)
 
 
 def test_pending_recorded_before_dispatch(tmp_path):
@@ -101,7 +103,7 @@ def test_pending_recorded_before_dispatch(tmp_path):
         # Re-read state.json from disk to verify the pending record was saved,
         # not just held in memory.
         reloaded = bridge.State(tmp_path / "state.json")
-        captured["status"] = reloaded.processed.get(burn.txid, {}).get("status")
+        captured["status"] = reloaded.processed.get(burn.key, {}).get("status")
         return "fake-sig"
 
     dispatcher = Mock()
@@ -110,7 +112,7 @@ def test_pending_recorded_before_dispatch(tmp_path):
     bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
 
     assert captured["status"] == "pending"
-    assert state.processed[burn.txid]["status"] == "dispatched"
+    assert state.processed[burn.key]["status"] == "dispatched"
 
 
 def test_reward_ratio_scales_payout(tmp_path):
@@ -123,3 +125,81 @@ def test_reward_ratio_scales_payout(tmp_path):
     bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
 
     assert dispatcher.send_reward.call_args.args[2] == Decimal("10.0")
+
+
+def test_a_burn_over_the_per_burn_limit_is_not_paid(tmp_path):
+    partner = _make_partner()
+    partner = bridge.Partner(tag=partner.tag, token_mint=partner.token_mint, decimals=6, reward_ratio=Decimal("1.0"),
+                             treasury=partner.treasury, max_reward_per_burn=Decimal("10"))
+    burn = _make_burn(amount="1000")
+    dispatcher = Mock()
+    state = bridge.State(tmp_path / "state.json")
+
+    bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
+
+    dispatcher.send_reward.assert_not_called()
+    assert state.processed[burn.key]["status"] == "over_limit"
+
+
+def test_the_daily_total_is_enforced(tmp_path):
+    base = _make_partner()
+    partner = bridge.Partner(tag=base.tag, token_mint=base.token_mint, decimals=6, reward_ratio=Decimal("1.0"),
+                             treasury=base.treasury, max_reward_per_day=Decimal("10"))
+    dispatcher = Mock()
+    dispatcher.send_reward.return_value = "sig"
+    state = bridge.State(tmp_path / "state.json")
+
+    first = bridge.Burn(txid="aa" * 32, height=1, partner="CORG", sol_dest=_make_burn().sol_dest, amount_corg=Decimal("6"))
+    second = bridge.Burn(txid="bb" * 32, height=2, partner="CORG", sol_dest=_make_burn().sol_dest, amount_corg=Decimal("6"))
+    bridge.process_burn(first, {"CORG": partner}, dispatcher, state)
+    bridge.process_burn(second, {"CORG": partner}, dispatcher, state)
+
+    assert state.processed[first.key]["status"] == "dispatched"
+    assert state.processed[second.key]["status"] == "over_limit"
+    assert dispatcher.send_reward.call_count == 1
+
+
+def test_a_submitted_but_unconfirmed_reward_is_not_called_dispatched(tmp_path):
+    partner = _make_partner()
+    burn = _make_burn()
+    dispatcher = Mock()
+    dispatcher.send_reward.side_effect = bridge.DispatchUnconfirmed("the-signature")
+    state = bridge.State(tmp_path / "state.json")
+
+    bridge.process_burn(burn, {"CORG": partner}, dispatcher, state)
+
+    entry = state.processed[burn.key]
+    assert entry["status"] == "unconfirmed"
+    assert entry["sol_sig"] == "the-signature"
+    # and it is not paid again by a later scan
+    assert state.already_processed(burn.key)
+
+
+def _dispatcher_with(confirm_result):
+    from solders.hash import Hash
+    from solders.signature import Signature
+    client = Mock()
+    client.get_latest_blockhash.return_value.value.blockhash = Hash.default()
+    client.send_transaction.return_value.value = Signature.default()
+    client.confirm_transaction.return_value = confirm_result
+    dispatcher = bridge.SolanaDispatcher(client)
+    dispatcher._account_exists = lambda address: True
+    return dispatcher
+
+
+def test_a_final_transaction_that_failed_on_chain_is_not_a_payment():
+    """Finalized is not succeeded: a failed transaction is final too and paid nothing."""
+    dispatcher = _dispatcher_with(Mock(value=[Mock(err="InstructionError(0, Custom(1))")]))
+    with pytest.raises(RuntimeError, match="failed on chain"):
+        dispatcher.send_reward(_make_partner(), _make_burn().sol_dest, Decimal("1"))
+
+
+def test_a_final_transaction_with_no_error_is_a_payment():
+    dispatcher = _dispatcher_with(Mock(value=[Mock(err=None)]))
+    assert dispatcher.send_reward(_make_partner(), _make_burn().sol_dest, Decimal("1"))
+
+
+def test_no_status_after_confirming_is_unconfirmed():
+    dispatcher = _dispatcher_with(Mock(value=[None]))
+    with pytest.raises(bridge.DispatchUnconfirmed):
+        dispatcher.send_reward(_make_partner(), _make_burn().sol_dest, Decimal("1"))

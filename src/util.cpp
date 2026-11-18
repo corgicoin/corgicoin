@@ -66,7 +66,7 @@ bool fDebugNet = false;
 bool fPrintToConsole = false;
 bool fPrintToDebugger = false;
 bool fRequestShutdown = false;
-bool fShutdown = false;
+std::atomic<bool> fShutdown(false);
 bool fDaemon = false;
 bool fServer = false;
 bool fCommandLine = false;
@@ -234,6 +234,10 @@ int OutputDebugStringF(const char* pszFormat, ...)
     {
         // print to debug.log
         static FILE* fileout = nullptr;
+        static bool fStartedNewLine = true;
+        static std::mutex mutexDebugLog;
+        // the lock covers opening the file too: two threads logging for the first time used to open it twice
+        std::lock_guard<std::mutex> scoped_lock(mutexDebugLog);
 
         if (!fileout)
         {
@@ -243,9 +247,6 @@ int OutputDebugStringF(const char* pszFormat, ...)
         }
         if (fileout)
         {
-            static bool fStartedNewLine = true;
-            static std::mutex mutexDebugLog;
-            std::lock_guard<std::mutex> scoped_lock(mutexDebugLog);
 
             // reopen the log file, if requested
             if (fReopenDebugLog) {
@@ -255,18 +256,29 @@ int OutputDebugStringF(const char* pszFormat, ...)
                     setbuf(fileout, nullptr); // unbuffered
             }
 
-            // Debug print useful for profiling
-            if (fLogTimestamps && fStartedNewLine)
-                fprintf(fileout, "%s ", DateTimeStrFormat("%x %H:%M:%S", GetTime()).c_str());
-            if (pszFormat[strlen(pszFormat) - 1] == '\n')
-                fStartedNewLine = true;
-            else
-                fStartedNewLine = false;
-
+            // Format first, then stamp: whether a message ended its line has to be read from the text that is
+            // written, not from the format (every message here is "%s", so the old test never saw a newline and
+            // only the first line of the log was ever timestamped). Each line gets a stamp, so does each line
+            // of a message that has several.
             va_list arg_ptr;
             va_start(arg_ptr, pszFormat);
-            ret = vfprintf(fileout, pszFormat, arg_ptr);
+            const std::string strMessage = vstrprintf(pszFormat, arg_ptr);
             va_end(arg_ptr);
+
+            std::string strOut;
+            strOut.reserve(strMessage.size() + 32);
+            for (char c : strMessage)
+            {
+                if (fLogTimestamps && fStartedNewLine)
+                {
+                    strOut += DateTimeStrFormat("%x %H:%M:%S", GetTime());
+                    strOut += ' ';
+                }
+                strOut += c;
+                fStartedNewLine = (c == '\n');
+            }
+            ret = static_cast<int>(strOut.size());
+            fwrite(strOut.data(), 1, strOut.size(), fileout);
         }
     }
 
@@ -365,6 +377,20 @@ bool TimingResistantEqual(const std::string& a, const std::string& b)
         diff |= ca ^ cb;
     }
     return diff == 0;
+}
+
+std::string SanitizeString(const std::string& str, std::size_t nMaxLength)
+{
+    std::string out;
+    out.reserve(std::min(str.size(), nMaxLength));
+    for (unsigned char c : str)
+    {
+        if (out.size() >= nMaxLength)
+            break;
+        if (c >= 0x20 && c <= 0x7e)
+            out += static_cast<char>(c);
+    }
+    return out;
 }
 
 std::string TrimString(const std::string& str)
@@ -1216,12 +1242,15 @@ int GetFilesize(FILE* file)
     return nFilesize;
 }
 
-void ShrinkDebugFile()
+void ShrinkDebugFile(uint64_t nMaxBytes)
 {
-    // Scroll debug.log if it's getting too big
+    // Scroll debug.log if it's getting too big. The size comes from the file system: GetFilesize is an int, so a log
+    // over 2 GB looked like a negative size and was never shrunk.
     std::filesystem::path pathLog = GetDataDir() / "debug.log";
-    FILE* file = fopen(pathLog.string().c_str(), "r");
-    if (file && GetFilesize(file) > 10 * 1000000)
+    std::error_code ecSize;
+    const uintmax_t nSize = std::filesystem::file_size(pathLog, ecSize);
+    FILE* file = ecSize ? nullptr : fopen(pathLog.string().c_str(), "r");
+    if (file && nSize > nMaxBytes)
     {
         // Restart the file with some of the end
         char pch[200000];
@@ -1268,6 +1297,11 @@ void SetMockTime(int64 nMockTimeIn)
 
 static int64 nTimeOffset = 0;
 
+int64 GetTimeOffset()
+{
+    return nTimeOffset;
+}
+
 int64 GetAdjustedTime()
 {
     return GetTime() + nTimeOffset;
@@ -1285,12 +1319,16 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
     // Add data
     vTimeOffsets.input(nOffsetSample);
     LogPrintf("Added time data, samples %d, offset %+" PRI64d " (%+" PRI64d " minutes)\n", vTimeOffsets.size(), nOffsetSample, nOffsetSample/60);
-    if (vTimeOffsets.size() >= 5 && vTimeOffsets.size() % 2 == 1)
+    // Recomputed on every sample once there are five: the filter holds 200, and the odd-size condition this had
+    // meant that once it was full (an even size, for ever) the offset never changed again until a restart
+    if (vTimeOffsets.size() >= 5)
     {
         int64 nMedian = vTimeOffsets.median();
         std::vector<int64> vSorted = vTimeOffsets.sorted();
-        // Only let other nodes change our time by so much
-        if (abs64(nMedian) < 35 * 60) // CorgiCoin: changed maximum adjust to 35 mins to avoid letting peers change our time too much in case of an attack.
+        // Only let other nodes change our time by so much. Blocks more than 5 minutes ahead of our clock are refused
+        // (LWMA_FUTURE_TIME_LIMIT), so peers must not be able to move the clock by more than half of that: an offset of
+        // -34 minutes, which this used to allow, made every honest block look 34 minutes too far ahead and refused it
+        if (abs64(nMedian) <= MAX_TIME_OFFSET)
         {
             nTimeOffset = nMedian;
         }

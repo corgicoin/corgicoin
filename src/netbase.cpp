@@ -337,6 +337,14 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
     }
 
     SOCKET hSocket = socket(reinterpret_cast<struct sockaddr*>(&sockaddr)->sa_family, SOCK_STREAM, IPPROTO_TCP);
+#ifndef WIN32
+    if (hSocket != INVALID_SOCKET && hSocket >= FD_SETSIZE)
+    {
+        LogPrintf("Cannot connect to %s: descriptor %d is beyond what select() can hold\n", addrConnect.ToString().c_str(), static_cast<int>(hSocket));
+        closesocket(hSocket);
+        return false;
+    }
+#endif
     if (hSocket == INVALID_SOCKET)
         return false;
 #ifdef SO_NOSIGPIPE

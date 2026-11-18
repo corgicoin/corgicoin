@@ -39,10 +39,12 @@ class CrossBinaryTest(CorgiTestFramework):
         if os.path.realpath(self.options.alt_corgicoind) == os.path.realpath(self.options.corgicoind):
             self.log("warning: both builds are the same file, so this only checks the test itself")
         super().setup_nodes()
+        self.nodes[1].old_release = True
 
     def add_node(self, binary):
         index = len(self.nodes)
         node = TestNode(index, binary, os.path.join(self.tmpdir, "node%d" % index), None)
+        node.old_release = binary == self.options.alt_corgicoind
         self.nodes.append(node)
         node.start()
         return node
@@ -50,6 +52,7 @@ class CrossBinaryTest(CorgiTestFramework):
     def restart_with(self, node, binary):
         node.stop()
         node.binary = binary
+        node.old_release = binary == self.options.alt_corgicoind
         node.start()
 
     def wait_exit(self, node):

@@ -21,12 +21,18 @@ import subprocess
 import sys
 import tempfile
 import time
+import re
 import traceback
 from decimal import Decimal
 
 RPC_USER = "corgitest"
 RPC_PASS = "corgitest"
 SKIP_EXIT_CODE = 77   # a test that did not run exits with this (the automake convention)
+
+# What a sanitizer or an abort prints on stderr. Matching any of these fails the test, whatever its assertions say.
+STDERR_FAILURE = re.compile(
+    r"runtime error:|AddressSanitizer|LeakSanitizer|ThreadSanitizer|UndefinedBehaviorSanitizer"
+    r"|SUMMARY: \w*Sanitizer|terminate called|Assertion .* failed|\*\*\* stack smashing|glibc detected")
 
 
 class JSONRPCException(Exception):
@@ -126,6 +132,15 @@ class TestNode:
         self.rpc_port = free_port()
         self.extra_args = list(extra_args or [])
         self.process = None
+        self.problems = []          # things that make the run fail even if every assertion passed
+        self.stderr_file = None     # (set before anything else: unknown names fall through to the RPC proxy)
+        self._exit_noted = False
+        self._killed = False
+        self._abnormal_exit = False
+        # a release that is already out (the second build of feature_cross_binary): its exit status and stderr are not under
+        # test. Releases up to v4.9 can abort while exiting (a thread locks a mutex exit() is destroying); that is fixed in
+        # this tree and cannot be fixed in a binary that has shipped.
+        self.old_release = False
         self.rpc = RPCProxy(self.rpc_port)
         os.makedirs(datadir, exist_ok=True)
         with open(os.path.join(datadir, "corgicoin.conf"), "w") as f:
@@ -140,13 +155,21 @@ class TestNode:
                 "-port=%d" % self.p2p_port, "-rpcport=%d" % self.rpc_port,
                 "-bind=127.0.0.1", "-listen=1", "-printtoconsole=0", "-keypool=10"]
         args += self.extra_args + list(extra_args or [])
-        self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # stderr is kept (sanitizer reports and aborts go there); stdout is not used with -printtoconsole=0
+        self._close_stderr()
+        self.stderr_file = open(self.stderr_log, "ab")
+        # each process is judged on its own exit: without this, a crash after a restart went unrecorded
+        self._exit_noted = False
+        self._killed = False
+        self._abnormal_exit = False
+        self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=self.stderr_file)
         self.wait_for_rpc()
 
     def wait_for_rpc(self, timeout=60):
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self.process.poll() is not None:
+                self._exit_noted = True   # the test is told by the exception (some expect a refusal to start)
                 raise AssertionFailed("node%d exited during startup (code %s); see %s"
                                       % (self.index, self.process.returncode, self.debug_log))
             try:
@@ -158,7 +181,10 @@ class TestNode:
         raise AssertionFailed("node%d RPC did not come up within %ss" % (self.index, timeout))
 
     def stop(self, timeout=60):
+        """Ask the node to stop and wait for it. A node that does not exit in time, or exits non-zero, is a
+        problem the test run reports (it used to be killed silently)."""
         if not self.process or self.process.poll() is not None:
+            self._note_exit()
             return
         try:
             self.rpc.stop()
@@ -167,13 +193,60 @@ class TestNode:
         try:
             self.process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
+            self.problems.append("node%d did not exit within %ss of a stop request; it was killed" % (self.index, timeout))
             self.process.kill()
             self.process.wait()
+            self._exit_noted = True     # the hang is the problem; its exit status is just the kill
+        self._note_exit()
+        self._close_stderr()
+
+    def _note_exit(self):
+        """Record an abnormal exit status once the process has gone."""
+        if self.process is None or self.process.poll() is None or self._exit_noted:
+            return
+        self._exit_noted = True
+        if self.process.returncode != 0 and self.old_release:
+            print("[note] node%d (an earlier release) exited with status %s; not counted" % (self.index, self.process.returncode))
+            return
+        if self.process.returncode != 0:
+            self._abnormal_exit = True
+            self.problems.append("node%d exited with status %s" % (self.index, self.process.returncode))
+
+    def check_stderr(self):
+        """Record sanitizer output or abort messages found on stderr."""
+        if self.old_release:
+            return
+        if self.stderr_file is not None and not self.stderr_file.closed:
+            self.stderr_file.flush()
+        try:
+            with open(self.stderr_log, errors="replace") as f:
+                text = f.read()
+        except OSError:
+            return
+        m = STDERR_FAILURE.search(text)
+        if m:
+            start = max(0, m.start() - 200)
+            self.problems.append("node%d stderr (%s):\n%s" % (self.index, self.stderr_log, text[start:m.end() + 800]))
+        elif self._abnormal_exit:   # not a kill, and not a refusal to start the test asked for
+            # Died without a message of a kind listed above (a signal, an exception that was not caught): whatever it said last
+            self.problems.append("node%d stderr (%s), its last lines:\n%s" % (self.index, self.stderr_log, text[-1500:] if text else "(empty)"))
 
     def kill(self):
+        """Stop a node the test is finished with; it is not a failure if it had to be killed here."""
         if self.process and self.process.poll() is None:
             self.process.kill()
             self.process.wait()
+            self._exit_noted = True
+            self._killed = True
+        self._close_stderr()
+
+    def _close_stderr(self):
+        if self.stderr_file is not None and not self.stderr_file.closed:
+            self.stderr_file.close()
+
+    @property
+    def stderr_log(self):
+        return os.path.join(self.datadir, "stderr.log")
 
     @property
     def debug_log(self):
@@ -281,6 +354,14 @@ class CorgiTestFramework:
                 n.stop()
             for n in self.nodes:
                 n.kill()
+            for n in self.nodes:
+                n.check_stderr()
+        problems = [p for n in self.nodes for p in n.problems]
+        if ok and problems:
+            ok = False
+            print("---- the test body passed, but the nodes misbehaved ----")
+            for p in problems:
+                print(p)
         if ok:
             self.log("PASSED")
             if not self.options.nocleanup and not self.options.tmpdir:

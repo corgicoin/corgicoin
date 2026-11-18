@@ -35,6 +35,9 @@ class CNode;
 constexpr unsigned int MAX_BLOCK_SIZE = 1000000;
 constexpr unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
 constexpr unsigned int MAX_BLOCK_SIGOPS = MAX_BLOCK_SIZE/50;
+/** Relay policy, not consensus: the largest transaction and the most signature operations one transaction may have. */
+constexpr unsigned int MAX_STANDARD_TX_SIZE = 100000;
+constexpr unsigned int MAX_STANDARD_TX_SIGOPS = MAX_BLOCK_SIGOPS/5;
 constexpr unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
 // Orphan blocks (parent not yet known) are held in memory. Cap how many, and how many bytes in total.
 constexpr unsigned int MAX_ORPHAN_BLOCKS = 750;
@@ -79,6 +82,9 @@ extern unsigned char pchMessageStart[4];
 
 // Settings
 extern int64 nTransactionFee;
+/** The wallet refuses to make a transaction that pays more fee than this (-maxtxfee). It is a guard against a fee
+ *  that was set, or computed from a very large transaction, far beyond what was meant. */
+extern int64 nMaxTxFee;
 extern int64 nMinimumInputValue;
 
 constexpr int DEFAULT_CONNECT_TIMEOUT_MS = 5000;
@@ -891,6 +897,9 @@ public:
 
     // memory only
     mutable std::vector<uint256> vMerkleTree;
+    /** Set by CheckBlock when the merged-mining proof is what failed. The block hash does not cover the proof, so another
+     *  copy of the same block (same hash, a good proof) may exist: do not treat the hash as spoiled. */
+    mutable bool fBadAuxProof = false;
 
     // Denial-of-service detection:
     mutable int nDoS;
@@ -920,6 +929,13 @@ public:
             {
                 if (fRead)
                     const_cast<CBlock*>(this)->auxpow = std::make_shared<CAuxPow>();
+                else if (!auxpow)
+                    // A header built from CBlockIndex (e.g. GetBlockHeader()) carries the
+                    // AuxPoW version bit but no proof object. Serializing one would
+                    // dereference this null pointer; throw instead so callers that forgot
+                    // to attach the proof fail loudly (and ProcessMessages' catch keeps the
+                    // node up) rather than crashing the process.
+                    throw std::ios_base::failure("CBlock::SerializationOp() : AuxPoW version bit set but no proof attached");
                 READWRITE(*auxpow);
             }
             else if (fRead)
@@ -944,6 +960,7 @@ public:
         vtx.clear();
         auxpow.reset();
         vMerkleTree.clear();
+        fBadAuxProof = false;
         nDoS = 0;
     }
 
@@ -1052,7 +1069,7 @@ public:
         return true;
     }
 
-    bool ReadFromDisk(unsigned int nFile, unsigned int nBlockPos, bool fReadTransactions=true)
+    bool ReadFromDisk(unsigned int nFile, unsigned int nBlockPos, bool fReadTransactions=true, bool fCheckPoW=true)
     {
         SetNull();
 
@@ -1071,8 +1088,9 @@ public:
             return LogError("%s() : deserialize or I/O error", __PRETTY_FUNCTION__);
         }
 
-        // Check the header (AuxPoW-aware)
-        if (!CheckAuxProofOfWork(*this, nBits))
+        // Check the header (AuxPoW-aware). A caller that is serving a block this node already accepted may skip it:
+        // the check is a scrypt hash and, for merged mining, the AuxPoW proof, which a getdata for thousands of blocks paid each time
+        if (fCheckPoW && !CheckAuxProofOfWork(*this, nBits))
             return LogError("CBlock::ReadFromDisk() : errors in block header");
 
         return true;
@@ -1104,7 +1122,8 @@ public:
 
     bool DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex);
     bool ConnectBlock(CTxDB& txdb, CBlockIndex* pindex);
-    bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true);
+    void NotifyConnected() const;
+    bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true, bool fCheckPoW=true);
     bool SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew);
     bool AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos);
     bool CheckBlock() const;
@@ -1703,6 +1722,22 @@ public:
     /** Operator adjustments from prioritisetransaction: priority and fee deltas that only steer block assembly and
      *  relay admission. Kept by txid (so a transaction can be prioritised before it arrives), dropped when it leaves. */
     std::map<uint256, std::pair<double, int64> > mapDeltas;
+    /** What the size limit and the expiry need to know about each entry: its fee (before any prioritisetransaction
+     *  delta), size in bytes and the time it was accepted. */
+    struct PoolEntry { int64 nFee; unsigned int nSize; int64 nTime; bool fFeeKnown; };
+    std::map<uint256, PoolEntry> mapEntry;
+    size_t nPoolBytes = 0;
+
+    /** Drop entries older than -mempoolexpiry hours (default 72) with whatever spends them, then, while the pool holds more
+     *  than -maxmempoolkb (default 100000), the leaf entry with the lowest fee per byte. Returns how many were dropped. */
+    unsigned int Trim();
+    /** Trim() candidates, lowest fee per byte first. Needs cs. */
+    std::vector<std::pair<double, uint256> > EvictionCandidates() const;
+    /** Would a transaction of this size and fee be the first one dropped if it were added now? (No side effects: a dry
+     *  run asks this, because the cap is only applied after a transaction is stored.) */
+    bool WouldBeDropped(int64 nFee, unsigned int nSize);
+    /** Remove a transaction and every pool transaction that spends it. */
+    void RemoveRecursive(const uint256& hash);
 
     bool accept(CTxDB& txdb, CTransaction &tx,
                 bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck = nullptr);

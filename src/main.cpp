@@ -66,6 +66,7 @@ int64 nHPSTimerStart;
 
 // Settings
 int64 nTransactionFee = 0;
+int64 nMaxTxFee = 10000 * COIN;
 int64 nMinimumInputValue = CENT;
 
 
@@ -278,6 +279,12 @@ bool CTransaction::ReadFromDisk(COutPoint prevout)
 bool CTransaction::IsStandard() const
 {
     if (nVersion > CTransaction::CURRENT_VERSION)
+        return false;
+
+    // The relay limit is far under the 1 MB block limit: legacy signature hashing re-serialises the whole transaction
+    // for every input, so verifying a transaction of thousands of inputs costs seconds of CPU (and a bad signature on
+    // the last input makes all of it wasted)
+    if (::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) >= MAX_STANDARD_TX_SIZE)
         return false;
 
     for (const CTxIn& txin : vin)
@@ -503,6 +510,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 {
     if (pfMissingInputs)
         *pfMissingInputs = false;
+    int64 nEntryFee = 0;
 
     if (!tx.CheckTransaction())
         return RejectTx(pcheck, "invalid-transaction", LogError("CTxMemPool::accept() : CheckTransaction failed"));
@@ -515,9 +523,15 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     if (static_cast<int64>(tx.nLockTime) > std::numeric_limits<int>::max())
         return RejectTx(pcheck, "locktime-too-far", LogError("CTxMemPool::accept() : not accepting nLockTime beyond 2038 yet"));
 
-    // Rather not work on nonstandard transactions (unless -testnet)
-    if (!fTestNet && !tx.IsStandard())
+    // Rather not work on nonstandard transactions (unless -testnet; -acceptnonstdtxn=0 asks for the policy there too)
+    const bool fRequireStandard = !GetBoolArg("-acceptnonstdtxn", fTestNet);
+    if (fRequireStandard && !tx.IsStandard())
         return RejectTx(pcheck, "nonstandard", LogError("CTxMemPool::accept() : nonstandard transaction type"));
+
+    // A transaction that cannot be in the next block yet (its lock time is ahead) would sit in the pool, and be
+    // relayed, until it can
+    if (fRequireStandard && !tx.IsFinal(nBestHeight + 1, GetAdjustedTime()))
+        return RejectTx(pcheck, "non-final", LogError("CTxMemPool::accept() : non-final transaction"));
 
     // Do we already have it?
     uint256 hash = tx.GetHash();
@@ -573,8 +587,18 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         }
 
         // Check for non-standard pay-to-script-hash in inputs
-        if (!tx.AreInputsStandard(mapInputs) && !fTestNet)
+        if (fRequireStandard && !tx.AreInputsStandard(mapInputs))
             return RejectTx(pcheck, "nonstandard-inputs", LogError("CTxMemPool::accept() : nonstandard transaction input"));
+
+        // Signature operations: a block takes 20000 in all, so one transaction with more than a fifth of that is not
+        // worth carrying. Each is a signature check, and a transaction made of them costs the node most when it is
+        // refused at the end (the signature checks are the last thing done).
+        if (fRequireStandard)
+        {
+            const unsigned int nSigOps = tx.GetLegacySigOpCount() + tx.GetP2SHSigOpCount(mapInputs);
+            if (nSigOps > MAX_STANDARD_TX_SIGOPS)
+                return RejectTx(pcheck, "too-many-sigops", LogError("CTxMemPool::accept() : too many signature operations (%u)", nSigOps));
+        }
 
         // Note: if you modify this code to accept non-standard transactions, then
         // you should add code here to check that the transaction does a
@@ -582,6 +606,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
         int64 nFees = tx.GetValueIn(mapInputs)-tx.GetValueOut();
         unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+        nEntryFee = nFees;
         if (pcheck)
             pcheck->nFees = nFees;
 
@@ -638,14 +663,18 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             {
                 const CTransaction& txPrev = mapInputs[tx.vin[i].prevout.hash].second;
                 if (!VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
-                    return LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str());
+                    return RejectTx(pcheck, "non-canonical-signature", LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str()));
             }
         }
     }
 
-    // A dry run stops here: the transaction passed every check
+    // A dry run stops here: the transaction passed every check (and it would not be the one the size limit throws out)
     if (pcheck && pcheck->fTestOnly)
+    {
+        if (WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION)))
+            return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s would have the lowest fee rate", hash.ToString().substr(0,10).c_str()));
         return true;
+    }
 
     // Store transaction in memory
     {
@@ -656,6 +685,12 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             remove(*ptxOld);
         }
         addUnchecked(hash, tx);
+        PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime(), fCheckInputs };
+        mapEntry[hash] = entry;
+        nPoolBytes += entry.nSize;
+        Trim();
+        if (!mapTx.count(hash))
+            return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s had the lowest fee rate", hash.ToString().substr(0,10).c_str()));
     }
 
     ///// are we sure this is ok when loading transactions or restoring block txes
@@ -701,10 +736,126 @@ bool CTxMemPool::remove(CTransaction &tx)
                 mapNextTx.erase(txin.prevout);
             mapTx.erase(hash);
             mapDeltas.erase(hash);
+            auto itEntry = mapEntry.find(hash);
+            if (itEntry != mapEntry.end())
+            {
+                nPoolBytes -= std::min<size_t>(nPoolBytes, itEntry->second.nSize);
+                mapEntry.erase(itEntry);
+            }
             nTransactionsUpdated++;
         }
     }
     return true;
+}
+
+void CTxMemPool::RemoveRecursive(const uint256& hash)
+{
+    LOCK(cs);
+    std::vector<uint256> vWork(1, hash);
+    while (!vWork.empty())
+    {
+        const uint256 h = vWork.back();
+        vWork.pop_back();
+        auto it = mapTx.find(h);
+        if (it == mapTx.end())
+            continue;
+        for (unsigned int n = 0; n < it->second.vout.size(); n++)
+        {
+            auto itSpend = mapNextTx.find(COutPoint(h, n));
+            if (itSpend != mapNextTx.end())
+                vWork.push_back(itSpend->second.ptx->GetHash());
+        }
+        CTransaction tx = it->second;
+        remove(tx);
+    }
+}
+
+// -maxmempoolkb in bytes, clamped so that absurd values cannot overflow the multiplication
+static size_t MaxMempoolBytes()
+{
+    return (size_t)std::min<int64>(std::max<int64>(1, GetArg("-maxmempoolkb", 100000)), 100000000) * 1000;
+}
+
+// The entries Trim() may drop, lowest fee per byte first: those nothing in the pool spends from (taking a parent out would
+// take its children, which may pay more), and whose fee is known (one put back after a reorganisation was not computed,
+// and is not the cheapest just because it reads 0)
+std::vector<std::pair<double, uint256> > CTxMemPool::EvictionCandidates() const
+{
+    std::vector<std::pair<double, uint256> > v;
+    v.reserve(mapEntry.size());
+    for (const auto& item : mapEntry)
+    {
+        if (!item.second.fFeeKnown)
+            continue;
+        auto itTx = mapTx.find(item.first);
+        if (itTx == mapTx.end())
+            continue;
+        bool fHasChild = false;
+        for (unsigned int n = 0; n < itTx->second.vout.size() && !fHasChild; n++)
+            fHasChild = mapNextTx.count(COutPoint(item.first, n)) != 0;
+        if (!fHasChild)
+            v.emplace_back((double)item.second.nFee / std::max(1u, item.second.nSize), item.first);
+    }
+    std::sort(v.begin(), v.end());
+    return v;
+}
+
+unsigned int CTxMemPool::Trim()
+{
+    LOCK(cs);
+    unsigned int nDropped = 0;
+
+    static int64 nLastExpiryCheck = 0;
+    const int64 now = GetTime();
+    const int64 nExpirySeconds = std::max<int64>(1, GetArg("-mempoolexpiry", 72)) * 60 * 60;
+    if (now - nLastExpiryCheck >= 60)
+    {
+        nLastExpiryCheck = now;
+        std::vector<uint256> vOld;
+        for (const auto& item : mapEntry)
+            if (now - item.second.nTime > nExpirySeconds)
+                vOld.push_back(item.first);
+        for (const uint256& hash : vOld)
+        {
+            LogPrintf("CTxMemPool::Trim() : %s expired\n", hash.ToString().substr(0,10).c_str());
+            const size_t nBefore = mapTx.size();
+            RemoveRecursive(hash);
+            nDropped += (unsigned int)(nBefore - mapTx.size());
+        }
+    }
+
+    // One sorted pass over the candidates, not a scan of the whole pool for every entry dropped (one big transaction into a
+    // full pool can push out hundreds, and this runs under cs_main). Dropping a leaf can make its parent one: that only
+    // matters if the pass ran out of candidates while still over the limit, and then it goes round again.
+    const size_t nMaxBytes = MaxMempoolBytes();
+    while (nPoolBytes > nMaxBytes && !mapEntry.empty())
+    {
+        const std::vector<std::pair<double, uint256> > vCandidates = EvictionCandidates();
+        if (vCandidates.empty())
+            break;
+        for (const auto& candidate : vCandidates)
+        {
+            if (nPoolBytes <= nMaxBytes)
+                break;
+            if (!mapTx.count(candidate.second))
+                continue;
+            LogPrintf("CTxMemPool::Trim() : pool is %u bytes, over the limit of %u: dropping %s (%.1f sat/byte)\n",
+                      (unsigned int)nPoolBytes, (unsigned int)nMaxBytes, candidate.second.ToString().substr(0,10).c_str(), candidate.first);
+            RemoveRecursive(candidate.second);
+            nDropped++;
+        }
+    }
+    return nDropped;
+}
+
+bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize)
+{
+    LOCK(cs);
+    if (nPoolBytes + nSize <= MaxMempoolBytes() || mapEntry.empty())
+        return false;
+    const std::vector<std::pair<double, uint256> > vCandidates = EvictionCandidates();
+    // strictly lower than every candidate: it goes first (a tie is left to the real thing)
+    return !vCandidates.empty() && (double)nFee / std::max(1u, nSize) < vCandidates.front().first;
 }
 
 void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)
@@ -878,14 +1029,21 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock)
 // CBlock and CBlockIndex
 //
 
-bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
+bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions, bool fCheckPoW)
 {
     if (!fReadTransactions)
     {
+        // pindex->GetBlockHeader() does not carry the AuxPoW proof (CBlockIndex
+        // keeps only the on-disk file position, not the CAuxPow object), so for
+        // a merged-mined block that shortcut would produce a header with the
+        // AuxPoW version bit set and no proof attached -- undefined behaviour
+        // once serialized (see CBlock::SerializationOp). Go to disk for those.
+        if (IsAuxPowVersion(pindex->nVersion))
+            return ReadFromDisk(pindex->nFile, pindex->nBlockPos, false);
         *this = pindex->GetBlockHeader();
         return true;
     }
-    if (!ReadFromDisk(pindex->nFile, pindex->nBlockPos, fReadTransactions))
+    if (!ReadFromDisk(pindex->nFile, pindex->nBlockPos, fReadTransactions, fCheckPoW))
         return false;
     if (GetHash() != pindex->GetBlockHash())
         return LogError("CBlock::ReadFromDisk() : GetHash() doesn't match index");
@@ -1119,8 +1277,13 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     {
         // Maximum 400% adjustment...
         bnResult *= 4;
-        // ... in best-case exactly 4-times-normal target time
-        nTime -= nTargetTimespan*4;
+        // ... in best-case exactly 4-times-normal target time. That was written for the 4-hour retarget (4 times per 16
+        // hours). LWMA eases every block, and the easing compounds: if blocks take s = W*T each, the target grows by a
+        // factor e^x per window of N blocks where (1-e^-x)/x = 1/W (about 4.9 for W=2, 17 for W=3, 330 at the cap of
+        // W=6). Per unit of time the fastest is around W=4 to 6, about 1.8e-4 per second: 4 times in 2 hours. A step of
+        // 2 hours is a little above that. With the old 16 hours a node banned the honest peers relaying the honest chain
+        // after a hashrate crash, because the real target had fallen faster than this allowed.
+        nTime -= 2 * 60 * 60;
     }
     if (bnResult > bnProofOfWorkLimit)
         bnResult = bnProofOfWorkLimit;
@@ -1314,13 +1477,13 @@ bool CAuxPow::Check(uint256 hashAuxBlock, int32_t nChainId) const
     if (script.end() - pc < 8)
         return LogError("AuxPow::Check() : missing merkle tree size and nonce");
 
-    uint32_t nSize;
-    memcpy(&nSize, &pc[0], 4);
+    // little-endian on the wire whatever the host is (a memcpy was right only on little-endian machines)
+    auto ReadLE32 = [](const unsigned char* p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); };
+    uint32_t nSize = ReadLE32(&pc[0]);
     if (nSize != (1u << vChainMerkleBranch.size()))
         return LogError("AuxPow::Check() : merkle tree size does not match branch length");
 
-    uint32_t nNonce;
-    memcpy(&nNonce, &pc[4], 4);
+    uint32_t nNonce = ReadLE32(&pc[4]);
     if ((unsigned int)nChainIndex != GetExpectedAuxIndex(nNonce, nChainId, vChainMerkleBranch.size()))
         return LogError("AuxPow::Check() : chain index does not match expected slot");
 
@@ -1362,8 +1525,42 @@ bool IsInitialBlockDownload()
             pindexBest->GetBlockTime() < GetTime() - 24 * 60 * 60);
 }
 
+// The block (on the branch that failed) whose ConnectBlock failed, so that InvalidChainFound can mark that block and not
+// only the tip of the branch. Set by the code that saw it fail; null when the failure was not the block's fault.
+static CBlockIndex* pindexConnectFailed = nullptr;
+// Set by ConnectBlock when it failed for a reason that may be this node's and not the block's: a database write that failed, or
+// inputs it could not read (missing from the index, a read error, an exhausted lock table). Such a block is not marked failed:
+// a transient error would otherwise make the node give up the honest chain until it restarts.
+static bool fConnectFailureMaybeLocal = false;
+
+// Mark pindexBad as failed, and every block already in the index that is built on it. A block built on a failed one is
+// then not tried again (each try would be a whole reorganisation that ends at the same invalid block), and one that
+// arrives later is marked as it is added (AddToBlockIndex copies the flag from its parent).
+static void MarkFailedChain(CBlockIndex* pindexBad)
+{
+    pindexBad->fFailedChain = true;
+    for (auto& item : mapBlockIndex)
+    {
+        CBlockIndex* p = item.second;
+        if (p->fFailedChain || p->nHeight <= pindexBad->nHeight)
+            continue;
+        const CBlockIndex* q = p;
+        while (q && q->nHeight > pindexBad->nHeight)
+            q = q->pprev;
+        if (q == pindexBad)
+            p->fFailedChain = true;
+    }
+}
+
 void static InvalidChainFound(CBlockIndex* pindexNew)
 {
+    if (pindexConnectFailed)
+    {
+        LogPrintf("InvalidChainFound: marking %s (height %d) and what is built on it as failed\n",
+                  pindexConnectFailed->GetBlockHash().ToString().substr(0,20).c_str(), pindexConnectFailed->nHeight);
+        MarkFailedChain(pindexConnectFailed);
+        pindexConnectFailed = nullptr;
+    }
     if (pindexNew->bnChainWork > bnBestInvalidWork)
     {
         bnBestInvalidWork = pindexNew->bnChainWork;
@@ -1711,6 +1908,7 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
 bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
+    fConnectFailureMaybeLocal = false;
     // Check it again in case a previous version let a bad block in
     if (!CheckBlock())
         return false;
@@ -1765,7 +1963,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         {
             bool fInvalid;
             if (!tx.FetchInputs(txdb, mapQueuedChanges, true, false, mapInputs, fInvalid))
+            {
+                fConnectFailureMaybeLocal = !fInvalid;
                 return false;
+            }
 
             if (fStrictPayToScriptHash)
             {
@@ -1790,7 +1991,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     for (const auto& mi : mapQueuedChanges)
     {
         if (!txdb.UpdateTxIndex(mi.first, mi.second))
+        {
+            fConnectFailureMaybeLocal = true;
             return LogError("ConnectBlock() : UpdateTxIndex failed");
+        }
     }
 
 	uint256 prevHash = 0;
@@ -1814,17 +2018,29 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         CDiskBlockIndex blockindexPrev(pindex->pprev);
         blockindexPrev.hashNext = pindex->GetBlockHash();
         if (!txdb.WriteBlockIndex(blockindexPrev))
+        {
+            fConnectFailureMaybeLocal = true;
             return LogError("ConnectBlock() : WriteBlockIndex failed");
+        }
     }
 
-    // Watch for transactions paying to me
-    for (CTransaction& tx : vtx)
+    // (The wallet and ZMQ are told after the database commit: see NotifyConnected.)
+    return true;
+}
+
+// Tell the wallets and ZMQ about the transactions of a block that is now on the best chain. Done after the commit: from
+// inside ConnectBlock the wallet took in transactions of blocks that a later failure (of the commit, or of a later block
+// of the same reorganisation) then never connected. ZMQ is not told during the initial download: it would be a
+// notification for every transaction of the whole chain.
+void CBlock::NotifyConnected() const
+{
+    const bool fNotifyZMQ = !IsInitialBlockDownload();
+    for (const CTransaction& tx : vtx)
     {
         SyncWithWallets(tx, this, true);
-        ZMQNotifyTransaction(tx);
+        if (fNotifyZMQ)
+            ZMQNotifyTransaction(tx);
     }
-
-    return true;
 }
 
 bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
@@ -1884,7 +2100,9 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
             return LogError("Reorganize() : ReadFromDisk for connect failed");
         if (!block.ConnectBlock(txdb, pindex))
         {
-            // Invalid block
+            // Invalid block (unless the failure may be ours)
+            if (!fConnectFailureMaybeLocal)
+                pindexConnectFailed = pindex;
             return LogError("Reorganize() : ConnectBlock %s failed", pindex->GetBlockHash().ToString().substr(0,20).c_str());
         }
 
@@ -1909,6 +2127,14 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         if (pindex->pprev)
             pindex->pprev->pnext = pindex;
 
+    // The database has them: now the wallets can have them too
+    for (CBlockIndex* pindex : vConnect)
+    {
+        CBlock block;
+        if (block.ReadFromDisk(pindex))
+            block.NotifyConnected();
+    }
+
     // Resurrect memory transactions that were in the disconnected branch
     for (CTransaction& tx : vResurrect)
         tx.AcceptToMemoryPool(txdb, false);
@@ -1929,7 +2155,10 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
     uint256 hash = GetHash();
 
     // Adding to current best branch
-    if (!ConnectBlock(txdb, pindexNew) || !txdb.WriteHashBestChain(hash))
+    const bool fConnected = ConnectBlock(txdb, pindexNew);
+    if (!fConnected && !fConnectFailureMaybeLocal)
+        pindexConnectFailed = pindexNew;      // the block's fault, not the database's
+    if (!fConnected || !txdb.WriteHashBestChain(hash))
     {
         txdb.TxnAbort();
         InvalidChainFound(pindexNew);
@@ -1940,6 +2169,7 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 
     // Add to current best branch
     pindexNew->pprev->pnext = pindexNew;
+    NotifyConnected();
 
     // Delete redundant memory transactions
     for (CTransaction& tx : vtx)
@@ -1951,6 +2181,9 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
 {
     uint256 hash = GetHash();
+    // The block that is the tip when this is done. It is pindexNew unless a reorganisation connected only part of the
+    // new branch (a later block of it failed to connect): the tip is then the last block that did connect
+    CBlockIndex* pindexTip = pindexNew;
 
     if (!txdb.TxnBegin())
         return LogError("SetBestChain() : TxnBegin failed");
@@ -1993,6 +2226,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             InvalidChainFound(pindexNew);
             return LogError("SetBestChain() : Reorganize failed");
         }
+        pindexTip = pindexIntermediate;
 
         // Connect futher blocks
         for (auto it = vpindexSecondary.rbegin(); it != vpindexSecondary.rend(); ++it)
@@ -2011,6 +2245,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             // errors now are not fatal, we still did a reorganisation to a new chain in a valid way
             if (!block.SetBestChainInner(txdb, pindex))
                 break;
+            pindexTip = pindex;
         }
     }
 
@@ -2018,15 +2253,18 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
     bool fIsInitialDownload = IsInitialBlockDownload();
     if (!fIsInitialDownload)
     {
-        const CBlockLocator locator(pindexNew);
+        const CBlockLocator locator(pindexTip);
         ::SetBestChain(locator);
     }
 
-    // New best block
-    hashBestChain = hash;
-    pindexBest = pindexNew;
+    // New best block: the one the database ends on. Setting these from pindexNew when a later block of the branch
+    // had failed to connect left memory on a tip the database never reached: block templates were built on it, a
+    // heavier-looking chain that never connected kept honest blocks from becoming the best one, and the node came
+    // back from a restart on a different tip.
+    hashBestChain = pindexTip == pindexNew ? hash : pindexTip->GetBlockHash();
+    pindexBest = pindexTip;
     nBestHeight = pindexBest->nHeight;
-    bnBestChainWork = pindexNew->bnChainWork;
+    bnBestChainWork = pindexTip->bnChainWork;
     nTimeBestReceived = GetTime();
     nTransactionsUpdated++;
     LogPrintf("SetBestChain: new best=%s  height=%d  work=%s  date=%s\n",
@@ -2040,7 +2278,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
         const CBlockIndex* pindex = pindexBest;
         for (int i = 0; i < 100 && pindex != nullptr; i++)
         {
-            if (pindex->nVersion > CBlock::CURRENT_VERSION)
+            if (GetBaseVersion(pindex->nVersion) > CBlock::CURRENT_VERSION)   // not the whole field: its chain id and AuxPoW bit made every merged-mined block look newer
                 ++nUpgraded;
             pindex = pindex->pprev;
         }
@@ -2052,7 +2290,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
     }
 
     // the new tip is the block being added, so it is at hand for rawblock
-    if (!fIsInitialDownload)
+    if (!fIsInitialDownload && pindexTip == pindexNew)
         ZMQNotifyBlock(*this, hashBestChain);
 
     std::string strCmd = GetArg("-blocknotify", "");
@@ -2297,7 +2535,10 @@ bool CBlock::CheckBlock() const
     // Check proof of work matches claimed amount (AuxPoW-aware: for a merged
     // block the parent header carries the work; see doc/auxpow-spec.md)
     if (!CheckAuxProofOfWork(*this, nBits))
+    {
+        fBadAuxProof = IsAuxPow();
         return DoS(50, LogError("CheckBlock() : proof of work failed"));
+    }
 
     // Check timestamp
     if (GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
@@ -2954,6 +3195,62 @@ bool static AlreadyHave(CTxDB& txdb, const CInv& inv)
 unsigned char pchMessageStart[4] = { 0xc0, 0xc0, 0xc0, 0xc0 }; 
 
 
+// Answer the queued getdata items while the send buffer has room for the replies.
+static void ProcessGetData(CNode* pfrom)
+{
+    LOCK(cs_main);
+    while (!pfrom->vRecvGetData.empty())
+    {
+        // Don't bother if send buffer is too full to respond anyway
+        if (pfrom->vSend.size() >= SendBufferSize())
+            break;
+        if (fShutdown)
+            return;
+
+        const CInv inv = pfrom->vRecvGetData.front();
+        pfrom->vRecvGetData.pop_front();
+        LogPrint(LOG_NET, "received getdata for: %s\n", inv.ToString().c_str());
+
+        if (inv.type == static_cast<int>(MsgType::Block))
+        {
+            // Send block from disk
+            auto mi = mapBlockIndex.find(inv.hash);
+            if (mi != mapBlockIndex.end())
+            {
+                CBlock block;
+                // already accepted, so its proof of work was checked: do not pay for it again on every read
+                block.ReadFromDisk((*mi).second, true, false);
+                pfrom->PushMessage("block", block);
+
+                // Trigger them to send a getblocks request for the next batch of inventory
+                if (inv.hash == pfrom->hashContinue)
+                {
+                    // Bypass PushInventory, this must send even if redundant,
+                    // and we want it right after the last block so they don't
+                    // wait for other stuff first.
+                    vector<CInv> vInv;
+                    vInv.emplace_back(static_cast<int>(MsgType::Block), hashBestChain);
+                    pfrom->PushMessage("inv", vInv);
+                    pfrom->hashContinue = 0;
+                }
+            }
+        }
+        else if (inv.IsKnownType())
+        {
+            // Send stream from relay memory
+            {
+                LOCK(cs_mapRelay);
+                auto mi = mapRelay.find(inv);
+                if (mi != mapRelay.end())
+                    pfrom->PushMessage(inv.GetCommand(), (*mi).second);
+            }
+        }
+
+        // Track requests for our stuff
+        Inventory(inv.hash);
+    }
+}
+
 bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<CService, CPubKey> mapReuseKey;
@@ -2997,7 +3294,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (!vRecv.empty())
             vRecv >> addrFrom >> nNonce;
         if (!vRecv.empty())
+        {
             vRecv >> pfrom->strSubVer;
+            // from an unauthenticated peer: it goes into getpeerinfo and the log, and a byte that is not valid
+            // UTF-8 used to make every getpeerinfo fail for as long as the peer stayed connected
+            pfrom->strSubVer = SanitizeString(pfrom->strSubVer);
+        }
         if (!vRecv.empty())
             vRecv >> pfrom->nStartingHeight;
 
@@ -3021,7 +3323,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         pfrom->fClient = !(pfrom->nServices & NODE_NETWORK);
 
-        AddTimeData(pfrom->addr, nTime);
+        // Outbound peers only: the ones we chose. Anyone can connect inbound, and with a handful of them could outvote
+        // the few honest outbound peers on what the time is.
+        if (!pfrom->fInbound)
+            AddTimeData(pfrom->addr, nTime);
 
         // Change version
         pfrom->PushMessage("verack");
@@ -3226,49 +3531,17 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         LogPrint(LOG_NET, "received getdata (%d invsz)\n", vInv.size());
 
-        for (const CInv& inv : vInv)
+        // Queue the request and answer as much as the send buffer takes. The rest is answered as it drains
+        // (ProcessMessages), and nothing newer from this peer is read until then, so replies stay in order. One message
+        // of 50000 items used to be answered to the end at once: every block read from disk and queued in memory, under
+        // cs_main, however slowly the peer read.
+        if (pfrom->vRecvGetData.size() + vInv.size() > MAX_GETDATA_QUEUE)
         {
-            if (fShutdown)
-                return true;
-            LogPrint(LOG_NET, "received getdata for: %s\n", inv.ToString().c_str());
-
-            if (inv.type == static_cast<int>(MsgType::Block))
-            {
-                // Send block from disk
-                auto mi = mapBlockIndex.find(inv.hash);
-                if (mi != mapBlockIndex.end())
-                {
-                    CBlock block;
-                    block.ReadFromDisk((*mi).second);
-                    pfrom->PushMessage("block", block);
-
-                    // Trigger them to send a getblocks request for the next batch of inventory
-                    if (inv.hash == pfrom->hashContinue)
-                    {
-                        // Bypass PushInventory, this must send even if redundant,
-                        // and we want it right after the last block so they don't
-                        // wait for other stuff first.
-                        vector<CInv> vInv;
-                        vInv.emplace_back(static_cast<int>(MsgType::Block), hashBestChain);
-                        pfrom->PushMessage("inv", vInv);
-                        pfrom->hashContinue = 0;
-                    }
-                }
-            }
-            else if (inv.IsKnownType())
-            {
-                // Send stream from relay memory
-                {
-                    LOCK(cs_mapRelay);
-                    auto mi = mapRelay.find(inv);
-                    if (mi != mapRelay.end())
-                        pfrom->PushMessage(inv.GetCommand(), (*mi).second);
-                }
-            }
-
-            // Track requests for our stuff
-            Inventory(inv.hash);
+            pfrom->Misbehaving(20);
+            return LogError("getdata queue of %u items is full", (unsigned int)pfrom->vRecvGetData.size());
         }
+        pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
+        ProcessGetData(pfrom);
     }
 
 
@@ -3334,7 +3607,23 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         LogPrintf("getheaders %d to %s\n", (pindex ? pindex->nHeight : -1), hashStop.ToString().substr(0,20).c_str());
         for (; pindex; pindex = pindex->pnext)
         {
-            vHeaders.push_back(pindex->GetBlockHeader());
+            if (IsAuxPowVersion(pindex->nVersion))
+            {
+                // GetBlockHeader() does not carry the AuxPoW proof (CBlockIndex keeps
+                // only the on-disk position, not the CAuxPow object), and serializing
+                // an AuxPoW-versioned header with none attached is now a hard error
+                // (see CBlock::SerializationOp). CBlock::ReadFromDisk(pindex, false)
+                // knows to go to disk for this case; use it instead of the shortcut.
+                CBlock block;
+                if (!block.ReadFromDisk(pindex, false))
+                {
+                    LogPrintf("getheaders : ReadFromDisk failed for %s, stopping\n", pindex->GetBlockHash().ToString().substr(0,20).c_str());
+                    break;
+                }
+                vHeaders.push_back(block);
+            }
+            else
+                vHeaders.push_back(pindex->GetBlockHeader());
             if (--nLimit <= 0 || pindex->GetBlockHash() == hashStop)
                 break;
         }
@@ -3367,7 +3656,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             for (unsigned int i = 0; i < vWorkQueue.size(); i++)
             {
                 uint256 hashPrev = vWorkQueue[i];
-                for (const auto& orphanItem : mapOrphanTransactionsByPrev[hashPrev])
+                // find(), not operator[]: that added an empty entry to the map for the hash of every accepted transaction,
+                // for ever
+                auto itByPrev = mapOrphanTransactionsByPrev.find(hashPrev);
+                if (itByPrev == mapOrphanTransactionsByPrev.end())
+                    continue;
+                for (const auto& orphanItem : itByPrev->second)
                 {
                     const CDataStream& vMsg = *orphanItem.second;
                     CTransaction tx;
@@ -3421,6 +3715,31 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         if (ProcessBlock(pfrom, &block))
             mapAlreadyAskedFor.erase(inv);
+        else if (block.fBadAuxProof)
+        {
+            // The merged-mining proof was bad, but the hash does not cover the proof: a copy of this block with a good one may
+            // exist. Do not sit out the two-minute retry delay for a block this peer spoiled: ask the next peer that told us of it.
+            mapAlreadyAskedFor.erase(inv);
+            LOCK(cs_vNodes);
+            for (CNode* pnode : vNodes)
+            {
+                if (pnode == pfrom)
+                    continue;
+                bool fQueued = false;
+                for (auto it = pnode->mapAskFor.begin(); it != pnode->mapAskFor.end(); )
+                {
+                    if (!(it->second < inv) && !(inv < it->second))   // CInv has only operator<
+                    {
+                        it = pnode->mapAskFor.erase(it);
+                        fQueued = true;
+                    }
+                    else
+                        ++it;
+                }
+                if (fQueued)
+                    pnode->AskFor(inv);
+            }
+        }
         if (block.nDoS) pfrom->Misbehaving(block.nDoS);
     }
 
@@ -3565,6 +3884,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 bool ProcessMessages(CNode* pfrom)
 {
     CDataStream& vRecv = pfrom->vRecv;
+
+    // Answers owed from an earlier getdata come first, and until they are done nothing newer from this peer is read
+    if (!pfrom->vRecvGetData.empty())
+        ProcessGetData(pfrom);
+    if (!pfrom->vRecvGetData.empty())
+        return true;
+
     if (vRecv.empty())
         return true;
 
@@ -3581,6 +3907,9 @@ bool ProcessMessages(CNode* pfrom)
     {
         // Don't bother if send buffer is too full to respond anyway
         if (pfrom->vSend.size() >= SendBufferSize())
+            break;
+        // this maintains the order of responses
+        if (!pfrom->vRecvGetData.empty())
             break;
 
         // Scan for message start

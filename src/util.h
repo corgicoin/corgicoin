@@ -9,6 +9,10 @@
 #ifndef BITCOIN_UTIL_H
 #define BITCOIN_UTIL_H
 
+#ifdef NDEBUG
+#error "CorgiCoin must not be built with NDEBUG: assert() guards consensus and signing code. Remove -DNDEBUG from the build flags."
+#endif
+
 #include "uint256.h"
 
 #ifndef WIN32
@@ -19,6 +23,7 @@
 #include <sys/types.h>  // provides pid_t on MinGW
 #endif
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <map>
 #include <vector>
@@ -111,7 +116,7 @@ extern bool fDebugNet;
 extern bool fPrintToConsole;
 extern bool fPrintToDebugger;
 extern bool fRequestShutdown;
-extern bool fShutdown;
+extern std::atomic<bool> fShutdown;   // set by the shutdown thread, read by every worker thread
 extern bool fDaemon;
 extern bool fServer;
 extern bool fCommandLine;
@@ -144,6 +149,8 @@ void ParseString(const std::string& str, char c, std::vector<std::string>& v);
 // Small string helpers (replace the boost::algorithm::string uses).
 std::string ToLower(const std::string& str);
 std::string TrimString(const std::string& str);
+/** Text that came from a peer, made safe to print, log or put in a JSON reply: printable ASCII only, at most nMaxLength bytes. */
+std::string SanitizeString(const std::string& str, std::size_t nMaxLength = 256);
 
 /** Compare two secrets without stopping at the first difference, so the time taken does not tell a caller how many
  *  leading characters it guessed right. Only the lengths can leak. */
@@ -184,7 +191,8 @@ void ReadConfigFile(std::map<std::string, std::string>& mapSettingsRet, std::map
 #ifdef WIN32
 std::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
 #endif
-void ShrinkDebugFile();
+/** Cut debug.log down to its last 200 kB if it is over nMaxBytes. */
+void ShrinkDebugFile(uint64_t nMaxBytes = 10 * 1000000);
 int GetRandInt(int nMax);
 uint64 GetRand(uint64 nMax);
 // Fill buf with num cryptographically strong random bytes. RAND_bytes can fail (OS entropy unavailable,
@@ -197,6 +205,9 @@ uint256 GetRandHash();
 int64 GetTime();
 void SetMockTime(int64 nMockTimeIn);
 int64 GetAdjustedTime();
+int64 GetTimeOffset();
+/** The most the peers' clocks may move ours (seconds): half the 5 minutes a block may be ahead of it. */
+static constexpr int64 MAX_TIME_OFFSET = 150;
 long hex2long(const char* hexString);
 std::string FormatFullVersion();
 std::string FormatSubVersion(const std::string& name, int nClientVersion, const std::vector<std::string>& comments);

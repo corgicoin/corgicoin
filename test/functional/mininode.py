@@ -22,9 +22,11 @@ def sha256d(b):
 
 
 def ser_varstr(s):
-    b = s.encode()
-    assert len(b) < 0xfd
-    return bytes([len(b)]) + b
+    b = s if isinstance(s, bytes) else s.encode()
+    if len(b) < 0xfd:
+        return bytes([len(b)]) + b
+    assert len(b) <= 0xffff
+    return bytes([0xfd]) + struct.pack("<H", len(b)) + b
 
 
 def ser_addr(host="127.0.0.1", port=0):
@@ -40,11 +42,13 @@ class P2PConnection:
     wedged peer looks like to the node.
     """
 
-    def __init__(self, port, answer_pings=True, start_height=0):
+    def __init__(self, port, answer_pings=True, start_height=0, subver=b"/corgi-mininode:0.1/"):
         self.answer_pings = answer_pings
         self.got_verack = False
         self.pings_received = 0
+        self.counts = {}            # how many messages of each command arrived
         self.closed = False
+        self.messages = {}     # command -> list of raw payloads received, in order
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
         self.sock.settimeout(None)
         self._lock = threading.Lock()
@@ -53,9 +57,22 @@ class P2PConnection:
         payload = (struct.pack("<iQq", PROTOCOL_VERSION, NODE_NETWORK, int(time.time()))
                    + ser_addr(port=port) + ser_addr()
                    + struct.pack("<Q", random.getrandbits(64))
-                   + ser_varstr("/corgi-mininode:0.1/")
+                   + ser_varstr(subver)
                    + struct.pack("<i", start_height))
         self.send("version", payload)
+
+    def send_inv(self, items, command="inv"):
+        """inv or getdata for items = [(type, hash_as_32_bytes), ...]: type 1 is a transaction, 2 a block."""
+        n = len(items)
+        count = bytes([n]) if n < 0xfd else bytes([0xfd]) + struct.pack("<H", n)
+        self.send(command, count + b"".join(struct.pack("<I", t) + h for t, h in items))
+
+    def send_addrs(self, addrs):
+        """addr message for addrs = [(ipv4 string, port), ...]."""
+        n = len(addrs)
+        count = bytes([n]) if n < 0xfd else bytes([0xfd]) + struct.pack("<H", n)
+        now = int(time.time())
+        self.send("addr", count + b"".join(struct.pack("<I", now) + ser_addr(h, p) for h, p in addrs))
 
     def send(self, command, payload=b""):
         header = (REGTEST_MAGIC + command.encode().ljust(12, b"\x00")
@@ -90,6 +107,8 @@ class P2PConnection:
             self.closed = True
 
     def _on_message(self, command, payload):
+        self.messages.setdefault(command, []).append(payload)
+        self.counts[command] = self.counts.get(command, 0) + 1
         if command == "version":
             self.send("verack")
         elif command == "verack":

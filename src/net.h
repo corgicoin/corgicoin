@@ -33,6 +33,13 @@ extern int nBestHeight;
 
 
 inline unsigned int ReceiveBufferSize() { return 1000*GetArg("-maxreceivebuffer", 5*1000); }
+/** The most peers this node keeps (-maxconnections), less than select() can hold. */
+int GetMaxConnections();
+/** Most items a peer may have waiting to be asked for (50000 is the most one inv message can announce). */
+static const size_t MAPASKFOR_MAX_SZ = 50000;
+/** Most getdata items kept for one peer while earlier ones are being answered. */
+static const size_t MAX_GETDATA_QUEUE = 100000;
+
 inline unsigned int SendBufferSize() { return 1000*GetArg("-maxsendbuffer", 1*1000); }
 
 void AddOneShot(std::string strDest);
@@ -134,7 +141,40 @@ extern CCriticalSection cs_vNodes;
 extern std::map<CInv, CDataStream> mapRelay;
 extern std::deque<std::pair<int64, CInv> > vRelayExpiration;
 extern CCriticalSection cs_mapRelay;
-extern std::map<CInv, int64> mapAlreadyAskedFor;
+/** The time of the last request for each item that a peer announced to us. A peer chooses what it announces, so this is bounded:
+ *  the oldest entries are dropped when it is full. (It used to grow by every hash a peer ever announced and never delivered.) */
+class CAskedForMap
+{
+public:
+    static const size_t MAX_SIZE = 50000;
+    int64& operator[](const CInv& inv)
+    {
+        auto it = map.find(inv);
+        if (it != map.end())
+            return it->second;
+        order.push_back(inv);
+        // also on the queue's own size: entries are normally erased from the map when the item arrives, which leaves
+        // their names in the queue, and without this it would grow by one for every transaction ever received
+        if (map.size() >= MAX_SIZE || order.size() > 2 * MAX_SIZE)
+            Trim();
+        return map[inv];
+    }
+    size_t erase(const CInv& inv) { return map.erase(inv); }
+    size_t size() const { return map.size(); }
+private:
+    void Trim()
+    {
+        // drop the oldest until there is room; names in the queue that were erased since are skipped
+        while (!order.empty() && (map.size() >= MAX_SIZE || order.size() > 2 * MAX_SIZE))
+        {
+            map.erase(order.front());
+            order.pop_front();
+        }
+    }
+    std::map<CInv, int64> map;
+    std::deque<CInv> order;
+};
+extern CAskedForMap mapAlreadyAskedFor;
 
 // Manually-added peers (-addnode at startup, plus the `addnode` RPC).
 extern std::vector<std::string> vAddedNodes;
@@ -170,6 +210,8 @@ public:
     int nMisbehavior;
     uint64 nSendBytes;
     uint64 nRecvBytes;
+    size_t nAddrKnown;  // addresses remembered for this peer (bounded)
+    size_t nGetDataQueued;  // getdata items waiting for send-buffer room
     double dPingTime;   // seconds; 0 if never measured
     double dPingWait;   // seconds an outstanding ping has been waiting; 0 if none
     double dMinPing;    // seconds; 0 if never measured
@@ -230,7 +272,9 @@ public:
 
     // flood relay
     std::vector<CAddress> vAddrToSend;
-    std::set<CAddress> setAddrKnown;
+    // Addresses this peer already has or has told us. It is filled by what the peer sends, so it is bounded: each distinct
+    // address cost about 100 bytes, an addr message of 1000 of them carried no penalty, and the set was cleared once a day.
+    mruset<CAddress> setAddrKnown;
     bool fGetAddr;
     std::set<uint256> setKnown;
 
@@ -239,6 +283,8 @@ public:
     std::vector<CInv> vInventoryToSend;
     CCriticalSection cs_inventory;
     std::multimap<int64, CInv> mapAskFor;
+    // getdata items still to be answered. A reply is only built while the send buffer has room; the rest waits here.
+    std::deque<CInv> vRecvGetData;
 
     // traffic accounting
     uint64 nSendBytes;
@@ -287,6 +333,7 @@ public:
         nMinPingUsecTime = std::numeric_limits<int64>::max();
         fPingQueued = false;
         setInventoryKnown.max_size(SendBufferSize() / 1000);
+        setAddrKnown.max_size(5000);
 
         // Be shy and don't send version until we hear
         if (!fInbound)
@@ -365,6 +412,9 @@ public:
     {
         // We're using mapAskFor as a priority queue,
         // the key is the earliest time the request can be sent
+        // A peer can announce 50000 items per message and never deliver any of them: keep what is asked for per peer bounded
+        if (mapAskFor.size() >= MAPASKFOR_MAX_SZ)
+            return;
         int64& nRequestTime = mapAlreadyAskedFor[inv];
         LogPrint(LOG_NET, "askfor %s   %" PRI64d "\n", inv.ToString().c_str(), nRequestTime);
 

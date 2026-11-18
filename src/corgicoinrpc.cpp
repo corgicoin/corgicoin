@@ -27,8 +27,13 @@
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/asio/ssl.hpp>
+#include <fstream>
 #include <memory>
 #include <list>
+#include <set>
+#ifndef WIN32
+#include <poll.h>
+#endif
 
 using namespace std;
 using namespace boost;
@@ -38,6 +43,121 @@ using namespace json_spirit;
 void ThreadRPCServer2(void* parg);
 
 static std::string strRPCUserColonPass;
+static std::string strRPCCookieFile;   // set while the server authenticates with a cookie
+static CCriticalSection cs_rpcCookie;   // guards strRPCCookieFile: the RPC thread sets it, the shutdown thread clears it
+
+// Cookie authentication: with no -rpcuser and no -rpcpassword the server makes a random password, writes it to
+// <datadir>/.cookie (readable by its owner only) and removes the file at shutdown. The command line client reads it.
+static const char* COOKIE_USER = "__cookie__";
+static std::filesystem::path GetCookiePath() { return std::filesystem::path(GetDataDir()) / ".cookie"; }
+
+static bool GenerateAuthCookie(std::string& strUserPassRet)
+{
+    unsigned char rand[32];
+    if (!GetRandBytesChecked(rand, 32))
+        return false;
+    static const char* hex = "0123456789abcdef";
+    std::string strPass;
+    for (int i = 0; i < 32; i++) { strPass += hex[rand[i] >> 4]; strPass += hex[rand[i] & 15]; }
+    OPENSSL_cleanse(rand, sizeof(rand));
+    strUserPassRet = std::string(COOKIE_USER) + ":" + strPass;
+
+    const std::filesystem::path path = GetCookiePath();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+#ifndef WIN32
+    // create it closed to everyone else from the start (not written, then chmod)
+    int fd = open(path.string().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0)
+        return false;
+    ssize_t n = write(fd, strUserPassRet.data(), strUserPassRet.size());
+    close(fd);
+    if (n != (ssize_t)strUserPassRet.size())
+        return false;
+#else
+    std::ofstream file(path.string().c_str(), std::ios::out | std::ios::trunc | std::ios::binary);
+    file << strUserPassRet;
+    file.close();
+    if (!file)
+        return false;
+#endif
+    {
+        LOCK(cs_rpcCookie);
+        strRPCCookieFile = path.string();
+    }
+    return true;
+}
+
+static void DeleteAuthCookie()
+{
+    LOCK(cs_rpcCookie);
+    if (strRPCCookieFile.empty())
+        return;
+    std::error_code ec;
+    std::filesystem::remove(strRPCCookieFile, ec);
+    strRPCCookieFile.clear();
+}
+
+void DeleteRPCCookie() { DeleteAuthCookie(); }
+
+static bool ReadAuthCookie(std::string& strUserPassRet)
+{
+    std::ifstream file(GetCookiePath().string().c_str(), std::ios::in | std::ios::binary);
+    if (!file)
+        return false;
+    std::getline(file, strUserPassRet);
+    return strUserPassRet.compare(0, strlen(COOKIE_USER) + 1, std::string(COOKIE_USER) + ":") == 0;
+}
+
+// Failed logins per client address: after -rpcmaxauthfailures (default 20) in a minute the address is refused for the
+// rest of that minute, even with the right password. (A sleep per failure would tie up a handler thread instead.)
+static CCriticalSection cs_rpcAuthFailures;
+static std::map<std::string, std::pair<int, int64>> mapRPCAuthFailures;   // address -> (failures, start of window)
+static const int64 RPC_AUTH_WINDOW = 60;
+
+// Loopback clients are never locked out: RPC listens on loopback only by default, and any local process (or a pool retrying a
+// stale password) could otherwise lock the real pool and corgicoin-cli out, a minute at a time, for as long as it liked.
+static bool RPCAuthExempt(const std::string& strAddr)
+{
+    boost::system::error_code ec;
+    boost::asio::ip::address addr = boost::asio::ip::make_address(strAddr, ec);
+    if (ec)
+        return false;
+    if (addr.is_v6() && addr.to_v6().is_v4_mapped())
+        addr = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, addr.to_v6());
+    return addr.is_loopback();
+}
+
+static bool RPCAuthLockedOut(const std::string& strAddr)
+{
+    if (RPCAuthExempt(strAddr))
+        return false;
+    LOCK(cs_rpcAuthFailures);
+    auto it = mapRPCAuthFailures.find(strAddr);
+    if (it == mapRPCAuthFailures.end())
+        return false;
+    if (GetTime() - it->second.second >= RPC_AUTH_WINDOW)
+    {
+        mapRPCAuthFailures.erase(it);
+        return false;
+    }
+    return it->second.first >= std::max<int64>(1, GetArg("-rpcmaxauthfailures", 20));
+}
+
+static void RPCAuthFailed(const std::string& strAddr)
+{
+    if (RPCAuthExempt(strAddr))
+        return;
+    LOCK(cs_rpcAuthFailures);
+    const int64 now = GetTime();
+    if (mapRPCAuthFailures.size() > 1000)
+        for (auto it = mapRPCAuthFailures.begin(); it != mapRPCAuthFailures.end();)
+            it = (now - it->second.second >= RPC_AUTH_WINDOW) ? mapRPCAuthFailures.erase(it) : std::next(it);
+    auto& e = mapRPCAuthFailures[strAddr];
+    if (now - e.second >= RPC_AUTH_WINDOW || e.first == 0)
+        e = std::make_pair(0, now);
+    e.first++;
+}
 
 static int64 nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
@@ -52,6 +172,7 @@ static int DefaultRPCPort()
 extern Value getconnectioncount(const Array& params, bool fHelp); // in rpcnet.cpp
 extern Value getpeerinfo(const Array& params, bool fHelp);
 extern Value ping(const Array& params, bool fHelp);
+extern Value getmemoryinfo(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -84,6 +205,10 @@ extern Value sendrawtransaction(const Array& params, bool fHelp);
 const Object emptyobj;
 
 void ThreadRPCServer3(void* parg);
+
+// Connections that exist from the moment they are accepted until their handler thread has destroyed them. A connection's
+// socket is registered with the io_context of ThreadRPCServer2, which must not be destroyed before the last of them is.
+static std::atomic<int> nRPCConnectionsOpen(0);
 
 Object JSONRPCError(int code, const string& message)
 {
@@ -352,14 +477,25 @@ Value GetNetworkHashPS(int lookup) {
     if (lookup > pindexBest->nHeight)
         lookup = pindexBest->nHeight;
 
+    // No blocks to measure over (the genesis block alone)
+    if (lookup <= 0)
+        return 0;
+
     CBlockIndex* pindexPrev = pindexBest;
     for (int i = 0; i < lookup; i++)
         pindexPrev = pindexPrev->pprev;
 
+    // Blocks that share a timestamp (regtest, or fast blocks) or run backwards give no usable time span: dividing
+    // by it would give infinity or a negative rate, and converting that to an integer is undefined
     double timeDiff = pindexBest->GetBlockTime() - pindexPrev->GetBlockTime();
+    if (timeDiff <= 0)
+        return 0;
     double timePerBlock = timeDiff / lookup;
 
-    return static_cast<int64_t>((static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock);
+    double hashps = (static_cast<double>(GetDifficulty()) * pow(2.0, 32)) / timePerBlock;
+    if (!(hashps >= 0) || hashps > 9.0e18)   // NaN, negative, or beyond int64
+        return 0;
+    return static_cast<int64_t>(hashps);
 }
 
 Value getnetworkhashps(const Array& params, bool fHelp)
@@ -731,6 +867,9 @@ Value settxfee(const Array& params, bool fHelp)
     if (params[0].get_real() != 0.0)
         nAmount = AmountFromValue(params[0]);        // rejects 0.0 amounts
 
+    // every send would then fail on the -maxtxfee check: refuse it here, as -paytxfee is refused at startup
+    if (nAmount > nMaxTxFee)
+        throw JSONRPCError(-8, strprintf("The fee is more than -maxtxfee (%s)", FormatMoney(nMaxTxFee).c_str()));
     nTransactionFee = nAmount;
     return true;
 }
@@ -1307,6 +1446,8 @@ Value sendmany(const Array& params, bool fHelp)
         scriptPubKey.SetDestination(address.Get());
         int64 nAmount = AmountFromValue(s.value_);
         totalAmount += nAmount;
+        if (!MoneyRange(totalAmount))
+            throw JSONRPCError(-3, "Invalid amount: the total is more than there can be");
 
         vecSend.emplace_back(scriptPubKey, nAmount);
     }
@@ -1689,13 +1830,14 @@ Value listtransactions(const Array& params, bool fHelp)
         if (pacentry != 0)
             AcentryToJSON(*pacentry, strAccount, ret);
 
-        if (static_cast<int>(ret.size()) >= (nCount+nFrom)) break;
+        // count and from can each be as large as INT_MAX, so their sum is taken in 64 bits
+        if (static_cast<int64_t>(ret.size()) >= static_cast<int64_t>(nCount) + nFrom) break;
     }
     // ret is newest to oldest
 
     if (nFrom > static_cast<int>(ret.size()))
         nFrom = ret.size();
-    if ((nFrom + nCount) > static_cast<int>(ret.size()))
+    if (static_cast<int64_t>(nFrom) + nCount > static_cast<int64_t>(ret.size()))
         nCount = ret.size() - nFrom;
     auto first = ret.begin();
     std::advance(first, nFrom);
@@ -1850,6 +1992,13 @@ Value gettransaction(const Array& params, bool fHelp)
 
     WalletTxToJSON(wtx, entry);
 
+    // other wallet transactions that spend the same coins; "conflicted" when one of them is in the chain
+    Array conflicts;
+    for (const uint256& hashOther : pwalletMain->GetConflicts(wtx))
+        conflicts.push_back(hashOther.GetHex());
+    entry.emplace_back("walletconflicts", conflicts);
+    entry.emplace_back("conflicted", pwalletMain->IsConflicted(wtx));
+
     Array details;
     ListTransactions(wtx, "*", 0, false, details);
     entry.emplace_back("details", details);
@@ -1866,7 +2015,9 @@ Value backupwallet(const Array& params, bool fHelp)
             "Safely copies wallet.dat to destination, which can be a directory or a path with filename.");
 
     string strDest = params[0].get_str();
-    BackupWallet(*pwalletMain, strDest);
+    // the result was ignored, so a backup that failed (no such directory, disk full) was reported as done
+    if (!BackupWallet(*pwalletMain, strDest))
+        throw JSONRPCError(-4, "Error: Wallet backup failed (see debug.log)");
 
     return Value::null;
 }
@@ -1893,18 +2044,35 @@ Value keypoolrefill(const Array& params, bool fHelp)
 
 void ThreadTopUpKeyPool(void* parg)
 {
+    WalletThreadGuard guard;
     // Make this thread recognisable as the key-topping-up thread
     RenameThread("corgicoin-key-top");
 
-    pwalletMain->TopUpKeyPool();
+    // An exception that leaves a thread function ends the whole process, so nothing is allowed to escape
+    try
+    {
+        pwalletMain->TopUpKeyPool();
+    }
+    catch (const std::exception& e)
+    {
+        LogPrintf("ThreadTopUpKeyPool() : %s\n", e.what());
+    }
+    catch (...)
+    {
+        LogPrintf("ThreadTopUpKeyPool() : unknown exception\n");
+    }
 }
 
 void ThreadCleanWalletPassphrase(void* parg)
 {
+    WalletThreadGuard guard;
     // Make this thread recognisable as the wallet relocking thread
     RenameThread("corgicoin-lock-wa");
 
-    int64 nMyWakeTime = GetTimeMillis() + *static_cast<int64*>(parg) * 1000;
+    std::unique_ptr<int64> pnSleepTime(static_cast<int64*>(parg));
+    // Large timeouts must not overflow the millisecond arithmetic (walletpassphrase also clamps them)
+    int64 nMyWakeTime = GetTimeMillis() + *pnSleepTime * 1000;
+    bool fLockWallet = false;
 
     ENTER_CRITICAL_SECTION(cs_nWalletUnlockTime);
 
@@ -1921,15 +2089,21 @@ void ThreadCleanWalletPassphrase(void* parg)
                 break;
 
             LEAVE_CRITICAL_SECTION(cs_nWalletUnlockTime);
-            Sleep(nToSleep);
+            // in short steps, so that a shutdown is not held up for the rest of the unlock time
+            Sleep(std::min<int64>(nToSleep, 250));
             ENTER_CRITICAL_SECTION(cs_nWalletUnlockTime);
+            if (fShutdown)
+            {
+                LEAVE_CRITICAL_SECTION(cs_nWalletUnlockTime);
+                return;     // the wallet is about to be freed: nothing to lock
+            }
 
         } while(1);
 
         if (nWalletUnlockTime)
         {
             nWalletUnlockTime = 0;
-            pwalletMain->Lock();
+            fLockWallet = true;
         }
     }
     else
@@ -1940,7 +2114,19 @@ void ThreadCleanWalletPassphrase(void* parg)
 
     LEAVE_CRITICAL_SECTION(cs_nWalletUnlockTime);
 
-    delete static_cast<int64*>(parg);
+    // Lock outside cs_nWalletUnlockTime: Lock() waits for cs_wallet, and the RPC dispatcher takes cs_wallet before it
+    // takes cs_nWalletUnlockTime (walletlock, walletpassphrase), so the other order could deadlock
+    if (fLockWallet)
+    {
+        try
+        {
+            pwalletMain->Lock();
+        }
+        catch (const std::exception& e)
+        {
+            LogPrintf("ThreadCleanWalletPassphrase() : %s\n", e.what());
+        }
+    }
 }
 
 Value walletpassphrase(const Array& params, bool fHelp)
@@ -1954,8 +2140,15 @@ Value walletpassphrase(const Array& params, bool fHelp)
     if (!pwalletMain->IsCrypted())
         throw JSONRPCError(-15, "Error: running with an unencrypted wallet, but walletpassphrase was called.");
 
-    if (!pwalletMain->IsLocked())
-        throw JSONRPCError(-17, "Error: Wallet is already unlocked.");
+    // Called again on a wallet that is already unlocked, it checks the passphrase and extends the timeout (it used
+    // to refuse with -17, so overlapping payout runs that each unlock the wallet failed against each other)
+
+    // The timeout is in seconds and is multiplied by 1000 for the relock thread: a negative value would relock at
+    // once and a huge one would overflow, so refuse the first and cap the second (2^30 seconds is 34 years)
+    const int64 nTimeout = params[1].get_int64();
+    if (nTimeout < 0)
+        throw JSONRPCError(-8, "Error: the timeout cannot be negative.");
+    const int64 nSleepSeconds = std::min<int64>(nTimeout, 1LL << 30);
 
     // Note that the walletpassphrase is stored in params[0] which is not mlock()ed
     SecureString strWalletPass;
@@ -1974,9 +2167,16 @@ Value walletpassphrase(const Array& params, bool fHelp)
             "walletpassphrase <passphrase> <timeout>\n"
             "Stores the wallet decryption key in memory for <timeout> seconds.");
 
-    CreateThread(ThreadTopUpKeyPool, nullptr);
-    int64* pnSleepTime = new int64(params[1].get_int64());
-    CreateThread(ThreadCleanWalletPassphrase, pnSleepTime);
+    nWalletThreadsRunning++;
+    if (!CreateThread(ThreadTopUpKeyPool, nullptr))
+        nWalletThreadsRunning--;
+    int64* pnSleepTime = new int64(nSleepSeconds);
+    nWalletThreadsRunning++;
+    if (!CreateThread(ThreadCleanWalletPassphrase, pnSleepTime))
+    {
+        nWalletThreadsRunning--;
+        delete pnSleepTime;
+    }
 
     return Value::null;
 }
@@ -2380,9 +2580,10 @@ Value getwork(const Array& params, bool fHelp)
 
 Value getblocktemplate(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() > 1)
         throw runtime_error(
             "getblocktemplate [params]\n"
+            "[params] is optional: with none, the template is returned.\n"
             "If [params] does not contain a \"data\" key, returns data needed to construct a block to work on:\n"
             "  \"version\" : block version\n"
             "  \"previousblockhash\" : hash of current highest block\n"
@@ -2401,7 +2602,13 @@ Value getblocktemplate(const Array& params, bool fHelp)
             "If [params] does contain a \"data\" key, tries to solve the block and returns null if it was successful (and \"rejected\" if not)\n"
             "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.");
 
-    const Object& oparam = params[0].get_obj();
+    Object oparam;
+    if (params.size() == 1)
+    {
+        if (params[0].type() != obj_type)
+            throw JSONRPCError(-8, "getblocktemplate takes an object (or nothing)");
+        oparam = params[0].get_obj();
+    }
     std::string strMode;
     {
         const Value& modeval = find_value(oparam, "mode");
@@ -2416,10 +2623,11 @@ Value getblocktemplate(const Array& params, bool fHelp)
 
     if (strMode == "template")
     {
-        if (vNodes.empty())
+        // Regtest mines without peers, like generate and createauxblock
+        if (vNodes.empty() && !fRegTest)
             throw JSONRPCError(-9, "CorgiCoin is not connected!");
 
-        if (IsInitialBlockDownload())
+        if (IsInitialBlockDownload() && !fRegTest)
             throw JSONRPCError(-10, "CorgiCoin is downloading blocks...");
 
         static CReserveKey reservekey(pwalletMain.get());
@@ -2526,9 +2734,22 @@ Value getblocktemplate(const Array& params, bool fHelp)
     if (strMode == "submit")
     {
         // Parse parameters
-        CDataStream ssBlock(ParseHex(find_value(oparam, "data").get_str()), SER_NETWORK, PROTOCOL_VERSION);
+        const Value& valData = find_value(oparam, "data");
+        if (valData.type() != str_type || !IsHex(valData.get_str()))
+            throw JSONRPCError(-22, "Block decode failed");
+        CDataStream ssBlock(ParseHex(valData.get_str()), SER_NETWORK, PROTOCOL_VERSION);
         CBlock pblock;
-        ssBlock >> pblock;
+        try {
+            ssBlock >> pblock;
+        } catch (const std::exception&) {
+            throw JSONRPCError(-22, "Block decode failed");
+        }
+        if (!ssBlock.empty())
+            throw JSONRPCError(-22, "Block decode failed: trailing data");
+
+        // BIP 22 reasons: a block we already hold is "duplicate"
+        if (mapBlockIndex.count(pblock.GetHash()))
+            return "duplicate";
 
         bool fAccepted = ProcessBlock(nullptr, &pblock);
 
@@ -2577,7 +2798,23 @@ static std::map<uint256, CBlock*> mapAuxBlocks;
 static std::vector<CBlock*> vAuxBlocks;
 static CBlockIndex* pindexPrevAux = nullptr;
 
+// Work already handed out, per payout script. A pool asks for work every few seconds on each parent pool it is merged into,
+// and every call built a whole block (the memory pool is walked under cs_main and cs_wallet) and kept it until the tip
+// moved: on a chain that is stuck or slow, memory grew with every call. The same work is handed out again while the tip
+// and the memory pool are as they were and it is less than a minute old (Namecoin and Dogecoin do the same).
+struct CAuxTemplate
+{
+    uint256 hash;                       // key into mapAuxBlocks
+    unsigned int nTransactionsUpdated;
+    int64 nTime;
+};
+static std::map<CScript, CAuxTemplate> mapAuxTemplates;
+static const size_t MAX_AUX_BLOCKS = 1000;          // work kept for submission at one time
+static const int64 AUX_TEMPLATE_SECONDS = 60;
+
 // Build a merged-mining block paying scriptPubKey and return its work.
+static Object AuxWorkObject(const CBlock* pblock);
+
 static Object AuxMiningCreateBlock(const CScript& scriptPubKey)
 {
     // Regtest mines without peers, like generate
@@ -2594,10 +2831,34 @@ static Object AuxMiningCreateBlock(const CScript& scriptPubKey)
     if (pindexPrevAux != pindexBest)
     {
         mapAuxBlocks.clear();
+        mapAuxTemplates.clear();
         for (CBlock* p : vAuxBlocks)
             delete p;
         vAuxBlocks.clear();
         pindexPrevAux = pindexBest;
+    }
+
+    // The same work again, if nothing it was built from has changed
+    auto itCached = mapAuxTemplates.find(scriptPubKey);
+    if (itCached != mapAuxTemplates.end())
+    {
+        const CAuxTemplate& cached = itCached->second;
+        auto itBlock = mapAuxBlocks.find(cached.hash);
+        if (itBlock != mapAuxBlocks.end() && cached.nTransactionsUpdated == nTransactionsUpdated &&
+            GetTime() - cached.nTime < AUX_TEMPLATE_SECONDS)
+            return AuxWorkObject(itBlock->second);
+        mapAuxTemplates.erase(itCached);
+    }
+
+    // Bound what is kept: past the limit the oldest work is dropped (a pool does not submit work that old)
+    while (vAuxBlocks.size() >= MAX_AUX_BLOCKS)
+    {
+        CBlock* pOld = vAuxBlocks.front();
+        vAuxBlocks.erase(vAuxBlocks.begin());
+        mapAuxBlocks.erase(pOld->GetHash());
+        for (auto it = mapAuxTemplates.begin(); it != mapAuxTemplates.end(); )
+            it = (it->second.hash == pOld->GetHash()) ? mapAuxTemplates.erase(it) : std::next(it);
+        delete pOld;
     }
 
     CBlock* pblock = CreateNewBlock(reservekey);
@@ -2620,7 +2881,15 @@ static Object AuxMiningCreateBlock(const CScript& scriptPubKey)
 
     uint256 hash = pblock->GetHash();
     mapAuxBlocks[hash] = pblock;
+    mapAuxTemplates[scriptPubKey] = CAuxTemplate{hash, nTransactionsUpdated, GetTime()};
 
+    return AuxWorkObject(pblock);
+}
+
+// The reply for a block of aux work, new or handed out again
+static Object AuxWorkObject(const CBlock* pblock)
+{
+    uint256 hash = pblock->GetHash();
     uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
     Object result;
@@ -2804,6 +3073,7 @@ Value getmempoolinfo(const Array& params, bool fHelp)
     Object obj;
     obj.emplace_back("size", nTxs);
     obj.emplace_back("bytes", nBytes);
+    obj.emplace_back("maxmempoolbytes", (int64_t)std::min<int64>(std::max<int64>(1, GetArg("-maxmempoolkb", 100000)), 100000000) * 1000); // as CTxMemPool::Trim clamps it
     obj.emplace_back("minrelaytxfee", ValueFromAmount(MIN_RELAY_TX_FEE));
     return obj;
 }
@@ -2930,7 +3200,10 @@ Value getblock(const Array& params, bool fHelp)
 
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
-    block.ReadFromDisk(pblockindex, true);
+    // The result was ignored: a block whose data cannot be read (a damaged or missing blk file) left an empty block, and
+    // blockToJSON then read vtx[0] of it
+    if (!block.ReadFromDisk(pblockindex, true))
+        throw JSONRPCError(-1, "Block not found on disk");
 
     if (!fVerbose)
     {
@@ -3063,7 +3336,7 @@ Value getnetworkinfo(const Array& params, bool fHelp)
     CService addrProxy;
     GetProxy(NET_IPV4, addrProxy);
     obj.emplace_back("proxy", addrProxy.IsValid() ? addrProxy.ToStringIPPort() : string());
-    obj.emplace_back("relayfee", ValueFromAmount(nMinimumInputValue));
+    obj.emplace_back("relayfee", ValueFromAmount(MIN_RELAY_TX_FEE));   // what a transaction must pay per kB to be relayed (this used to report the minimum input value)
     obj.emplace_back("testnet", fTestNet);
     return obj;
 }
@@ -3086,37 +3359,92 @@ Value getwalletinfo(const Array& params, bool fHelp)
     obj.emplace_back("paytxfee", ValueFromAmount(nTransactionFee));
     obj.emplace_back("hdenabled", pwalletMain->IsHDEnabled());
     if (pwalletMain->IsHDEnabled())
+    {
         obj.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
+        // false while an encrypted wallet is locked (the phrase is wiped from memory), or if it did not decrypt
+        obj.emplace_back("hdseed_available", pwalletMain->IsHDSeedAvailable());
+    }
     return obj;
 }
 
 Value sethdseed(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() > 1)
+    if (fHelp || params.size() > 2)
         throw runtime_error(
-            "sethdseed [mnemonic]\n"
+            "sethdseed [mnemonic] [rescan=true]\n"
             "Set the wallet's HD (BIP39) seed from a recovery phrase, or\n"
             "generate a fresh 12-word phrase if none is given. Future\n"
             "addresses are derived from this seed; WRITE THE PHRASE DOWN.\n"
-            "Not supported on encrypted wallets yet.");
+            "Restoring a phrase also derives keys ahead (-hdrestoregap, default 1000), rescans the block chain for\n"
+            "what they received (this can take a long time on a long chain; pass false to skip it, and run with\n"
+            "-rescan later), and carries on after the last address that was used.\n"
+            "An encrypted wallet has to be unlocked."
+            + HelpRequiringPassphrase());
 
-    std::string mnemonic = (params.size() == 1)
+    if (params.size() >= 2)
+        RPCTypeCheck(params, {str_type, bool_type});
+    const bool fRescan = params.size() >= 2 ? params[1].get_bool() : true;
+
+    std::string mnemonic = (params.size() >= 1)
         ? params[0].get_str()
         : bip39::GenerateMnemonic(128);
     if (params.size() == 0 && mnemonic.empty())
         throw JSONRPCError(-4, "Could not generate a recovery phrase: the random number generator failed");
 
+    // The phrase the wallet already uses: keep its key pool. Rebuilding it would skip a pool's worth of indices, and a later
+    // restore, which only looks a key pool ahead of the last used key, would not find addresses past the gap.
+    const bool fSameSeed = params.size() >= 1 && pwalletMain->IsHDEnabled() && !pwalletMain->IsLocked() &&
+                           pwalletMain->GetHDMnemonic() == bip39::NormaliseMnemonic(mnemonic);
+
     std::string strError;
     if (!pwalletMain->SetHDSeedFromMnemonic(mnemonic, strError))
         throw JSONRPCError(-4, strError);
 
+    // A phrase that was given is a restore: look for what the chain holds for its keys, and carry on after the last used one.
+    // (A fresh phrase has nothing on the chain.)
+    int nUsed = 0;
+    if (params.size() >= 1 && fRescan)
+    {
+        const unsigned int nGap = static_cast<unsigned int>(std::max<int64_t>(1, std::min<int64_t>(GetArg("-hdrestoregap", 1000), 100000)));
+        if (!pwalletMain->RestoreHDKeys(nGap, nUsed, strError))
+            throw JSONRPCError(-4, strError);
+    }
+
     // Rebuild the keypool so new addresses come from the HD seed.
-    pwalletMain->NewKeyPool();
+    if (!fSameSeed)
+        pwalletMain->NewKeyPool();
 
     Object r;
+    if (params.size() >= 1 && fRescan)
+        r.emplace_back("keys_in_use", nUsed);      // keys up to and including the last one the chain shows paid
     r.emplace_back("mnemonic", bip39::NormaliseMnemonic(mnemonic)); // the phrase as stored, not as typed
     r.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
     r.emplace_back("warning", "Write this recovery phrase down and keep it safe — it backs up all HD keys.");
+    return r;
+}
+
+Value gethdseed(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "gethdseed true\n"
+            "Return the wallet's HD recovery phrase. The wallet must be unlocked.\n"
+            "The argument must be true: it confirms you want the phrase shown.\n"
+            "Anyone who sees the phrase can spend every HD key in this wallet.");
+
+    if (params[0].type() != bool_type || !params[0].get_bool())
+        throw JSONRPCError(-8, "Pass true to confirm that you want the recovery phrase shown");
+    if (!pwalletMain->IsHDEnabled())
+        throw JSONRPCError(-4, "This wallet has no HD seed");
+    if (pwalletMain->IsLocked())
+        throw JSONRPCError(-13, "Error: Please enter the wallet passphrase with walletpassphrase first.");
+    std::string mnemonic = pwalletMain->GetHDMnemonic();
+    if (mnemonic.empty())
+        throw JSONRPCError(-4, "The recovery phrase is not available in memory");
+
+    Object r;
+    r.emplace_back("mnemonic", mnemonic);
+    r.emplace_back("hdseedid", pwalletMain->GetHDSeedId().GetHex());
     return r;
 }
 
@@ -3345,6 +3673,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getconnectioncount",     &getconnectioncount,     true },
     { "getpeerinfo",            &getpeerinfo,            true },
     { "ping",                   &ping,                   true },
+    { "getmemoryinfo",          &getmemoryinfo,          true },
     { "getnettotals",           &getnettotals,           true },
     { "setban",                 &setban,                 true },
     { "listbanned",             &listbanned,             true },
@@ -3409,6 +3738,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getnetworkinfo",         &getnetworkinfo,         true },
     { "getwalletinfo",          &getwalletinfo,          false },
     { "sethdseed",              &sethdseed,              false },
+    { "gethdseed",              &gethdseed,              false },
     { "getchaintips",           &getchaintips,           true },
     { "getblockstats",          &getblockstats,          true },
     { "getchaintxstats",        &getchaintxstats,        true },
@@ -3517,6 +3847,9 @@ static string HTTPReply(int nStatus, const string& strMsg, bool keepalive)
     else if (nStatus == 400) cStatus = "Bad Request";
     else if (nStatus == 403) cStatus = "Forbidden";
     else if (nStatus == 404) cStatus = "Not Found";
+    else if (nStatus == 413) cStatus = "Request Entity Too Large";
+    else if (nStatus == 431) cStatus = "Request Header Fields Too Large";
+    else if (nStatus == 503) cStatus = "Service Unavailable";
     else if (nStatus == 500) cStatus = "Internal Server Error";
     else cStatus = "";
     return strprintf(
@@ -3609,6 +3942,78 @@ int ReadHTTP(std::basic_istream<char>& stream, map<string, string>& mapHeadersRe
     return nStatus;
 }
 
+// ---- Reading a request on the server side -----------------------------------------------------------------
+// A request is read before the caller has proved who it is, so every part of it is bounded: the length of a line,
+// the number of header lines, the size of the body (checked only after the login, and only then allocated) and,
+// with the socket timeout set in ThreadRPCServer3, the time any of it may take.
+static const size_t MAX_HTTP_LINE = 8192;
+static const int MAX_HTTP_HEADERS = 100;
+
+// Next line without its newline (and a trailing carriage return). false: end of stream, or longer than nMax
+// (str.size() == nMax then).
+static bool GetLineLimited(std::istream& stream, string& str, size_t nMax)
+{
+    str.clear();
+    char c;
+    while (stream.get(c))
+    {
+        if (c == '\n')
+        {
+            if (!str.empty() && str.back() == '\r')
+                str.pop_back();
+            return true;
+        }
+        if (str.size() >= nMax)
+            return false;
+        str += c;
+    }
+    return false;
+}
+
+// Reads the request line and the headers. Returns 200 when they were read, 400 for something that is not a request,
+// 431 for lines or a header count over the limit, 0 when the peer went away (nothing to answer).
+// nLenRet is the Content-Length, 0 if none; a value that is not a plain non-negative number is a 400.
+static int ReadHTTPRequestHead(std::istream& stream, map<string, string>& mapHeadersRet, int& nProtoRet, int64_t& nLenRet)
+{
+    mapHeadersRet.clear();
+    nProtoRet = 0;
+    nLenRet = 0;
+
+    string strRequestLine;
+    if (!GetLineLimited(stream, strRequestLine, MAX_HTTP_LINE))
+        return strRequestLine.size() >= MAX_HTTP_LINE ? 431 : 0;
+    vector<string> vWords;
+    ParseString(strRequestLine, ' ', vWords);
+    if (vWords.size() < 2)
+        return 400;
+    const char* ver = strstr(strRequestLine.c_str(), "HTTP/1.");
+    if (ver != nullptr)
+        nProtoRet = atoi(ver + 7);
+
+    for (int nHeaders = 0;; nHeaders++)
+    {
+        string str;
+        if (!GetLineLimited(stream, str, MAX_HTTP_LINE))
+            return str.size() >= MAX_HTTP_LINE ? 431 : 0;
+        if (str.empty())
+            return 200;
+        if (nHeaders >= MAX_HTTP_HEADERS)
+            return 431;
+        string::size_type nColon = str.find(":");
+        if (nColon == string::npos)
+            continue;
+        string strHeader = ToLower(TrimString(str.substr(0, nColon)));
+        string strValue = TrimString(str.substr(nColon + 1));
+        mapHeadersRet[strHeader] = strValue;
+        if (strHeader == "content-length")
+        {
+            if (strValue.empty() || strValue.size() > 18 || strValue.find_first_not_of("0123456789") != string::npos)
+                return 400;
+            nLenRet = strtoll(strValue.c_str(), nullptr, 10);
+        }
+    }
+}
+
 bool HTTPAuthorized(map<string, string>& mapHeaders)
 {
     string strAuth = mapHeaders["authorization"];
@@ -3667,6 +4072,40 @@ void ErrorReply(std::ostream& stream, const Object& objError, const Value& id)
     stream << HTTPReply(nStatus, strReply, false) << std::flush;
 }
 
+// "10.0.0.0/8" or "fd00::/8": is the address inside the subnet? A prefix that does not parse, or is longer than the
+// address, matches nothing.
+bool AddressInSubnet(const boost::asio::ip::address& address, const string& strSubnet)
+{
+    const string::size_type nSlash = strSubnet.find('/');
+    boost::system::error_code ec;
+    const boost::asio::ip::address net = boost::asio::ip::make_address(strSubnet.substr(0, nSlash), ec);
+    if (ec || net.is_v4() != address.is_v4())
+        return false;
+    const string strBits = strSubnet.substr(nSlash + 1);
+    if (strBits.empty() || strBits.size() > 3 || strBits.find_first_not_of("0123456789") != string::npos)
+        return false;
+    const unsigned int nBits = static_cast<unsigned int>(atoi(strBits.c_str()));
+    std::vector<unsigned char> a, b;
+    if (address.is_v4())
+    {
+        auto x = address.to_v4().to_bytes(), y = net.to_v4().to_bytes();
+        a.assign(x.begin(), x.end());
+        b.assign(y.begin(), y.end());
+    }
+    else
+    {
+        auto x = address.to_v6().to_bytes(), y = net.to_v6().to_bytes();
+        a.assign(x.begin(), x.end());
+        b.assign(y.begin(), y.end());
+    }
+    if (nBits > a.size() * 8)
+        return false;
+    for (unsigned int i = 0; i < nBits; i++)
+        if (((a[i / 8] ^ b[i / 8]) >> (7 - i % 8)) & 1)
+            return false;
+    return true;
+}
+
 bool ClientAllowed(const boost::asio::ip::address& address)
 {
     // Make sure that IPv4-compatible and IPv4-mapped IPv6 addresses are treated as IPv4 addresses
@@ -3684,7 +4123,7 @@ bool ClientAllowed(const boost::asio::ip::address& address)
     const string strAddress = address.to_string();
     const vector<string>& vAllow = mapMultiArgs["-rpcallowip"];
     for (string strAllow : vAllow)
-        if (WildcardMatch(strAddress, strAllow))
+        if (strAllow.find('/') != string::npos ? AddressInSubnet(address, strAllow) : WildcardMatch(strAddress, strAllow))
             return true;
     return false;
 }
@@ -3707,9 +4146,43 @@ public:
         fNeedHandshake = false;
         stream.handshake(role);
     }
+    // Give up on a read that gets nothing for this long (0: wait for ever). SO_RCVTIMEO does not do it: asio turns a
+    // synchronous read that would block into poll() with no time limit, so the wait is made here, before the read.
+    void set_timeout(int nSecondsIn) { nTimeoutSeconds = nSecondsIn; }
+
     std::streamsize read(char* s, std::streamsize n)
     {
         handshake(ssl::stream_base::server); // HTTPS servers read first
+        if (nTimeoutSeconds > 0 && !fUseSSL)
+        {
+            // (With TLS the decrypted bytes may already be waiting inside the TLS layer, where poll() cannot see them.)
+            // The wait is cut into short slices that look at fShutdown: on Windows, shutdown() from another thread
+            // (RPCAbortConnections) does not wake a select() on the socket, so an idle keep-alive client held the node
+            // for the whole timeout at exit.
+            const int64 nDeadline = GetTimeMillis() + (int64)nTimeoutSeconds * 1000;
+            int nReady = 0;
+            while (nReady == 0)
+            {
+                if (fShutdown)
+                    return -1;
+                const int64 nLeft = nDeadline - GetTimeMillis();
+                if (nLeft <= 0)
+                    return -1;       // end of stream: the caller treats the connection as finished
+                const int nSliceMs = (int)std::min<int64>(nLeft, 250);
+#ifdef WIN32
+                // (select, not WSAPoll: WSAPoll needs Windows Vista, and this is built for XP: _WIN32_WINNT in compat.h. One socket
+                // in the set is far below the limit of a set, whatever the number of connections.)
+                fd_set fdsRead;
+                FD_ZERO(&fdsRead);
+                FD_SET(stream.next_layer().native_handle(), &fdsRead);
+                struct timeval tv = { 0, nSliceMs * 1000 };
+                nReady = select(0, &fdsRead, nullptr, nullptr, &tv);
+#else
+                struct pollfd pfd = { stream.next_layer().native_handle(), POLLIN, 0 };
+                nReady = poll(&pfd, 1, nSliceMs);
+#endif
+            }
+        }
         if (fUseSSL) return stream.read_some(asio::buffer(s, n));
         return stream.next_layer().read_some(asio::buffer(s, n));
     }
@@ -3741,6 +4214,7 @@ public:
 private:
     bool fNeedHandshake;
     bool fUseSSL;
+    int nTimeoutSeconds = 0;
     asio::ssl::stream<typename Protocol::socket>& stream;
 };
 
@@ -3752,6 +4226,10 @@ public:
     virtual std::iostream& stream() = 0;
     virtual std::string peer_address_to_string() const = 0;
     virtual void close() = 0;
+    /** Give up on a read or write that makes no progress for this many seconds (0: wait forever). */
+    virtual void set_timeout(int nSeconds) = 0;
+    /** Make a read blocked on this connection in another thread return. Safe to call from any thread. */
+    virtual void abort() = 0;
 };
 
 template <typename Protocol>
@@ -3781,6 +4259,20 @@ public:
     virtual void close() override
     {
         _stream.close();
+    }
+
+    virtual void set_timeout(int nSeconds) override
+    {
+        // the stream holds its own copy of the device: set it there
+        _stream->set_timeout(nSeconds);
+    }
+
+    virtual void abort() override
+    {
+        // shutdown(2) on the descriptor wakes a blocked read_some with end-of-stream; the socket object itself
+        // is not touched, so the handler thread that owns it can go on using it
+        boost::system::error_code ec;
+        sslStream.lowest_layer().shutdown(asio::socket_base::shutdown_both, ec);
     }
 
     typename Protocol::endpoint peer;
@@ -3878,10 +4370,25 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > 
         delete conn;
     }
 
-    // start HTTP client thread
-    else if (!CreateThread(ThreadRPCServer3, conn)) {
-        LogPrintf("Failed to create RPC server client thread\n");
+    // Each connection has a thread of its own, so the number of them is limited: past it the caller is told to come
+    // back later instead of the process running out of threads and memory
+    // (counted when accepted, not when the handler thread starts, so a burst of connections cannot get past it)
+    else if (nRPCConnectionsOpen >= GetArg("-rpcmaxconnections", 64))
+    {
+        if (!fUseSSL)
+            conn->stream() << HTTPReply(503, "", false) << std::flush;
         delete conn;
+    }
+
+    // start HTTP client thread
+    else
+    {
+        nRPCConnectionsOpen++;
+        if (!CreateThread(ThreadRPCServer3, conn)) {
+            LogPrintf("Failed to create RPC server client thread\n");
+            delete conn;
+            nRPCConnectionsOpen--;
+        }
     }
 
     vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]--;
@@ -3892,7 +4399,18 @@ void ThreadRPCServer2(void* parg)
     LogPrintf("ThreadRPCServer started\n");
 
     strRPCUserColonPass = mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"];
-    if (mapArgs["-rpcpassword"] == "")
+    if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && GetBoolArg("-rpccookie", true)) // -norpccookie is -rpccookie=0
+    {
+        if (!GenerateAuthCookie(strRPCUserColonPass))
+        {
+            uiInterface.ThreadSafeMessageBox(strprintf(_("Could not write the RPC cookie file %s"), GetCookiePath().string().c_str()),
+                _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+            StartShutdown();
+            return;
+        }
+        LogPrintf("ThreadRPCServer: no rpcuser or rpcpassword set, authenticating with the cookie in %s\n", GetCookiePath().string().c_str());
+    }
+    else if (mapArgs["-rpcpassword"] == "")
     {
         unsigned char rand_pwd[32];
         GetRandBytes(rand_pwd, 32);
@@ -3914,6 +4432,43 @@ void ThreadRPCServer2(void* parg)
             _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
         StartShutdown();
         return;
+    }
+
+    // The password that ships in contrib/corgicoin.conf.example is public: serving with it is serving with none
+    if (mapArgs["-rpcpassword"] == "CHANGE_THIS_PASSWORD")
+    {
+        uiInterface.ThreadSafeMessageBox(strprintf(
+            _("The rpcpassword in %s is the example value from corgicoin.conf.example. Anyone who has read the documentation "
+              "can log in with it. Set your own (a long random one), and restart."), GetConfigFile().string().c_str()),
+            _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+        StartShutdown();
+        return;
+    }
+    if (mapArgs["-rpcpassword"].size() < 16)
+        LogPrintf("ThreadRPCServer WARNING: the rpcpassword is shorter than 16 characters\n");
+
+    // '#' starts a comment anywhere on a line of the config file, so "rpcpassword=ab#cd" is the password "ab" and
+    // nothing says so. Refuse to run on a password that was cut short without the operator knowing.
+    {
+        std::ifstream streamConfig(GetConfigFile().string());
+        string strLine;
+        while (std::getline(streamConfig, strLine))
+        {
+            string::size_type nStart = strLine.find_first_not_of(" \t");
+            if (nStart == string::npos || strLine.compare(nStart, 11, "rpcpassword") != 0)
+                continue;
+            string::size_type nEq = strLine.find_first_not_of(" \t", nStart + 11);
+            if (nEq != string::npos && strLine[nEq] == '=' && strLine.find('#', nEq) != string::npos)
+            {
+                uiInterface.ThreadSafeMessageBox(strprintf(
+                    _("The rpcpassword line in %s contains '#', which starts a comment: the password is cut off at it, so "
+                      "the node would use a shorter one than you wrote. Use a password without '#'."),
+                    GetConfigFile().string().c_str()),
+                    _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+                StartShutdown();
+                return;
+            }
+        }
     }
 
     const bool fUseSSL = GetBoolArg("-rpcssl");
@@ -3939,8 +4494,26 @@ void ThreadRPCServer2(void* parg)
         SSL_CTX_set_cipher_list(context.native_handle(), strCiphers.c_str());
     }
 
-    // Try a dual IPv6/IPv4 socket, falling back to separate IPv4 and IPv6 sockets
-    const bool loopback = !mapArgs.count("-rpcallowip");
+    // Where to listen. With -rpcbind (repeatable) exactly those addresses; without it, the addresses of a
+    // dual IPv6/IPv4 socket: loopback only, unless -rpcallowip is given, which has always meant every interface
+    vector<asio::ip::address> vBind;
+    for (const string& strBind : mapMultiArgs["-rpcbind"])
+    {
+        boost::system::error_code ecBind;
+        asio::ip::address addr = asio::ip::make_address(strBind, ecBind);
+        if (ecBind)
+        {
+            uiInterface.ThreadSafeMessageBox(strprintf(_("Invalid -rpcbind address: %s (it must be an IP address, not a name)"), strBind.c_str()),
+                                 _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+            StartShutdown();
+            return;
+        }
+        vBind.push_back(addr);
+    }
+    const bool loopback = vBind.empty() && !mapArgs.count("-rpcallowip");
+    if (vBind.empty() && !loopback)
+        LogPrintf("ThreadRPCServer WARNING: -rpcallowip is set and -rpcbind is not, so the RPC port is open on every network interface "
+                  "(only the -rpcallowip addresses are served, but the port is reachable). Add -rpcbind=<address> to listen on one.\n");
     asio::ip::address bindAddress = loopback ? asio::ip::address_v6::loopback() : asio::ip::address_v6::any();
     ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcport", DefaultRPCPort()));
 
@@ -3948,42 +4521,40 @@ void ThreadRPCServer2(void* parg)
 
     try
     {
-        std::shared_ptr<ip::tcp::acceptor> acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
-        acceptor->open(endpoint.protocol());
-        acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
-
-        // Try making the socket dual IPv6/IPv4 (if listening on the "any" address)
-        boost::system::error_code v6_only_error;
-        acceptor->set_option(boost::asio::ip::v6_only(loopback), v6_only_error);
-
-        acceptor->bind(endpoint);
-        acceptor->listen(boost::asio::socket_base::max_listen_connections);
-
-        RPCListen(acceptor, context, fUseSSL);
-        // Cancel outstanding listen-requests for this acceptor when shutting down
-        std::weak_ptr<ip::tcp::acceptor> weak_acceptor(acceptor);
-        StopRequests.connect([weak_acceptor]() {
-            if (auto a = weak_acceptor.lock()) a->close();
-        });
-
-        // If dual IPv6/IPv4 failed (or we're opening loopback interfaces only), open IPv4 separately
-        if (loopback || v6_only_error)
-        {
-            bindAddress = loopback ? asio::ip::address_v4::loopback() : asio::ip::address_v4::any();
-            endpoint.address(bindAddress);
-
-            acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
+        auto ListenOn = [&](const asio::ip::address& addr, bool fV6Only, boost::system::error_code& v6OnlyError) {
+            endpoint.address(addr);
+            std::shared_ptr<ip::tcp::acceptor> acceptor = std::make_shared<ip::tcp::acceptor>(io_service);
             acceptor->open(endpoint.protocol());
             acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+            // Try making the socket dual IPv6/IPv4 (if listening on the "any" address)
+            if (addr.is_v6())
+                acceptor->set_option(boost::asio::ip::v6_only(fV6Only), v6OnlyError);
             acceptor->bind(endpoint);
             acceptor->listen(boost::asio::socket_base::max_listen_connections);
 
             RPCListen(acceptor, context, fUseSSL);
             // Cancel outstanding listen-requests for this acceptor when shutting down
-            std::weak_ptr<ip::tcp::acceptor> weak_acceptor2(acceptor);
-            StopRequests.connect([weak_acceptor2]() {
-                if (auto a = weak_acceptor2.lock()) a->close();
+            std::weak_ptr<ip::tcp::acceptor> weak_acceptor(acceptor);
+            StopRequests.connect([weak_acceptor]() {
+                if (auto a = weak_acceptor.lock()) a->close();
             });
+        };
+
+        boost::system::error_code v6_only_error;
+        if (!vBind.empty())
+        {
+            for (const asio::ip::address& addr : vBind)
+                ListenOn(addr, true, v6_only_error);
+        }
+        else
+        {
+            ListenOn(bindAddress, loopback, v6_only_error);
+            // If dual IPv6/IPv4 failed (or we're opening loopback interfaces only), open IPv4 separately
+            if (loopback || v6_only_error)
+            {
+                boost::system::error_code ignored;
+                ListenOn(loopback ? asio::ip::address(asio::ip::address_v4::loopback()) : asio::ip::address(asio::ip::address_v4::any()), false, ignored);
+            }
         }
     }
     catch(boost::system::system_error &e)
@@ -3999,6 +4570,23 @@ void ThreadRPCServer2(void* parg)
         io_service.run_one();
     vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]++;
     StopRequests();
+
+    // io_service goes out of scope when this returns, and every open connection has a socket registered with it. A handler
+    // that destroys its connection after that touches freed memory (a crash at shutdown, a double free or a segfault, about one
+    // run in three with idle clients connected now that shutdown wakes them all at once). Wake them and wait for the last,
+    // however long it takes: a handler can be in a long command, and returning early is the same use-after-free.
+    const int64 nWaitStart = GetTime();
+    bool fLoggedWait = false;
+    while (nRPCConnectionsOpen > 0)
+    {
+        RPCAbortConnections();
+        if (!fLoggedWait && GetTime() - nWaitStart > 30)
+        {
+            LogPrintf("ThreadRPCServer: %d RPC connection(s) still open after 30 seconds; waiting for them\n", nRPCConnectionsOpen.load());
+            fLoggedWait = true;
+        }
+        Sleep(10);
+    }
 }
 
 class JSONRequest
@@ -4029,8 +4617,15 @@ void JSONRequest::parse(const Value& valRequest)
     if (valMethod.type() != str_type)
         throw JSONRPCError(-32600, "Method must be a string");
     strMethod = valMethod.get_str();
-    if (strMethod != "getwork" && strMethod != "getblocktemplate")
-        LogPrintf("ThreadRPCServer method=%s\n", strMethod.c_str());
+    // Pools call a handful of methods several times a second, so this is a debug category (-debug=rpc), not a line per
+    // call in debug.log. The name comes from the caller: only printable characters are logged, so a name with a newline
+    // cannot forge a log line.
+    {
+        string strSafe;
+        for (unsigned char c : strMethod.substr(0, 64))
+            strSafe += (c >= 0x20 && c <= 0x7e) ? static_cast<char>(c) : '?';
+        LogPrint(LOG_RPC, "ThreadRPCServer method=%s\n", strSafe.c_str());
+    }
 
     // Parse params
     Value valParams = find_value(request, "params");
@@ -4077,6 +4672,24 @@ static string JSONRPCExecBatch(const Array& vReq)
 
 static CCriticalSection cs_THREAD_RPCHANDLER;
 
+// Live RPC connections. A pool's HTTP client keeps its connection open between calls, and the handler thread for
+// it sits in a blocking read, so without this a "stop" waits for the client to hang up.
+static CCriticalSection cs_rpcConnections;
+static std::set<AcceptedConnection*> setRPCConnections;
+
+void RPCAbortConnections()
+{
+    LOCK(cs_rpcConnections);
+    for (AcceptedConnection* conn : setRPCConnections)
+        conn->abort();
+}
+
+static void ForgetRPCConnection(AcceptedConnection* conn)
+{
+    LOCK(cs_rpcConnections);
+    setRPCConnections.erase(conn);
+}
+
 void ThreadRPCServer3(void* parg)
 {
     IMPLEMENT_RANDOMIZE_STACK(ThreadRPCServer3(parg));
@@ -4089,23 +4702,51 @@ void ThreadRPCServer3(void* parg)
         vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]++;
     }
     AcceptedConnection *conn = static_cast<AcceptedConnection*>(parg);
+    {
+        // fShutdown is set before RPCAbortConnections() runs, and it is checked below after this registration,
+        // so a connection that arrives during shutdown is either aborted there or sees the flag here
+        LOCK(cs_rpcConnections);
+        setRPCConnections.insert(conn);
+    }
+
+    // A read or write that makes no progress for this long ends the connection. This covers a client that sends
+    // half a request and stops, and one that holds an idle keep-alive connection for ever. (A pool's HTTP client
+    // reconnects when the server closes an idle connection, as it must for any server.)
+    conn->set_timeout(static_cast<int>(GetArg("-rpcservertimeout", 30)));
+    const int64_t nMaxBody = GetArg("-rpcmaxbody", 8 * 1024 * 1024);
 
     bool fRun = true;
     while(true) {
         if (fShutdown || !fRun)
         {
+            ForgetRPCConnection(conn);
             conn->close();
             delete conn;
             {
                 LOCK(cs_THREAD_RPCHANDLER);
                 --vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)];
             }
+            nRPCConnectionsOpen--;
             return;
         }
         map<string, string> mapHeaders;
         string strRequest;
 
-        ReadHTTP(conn->stream(), mapHeaders, strRequest);
+        // The head first, bounded; the body only after the caller has logged in
+        int nProto = 0;
+        int64_t nLen = 0;
+        const int nHeadStatus = ReadHTTPRequestHead(conn->stream(), mapHeaders, nProto, nLen);
+        if (nHeadStatus != 200)
+        {
+            if (nHeadStatus != 0)
+                conn->stream() << HTTPReply(nHeadStatus, "", false) << std::flush;
+            break;
+        }
+        {
+            const string& sConHdr = mapHeaders["connection"];
+            if (sConHdr != "close" && sConHdr != "keep-alive")
+                mapHeaders["connection"] = nProto >= 1 ? "keep-alive" : "close";
+        }
 
         // Check authorization
         if (mapHeaders.count("authorization") == 0)
@@ -4113,8 +4754,15 @@ void ThreadRPCServer3(void* parg)
             conn->stream() << HTTPReply(401, "", false) << std::flush;
             break;
         }
+        if (RPCAuthLockedOut(conn->peer_address_to_string()))
+        {
+            LogPrintf("ThreadRPCServer too many failed logins from %s, refused\n", conn->peer_address_to_string().c_str());
+            conn->stream() << HTTPReply(401, "", false) << std::flush;
+            break;
+        }
         if (!HTTPAuthorized(mapHeaders))
         {
+            RPCAuthFailed(conn->peer_address_to_string());
             LogPrintf("ThreadRPCServer incorrect password attempt from %s\n", conn->peer_address_to_string().c_str());
             /* Deter brute-forcing short passwords.
                If this results in a DOS the user really
@@ -4127,6 +4775,21 @@ void ThreadRPCServer3(void* parg)
         }
         if (mapHeaders["connection"] == "close")
             fRun = false;
+
+        // Logged in: now the body, if it is not too big to take
+        if (nLen > nMaxBody)
+        {
+            conn->stream() << HTTPReply(413, "", false) << std::flush;
+            break;
+        }
+        if (nLen > 0)
+        {
+            vector<char> vch(static_cast<size_t>(nLen));
+            conn->stream().read(&vch[0], nLen);
+            if (conn->stream().gcount() != nLen)
+                break;      // the client went away or stopped sending before the body was complete
+            strRequest = string(vch.begin(), vch.end());
+        }
 
         JSONRequest jreq;
         try
@@ -4167,11 +4830,13 @@ void ThreadRPCServer3(void* parg)
         }
     }
 
+    ForgetRPCConnection(conn);
     delete conn;
     {
         LOCK(cs_THREAD_RPCHANDLER);
         vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)]--;
     }
+    nRPCConnectionsOpen--;
 }
 
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
@@ -4206,7 +4871,9 @@ json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_s
 
 Object CallRPC(const string& strMethod, const Array& params)
 {
-    if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "")
+    std::string strCookie;
+    const bool fCookie = mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "" && ReadAuthCookie(strCookie);
+    if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "" && !fCookie)
         throw runtime_error(strprintf(
             _("You must set rpcpassword=<password> in the configuration file:\n%s\n"
               "If the file does not exist, create it with owner-readable-only file permissions."),
@@ -4224,7 +4891,7 @@ Object CallRPC(const string& strMethod, const Array& params)
         throw runtime_error("couldn't connect to server");
 
     // HTTP basic authentication
-    string strUserPass64 = EncodeBase64(mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"]);
+    string strUserPass64 = EncodeBase64(fCookie ? strCookie : mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"]);
     map<string, string> mapRequestHeaders;
     mapRequestHeaders["Authorization"] = string("Basic ") + strUserPass64;
 
@@ -4289,6 +4956,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     // Special case non-string parameter types
     //
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
+    if (strMethod == "gethdseed"              && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
@@ -4315,6 +4983,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "listtransactions"       && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "listaccounts"           && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "sethdseed"              && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
     if (strMethod == "submitblock"            && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "getblockheader"         && n > 1) ConvertTo<bool>(params[1]);

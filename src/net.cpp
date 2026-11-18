@@ -13,6 +13,7 @@
 #include "addrman.h"
 #include "ui_interface.h"
 #include "logging.h"
+#include "corgicoinrpc.h"
 
 #include <memory>
 
@@ -31,6 +32,19 @@ using namespace std;
 using namespace boost;
 
 static constexpr int MAX_OUTBOUND_CONNECTIONS = 8;
+
+// select() holds descriptor numbers below FD_SETSIZE (1024 on Linux and macOS): FD_SET with a larger one writes past the
+// fd_set on the stack. Leave room for the descriptors that are not peers (listening sockets, RPC connections, database and
+// log files, blk files) and cap the number of peers accordingly.
+int GetMaxConnections()
+{
+#ifdef WIN32
+    return static_cast<int>(GetArg("-maxconnections", 125));
+#else
+    static const int nCeiling = FD_SETSIZE - 1 - 150;
+    return static_cast<int>(std::min<int64>(GetArg("-maxconnections", 125), nCeiling));
+#endif
+}
 
 void ThreadMessageHandler2(void* parg);
 void ThreadSocketHandler2(void* parg);
@@ -68,7 +82,7 @@ CCriticalSection cs_vNodes;
 map<CInv, CDataStream> mapRelay;
 deque<pair<int64, CInv> > vRelayExpiration;
 CCriticalSection cs_mapRelay;
-map<CInv, int64> mapAlreadyAskedFor;
+CAskedForMap mapAlreadyAskedFor;
 
 static deque<string> vOneShots;
 CCriticalSection cs_vOneShots;
@@ -690,6 +704,8 @@ void CNode::copyStats(CNodeStats &stats)
     X(nMisbehavior);
     X(nSendBytes);
     X(nRecvBytes);
+    stats.nAddrKnown = setAddrKnown.size();
+    stats.nGetDataQueued = vRecvGetData.size();
 
     // Ping times are written by the message-handler thread; a torn read here
     // only affects a diagnostic RPC, matching upstream Bitcoin's tolerance.
@@ -881,6 +897,17 @@ void ThreadSocketHandler2(void* parg)
 #endif
             socklen_t len = sizeof(sockaddr);
             SOCKET hSocket = accept(hListenSocket, (struct sockaddr*)&sockaddr, &len);
+#ifndef WIN32
+            if (hSocket != INVALID_SOCKET && hSocket >= FD_SETSIZE)
+            {
+                // the socket handler could not wait on it without writing outside its fd_set
+                LogPrintf("socket error: connection refused, descriptor %d is beyond what select() can hold\n", static_cast<int>(hSocket));
+                closesocket(hSocket);
+                hSocket = INVALID_SOCKET;
+                Sleep(10);
+                continue;
+            }
+#endif
             CAddress addr;
             int nInbound = 0;
 
@@ -900,7 +927,7 @@ void ThreadSocketHandler2(void* parg)
                 if (WSAGetLastError() != WSAEWOULDBLOCK)
                     LogPrintf("socket error accept failed: %d\n", WSAGetLastError());
             }
-            else if (nInbound >= GetArg("-maxconnections", 125) - MAX_OUTBOUND_CONNECTIONS)
+            else if (nInbound >= GetMaxConnections() - MAX_OUTBOUND_CONNECTIONS)
             {
                 {
                     LOCK(cs_setservAddNodeAddresses);
@@ -1937,7 +1964,7 @@ void StartNode(void* parg)
 
     if (!semOutbound) {
         // initialize semaphore
-        int nMaxOutbound = min(MAX_OUTBOUND_CONNECTIONS, static_cast<int>(GetArg("-maxconnections", 125)));
+        int nMaxOutbound = min(MAX_OUTBOUND_CONNECTIONS, GetMaxConnections());
         semOutbound = std::make_unique<CSemaphore>(nMaxOutbound);
     }
 
@@ -1993,6 +2020,7 @@ bool StopNode()
     LogPrintf("StopNode()\n");
     fShutdown = true;
     nTransactionsUpdated++;
+    RPCAbortConnections();   // idle keep-alive clients would otherwise hold their handler threads, and this, forever
     int64 nStart = GetTime();
     if (semOutbound)
         for (int i=0; i<MAX_OUTBOUND_CONNECTIONS; i++)
@@ -2020,8 +2048,21 @@ bool StopNode()
     if (vnThreadsRunning[static_cast<int>(ThreadId::DnsSeed)] > 0) LogPrintf("ThreadDNSAddressSeed still running\n");
     if (vnThreadsRunning[static_cast<int>(ThreadId::AddedConnections)] > 0) LogPrintf("ThreadOpenAddedConnections still running\n");
     if (vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)] > 0) LogPrintf("ThreadDumpAddresses still running\n");
+    // Handlers finish the request they are in and exit. Connections that arrived late are aborted on each pass. There is
+    // no time limit: a handler can be in a long rescan or reorganisation, and Shutdown() closes the databases and frees the
+    // wallet without cs_main or cs_wallet, so going on without it would pull them from under a live thread.
+    int64 nWaitStart = GetTime();
+    bool fLoggedWait = false;
     while (vnThreadsRunning[static_cast<int>(ThreadId::MessageHandler)] > 0 || vnThreadsRunning[static_cast<int>(ThreadId::RpcHandler)] > 0)
+    {
+        RPCAbortConnections();
+        if (!fLoggedWait && GetTime() - nWaitStart > 30)
+        {
+            LogPrintf("StopNode(): message or RPC handler threads still running after 30 seconds (a long command or reorganisation?); waiting for them\n");
+            fLoggedWait = true;
+        }
         Sleep(20);
+    }
     Sleep(50);
     DumpAddresses();
     return true;

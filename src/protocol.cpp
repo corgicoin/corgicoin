@@ -144,7 +144,10 @@ const char* CInv::GetCommand() const
 
 std::string CInv::ToString() const
 {
-    return strprintf("%s %s", GetCommand(), hash.ToString().substr(0,20).c_str());
+    // GetCommand() throws for a type this node does not know, and this is used to log what a peer sent: with -debug an
+    // inventory item of any other type ended the processing of the whole message
+    const std::string strType = IsKnownType() ? std::string(ppszTypeName[type]) : strprintf("unknown(%d)", type);
+    return strprintf("%s %s", strType.c_str(), hash.ToString().substr(0,20).c_str());
 }
 
 void CInv::print() const

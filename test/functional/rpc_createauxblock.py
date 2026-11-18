@@ -102,10 +102,11 @@ class CreateAuxBlockTest(CorgiTestFramework):
         assert_raises_rpc_error(-8, "block hash unknown", n0.submitauxblock, work["hash"], "00")
         assert_raises_rpc_error(-8, "block hash unknown", n0.submitauxblock, "00" * 32, "00")
 
-        self.log("blocks created in the same second are distinct (extra nonce)")
+        self.log("the same work is handed out again while nothing changes, and blocks created in the same second for different payout scripts are distinct (extra nonce)")
         first = n0.createauxblock(addr)
-        second = n0.createauxblock(addr)
-        assert first["hash"] != second["hash"], "two createauxblock calls returned the same block hash"
+        assert_equal(n0.createauxblock(addr)["hash"], first["hash"])
+        second = n0.createauxblock(n1.getnewaddress())
+        assert first["hash"] != second["hash"], "two blocks created in the same second had the same hash"
 
         self.log("a transaction in a merged-mined block is indexed: getrawtransaction finds it")
         pay = n1.getnewaddress()

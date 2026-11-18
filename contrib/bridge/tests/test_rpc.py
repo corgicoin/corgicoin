@@ -58,3 +58,22 @@ def test_non_json_5xx_surfaces_http_error(mock_post):
     rpc = bridge.CorgiRPC("http://test", "u", "p")
     with pytest.raises((requests.HTTPError, RuntimeError)):
         rpc.call("getblockcount")
+
+
+@patch("bridge.requests.post")
+def test_amounts_are_parsed_as_decimal_not_float(mock_post):
+    """A float is exact to about 15 digits: an amount must not go through one."""
+    from decimal import Decimal
+    resp = _mocked_response(200, json_body={"result": 1, "error": None, "id": 1})
+    mock_post.return_value = resp
+    bridge.CorgiRPC("http://test", "u", "p").call("getblockcount")
+    resp.json.assert_called_with(parse_float=Decimal)
+
+
+@patch("bridge.requests.post")
+def test_rpc_error_carries_the_daemons_code(mock_post):
+    mock_post.return_value = _mocked_response(
+        500, json_body={"result": None, "error": {"code": -28, "message": "Loading block index..."}, "id": 1})
+    with pytest.raises(bridge.RPCError) as info:
+        bridge.CorgiRPC("http://test", "u", "p").call("getblockcount")
+    assert info.value.code == -28

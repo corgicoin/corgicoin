@@ -153,8 +153,13 @@ Value gettxout(const Array& params, bool fHelp)
 
     RPCTypeCheck(params, {str_type, int_type, bool_type});
 
+    // SetHex stops at the first character that is not hex, so a string that was not a transaction id (too short, too long,
+    // or ending in rubbish) used to be read as some other id
+    const std::string strTxid = params[0].get_str();
+    if (!IsHex(strTxid) || strTxid.size() != 64)
+        throw JSONRPCError(-8, "txid must be 64 hex characters");
     uint256 hash;
-    hash.SetHex(params[0].get_str());
+    hash.SetHex(strTxid);
     const int n = params[1].get_int();
     const bool fIncludeMempool = params.size() > 2 ? params[2].get_bool() : true;
     if (n < 0)
@@ -485,8 +490,11 @@ Value signrawtransaction(const Array& params, bool fHelp)
         for (const CTxIn& txin : mergedTx.vin)
         {
             const uint256& prevHash = txin.prevout.hash;
-            if (mapPrevTx.count(prevHash))
-                mapPrevOut[txin.prevout] = mapPrevTx[prevHash].second.vout[txin.prevout.n].scriptPubKey;
+            // FetchInputs adds an entry before it knows whether the previous transaction exists, and leaves it
+            // there when it fails, so the entry can be empty or the output number out of range
+            auto itPrev = mapPrevTx.find(prevHash);
+            if (itPrev != mapPrevTx.end() && txin.prevout.n < itPrev->second.second.vout.size())
+                mapPrevOut[txin.prevout] = itPrev->second.second.vout[txin.prevout.n].scriptPubKey;
         }
     }
 
@@ -592,6 +600,8 @@ Value signrawtransaction(const Array& params, bool fHelp)
         // ... and merge in other signatures:
         for (const CTransaction& txv : txVariants)
         {
+            if (i >= txv.vin.size())
+                continue;   // a variant with fewer inputs has nothing to add for this one
             txin.scriptSig = CombineSignatures(prevPubKey, mergedTx, i, txin.scriptSig, txv.vin[i].scriptSig);
         }
         if (!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, true, 0))

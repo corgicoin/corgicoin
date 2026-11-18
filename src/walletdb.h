@@ -10,6 +10,7 @@
 #define BITCOIN_WALLETDB_H
 
 #include "db.h"
+#include "walletstorage.h"
 #include "base58.h"
 
 class CKeyPool;
@@ -26,17 +27,74 @@ enum DBErrors
     DB_NEED_REWRITE
 };
 
-/** Access to the wallet database (wallet.dat) */
-class CWalletDB : public CDB
+/** Access to the wallet database (wallet.dat). The records, and what each means, are here; where they are kept is the CWalletStorage under it. */
+class CWalletDB
 {
 public:
-    CWalletDB(std::string strFilename, const char* pszMode="r+") : CDB(strFilename.c_str(), pszMode)
+    CWalletDB(std::string strFilename, const char* pszMode="r+") : storage(OpenWalletStorage(strFilename, pszMode))
     {
     }
 private:
     CWalletDB(const CWalletDB&) = delete;
     void operator=(const CWalletDB&) = delete;
+
+    std::unique_ptr<CWalletStorage> storage;
+
+    // A record is its key and its value, serialized; these are the typed ways in
+    template<typename K, typename T>
+    bool Read(const K& key, T& value)
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        ssKey.reserve(1000);
+        ssKey << key;
+        CDataStream ssValue(SER_DISK, CLIENT_VERSION);
+        if (!storage->Read(ssKey, ssValue))
+            return false;
+        try {
+            ssValue >> value;
+        }
+        catch (std::exception &e) {
+            return false;
+        }
+        return true;
+    }
+
+    template<typename K, typename T>
+    bool Write(const K& key, const T& value, bool fOverwrite=true)
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        ssKey.reserve(1000);
+        ssKey << key;
+        CDataStream ssValue(SER_DISK, CLIENT_VERSION);
+        ssValue.reserve(10000);
+        ssValue << value;
+        return storage->Write(ssKey, ssValue, fOverwrite);
+    }
+
+    template<typename K>
+    bool Erase(const K& key)
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        ssKey.reserve(1000);
+        ssKey << key;
+        return storage->Erase(ssKey);
+    }
+
+    template<typename K>
+    bool Exists(const K& key)
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        ssKey.reserve(1000);
+        ssKey << key;
+        return storage->Exists(ssKey);
+    }
+
 public:
+    bool TxnBegin() { return storage->TxnBegin(); }
+    bool TxnCommit() { return storage->TxnCommit(); }
+    bool TxnAbort() { return storage->TxnAbort(); }
+    void Close() { storage->Close(); }
+
     bool ReadName(const std::string& strAddress, std::string& strName)
     {
         strName = "";
@@ -213,6 +271,12 @@ public:
     bool WriteMinVersion(int nVersion)
     {
         return Write(std::string("minversion"), nVersion);
+    }
+
+    /** The version of the client that last wrote this wallet. */
+    bool WriteVersion(int nVersion)
+    {
+        return Write(std::string("version"), nVersion);
     }
 
     bool ReadAccount(const std::string& strAccount, CAccount& account);

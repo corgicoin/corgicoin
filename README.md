@@ -120,6 +120,40 @@ rpcport=62555
 ## Version History
 
 ### Unreleased
+- **Security fixes** (thanks @colneech-dev for everything in this release):
+  - A peer could crash a node by asking for headers across a merged-mined block (`getheaders`, GHSA-m4qq-w45q-8q92, #113)
+  - `signrawtransaction` no longer reads past the end of a vector (#114); `listtransactions` count/from no longer overflow (#115)
+  - A peer's user agent is reduced to printable ASCII, and invalid UTF-8 can no longer break an RPC reply (#116)
+  - Peers can no longer make the node remember or queue without bound (#118); `-maxconnections` is capped below what `select()` holds (#117)
+  - The RPC server bounds what one client can make it do (#119): see *Behaviour changes* below
+  - Locking an encrypted HD wallet now wipes the recovery phrase and master key from memory; `dumpwallet` is all-or-nothing and written owner-only (#137)
+  - A wallet rewrite (after `encryptwallet`) keeps the original until the new file is in place, and startup refuses to run on a half-done swap (#138)
+  - `backupwallet` reports a failure instead of success, and cannot destroy the previous backup (#133)
+  - Every amount and running total in the wallet must be a possible amount of money (#132)
+  - The chain tip follows the database after a partial reorganisation; the Berkeley DB lock table is raised to 537000, as Bitcoin 0.7.3/0.8 did, so a large block or reorganisation cannot fail on some nodes and not others (#130). **Upgrade every node, miners first**
+  - `assert()` stays live in release builds, and a build with `-DNDEBUG` is refused (#124)
+- **Wallet:**
+  - Transactions that conflict with the chain no longer count in the balance; `gettransaction` adds `walletconflicts` and `conflicted` (#136)
+  - New `gethdseed true` shows the recovery phrase of an unlocked wallet (#149). `sethdseed` with the phrase already in use no longer reuses or skips addresses (#149, #137)
+  - `sethdseed <phrase>` now rescans for the phrase's keys and carries on after the last used one (`-hdrestoregap`, default 1000); pass `false` as the second argument to skip the rescan (#137)
+  - The change output can be in any position, and `signrawtransaction` no longer signs `SIGHASH_SINGLE` for an input with no matching output (#135)
+  - The storage layer is separated from Berkeley DB (step 1 of the SQLite wallet, #112), with no change in behaviour (#140)
+- **Mining and RPC:** `createauxblock` hands the same work to the same payout address until something changes, and keeps at most 1000 blocks (#128); `getblocktemplate` works without a parameter and on regtest without peers, and reports duplicate and undecodable submissions (#127); `getnetworkhashps` returns 0 instead of NaN, and `getnetworkinfo.relayfee` is the actual relay fee (#126); `getblock` reports an unreadable block, and a `-standardsigs` rejection has a reason (#125); a block whose merged-mining proof was bad is requested at once from the next peer that announces it (#121)
+- **Bech32 addresses:** P2SH now uses type 31, so generic BIP 350 software no longer reads one as a segwit v1 address it would pay to an output anyone can spend (#143). Old type-1 P2SH addresses still work; releases before this one refuse the new form (safely)
+- **Bridge, explorer, web wallet** (`contrib/`): the bridge cannot lose or double a burn, waits 50 blocks, has payout limits and notices reorganisations (#146); the web wallet checks each coin's value against its transaction and the phrase's checksum, and the explorer bounds its API and serves with waitress (#147)
+- **Behaviour changes** to check before upgrading:
+  - `rpcpassword=CHANGE_THIS_PASSWORD`, or an `rpcpassword` line containing `#` (which starts a comment, so the password was silently cut short there), **refuses to start the node** (#150)
+  - With no `rpcuser` and `rpcpassword` the node now serves RPC with a cookie file, `<datadir>/.cookie`, which `corgicoin-cli` reads (`-norpccookie` restores the old refusal). `-rpcbind` and subnets in `-rpcallowip` are new. After 20 failed logins in a minute a non-loopback address is refused for that minute (#150)
+  - RPC: idle keep-alive connections close after 30 s (`-rpcservertimeout`); more than 64 at once get HTTP 503 (`-rpcmaxconnections`); request bodies over 8 MiB get 413 (`-rpcmaxbody`) (#119)
+  - JSON: an integer argument no longer accepts `true` or `1.0`, and an amount no longer accepts `true` (it sent 1 coin); duplicate keys and nesting deeper than 64 are refused; reply objects keep their fields in insertion order, not alphabetical, and `sendmany`/`createrawtransaction` pay outputs in the order given (#148)
+  - `-maxtxfee` (default 10000 CORG): the wallet refuses to make a transaction that pays more fee, and `settxfee` above it is refused (#132)
+  - `walletpassphrase` on a wallet that is already unlocked extends the unlock (it never shortens it) instead of failing; a negative timeout is an error (#134)
+  - Relay policy: transactions of 100 kB or more, with more than 4000 signature operations, or not yet final are not relayed (`-acceptnonstdtxn=1` turns the checks off). The memory pool is capped at `-maxmempoolkb` (default 100 MB, lowest fee rate dropped first) and transactions expire after `-mempoolexpiry` hours (default 72); the wallet is not told, so re-send a payment that expired (#120)
+  - HD wallets, and every new wallet, record minimum version 4.5.0.0, so 4.4 and older cannot open them; they could not follow the chain past block 50,000 anyway. `-walletcompat` writes the old number on purpose (#139)
+  - A wallet rewrite keeps the original as `wallet.dat.rewrite-orig` while it runs (#138)
+  - Log lines are all timestamped; `-debug=<category>` works; RPC method names are logged only with `-debug=rpc`; a large `debug.log` is trimmed (#141)
+  - `gettxout` requires a 64-character hex txid (#125)
+- **Not merged:** #145 (lenient DER signature parsing) would make nodes accept signatures that every current node refuses: a hard fork that anyone could trigger by re-encoding a relayed signature. Every supported OpenSSL (1.1 and later) already applies the same strict rule
 - **RPC integer arguments are range-checked.** A number too large for the argument was silently cut to its low 32 bits: `addmultisigaddress 4294967297 [...]` made a 1-of-N address, and `getblock <hash> 1099511627776` returned hex. Such values are now an error, and `getblock` accepts only verbosity 0, 1 or 2
 - **Note on v4.9 phrase restores:** a recovery phrase that was restored on v4.5–v4.8 with irregular spacing (double spaces, tabs) made a wallet from the phrase *exactly as typed*. That wallet keeps working, because the phrase is stored in `wallet.dat` as it was. Restoring the same phrase again on v4.9 normalises the spacing, so it gives the standard wallet for those words, not that one. Keep a backup of `wallet.dat` for such a wallet, or move its coins to a fresh address
 

@@ -78,29 +78,57 @@ pings (pass `answer_pings=False` to play a wedged peer). Add handlers in
 | Test | Covers |
 |---|---|
 | `feature_zmq.py` | `-zmqpub*` notifications: block and transaction topics, byte order and sequence numbers (needs `pyzmq`; skipped without it or without libzmq) |
+| `rpc_logging.py` | every debug.log line is timestamped with -logtimestamps; RPC calls are logged only with -debug=rpc |
 | `feature_regtest_basics.py` | chain identity, `generate`, coinbase maturity, spends, partner burn + `decodeburn`, restart |
 | `wallet_send.py` | two-node payment relay, confirmation, spend-back, overspend |
+| `wallet_listtransactions.py` | `listtransactions`: paging, and count/from as large as an int (their sum used to overflow) |
+| `wallet_sendmany_total.py` | sendmany with a total beyond the possible amount of money is an amount error |
+| `wallet_change_position.py` | the change output lands in every position, the last included |
+| `rpc_sighash_single.py` | signrawtransaction will not sign SIGHASH_SINGLE for an input with no output at its index |
 | `wallet_lockunspent.py` | coin locking: listunspent/listlockunspent, coin selection skips locked coins, error cases, cleared on restart |
+| `wallet_rewrite_safety.py` | a failing wallet rewrite leaves wallet.dat and its keys alone; a start with only wallet.dat.bak refuses to run |
+| `wallet_relock_during_topup.py` | a wallet that relocks in the middle of a key-pool top-up keeps the node up; dumpwallet leaves no temporary file |
+| `wallet_unlock_timeout.py` | walletpassphrase: negative and huge timeouts, and unlocking an unlocked wallet extends the unlock |
 | `wallet_encryption.py` | `encryptwallet`, locked after restart, wrong passphrases refused, unlock/sign, `walletpassphrasechange` survives a restart |
+| `wallet_accounting.py` | `move` between accounts: balances, each account's entries in order, `listtransactions "*"`, still there after a restart (the wallet's one read by key order from a chosen start) |
 | `wallet_import_range.py` | `importprivkey` rejects zero, n and larger values; accepts 1 and n-1 |
 | `wallet_abandon.py` | `abandontransaction`: coins and balance restored, descendants abandoned with it, survives a restart, a mined copy is tracked again |
 | `wallet_upgrade_fixtures.py` | wallets made by the real v4.7.0.0 binary (`data/wallets/`: HD, HD encrypted, PBKDF2 encrypted) load, unlock, keep their addresses, export correct keys, restore from the phrase, and spend coins on an old address |
+| `wallet_backup.py` | backupwallet moves a complete copy into place and leaves no temporary file; the copy opens as a wallet |
 | `wallet_dump.py` | `dumpwallet` → `importwallet` into an empty wallet (funds + labels), no-overwrite, `getrawchangeaddress` |
 | `feature_block_sync.py` | late-joiner catch-up, network split, reorg to the longer fork |
+| `rpc_shutdown_keepalive.py` | a node stops promptly while pool-style idle keep-alive RPC clients stay connected |
+| `feature_shutdown_exit.py` | two connected nodes in use are stopped twelve times over; each has to end with exit status 0 (no abort or crash while the process shuts down). Without the RPC shutdown commit, 11 of 16 copies run at once on a loaded machine died with signal 6 or 11 |
+| `rpc_http_limits.py` | RPC request line/header/body limits (body only after login), stalled-connection timeout, connection cap with 503 |
+| `rpc_config_hardening.py` | the example rpcpassword and a `#` in rpcpassword are refused; -rpcbind restricts the listening address |
 | `rpc_http_auth.py` | malformed `Authorization` headers get 401 and leave the server running; a correct login still works |
 | `feature_cross_binary.py` | two different builds (e.g. against different OpenSSL versions) interoperate: blocks and signatures accepted both ways, `wallet.dat` and encrypted wallets open in either. Needs `--alt-corgicoind` or `$CORGICOIND_ALT`, otherwise it is shown as SKIP. Against a v4.2–v4.7 build the "encrypted by the main build, unlocked by the alternate one" check fails by design (v4.7 cannot unlock a v4.8-encrypted wallet) |
 | `p2p_network_rpcs.py` | ping latency, traffic counters, bans (incl. `banlist.dat` across restarts), `addnode`, `getnodeaddresses`, `disconnectnode` |
+| `p2p_bad_subver.py` | a peer user agent with invalid UTF-8, control characters or great length cannot break getpeerinfo |
+| `p2p_maxconnections.py` | -maxconnections is capped below what select() can hold, and the log says so |
+| `p2p_resource_limits.py` | what a peer can make the node remember (announced items, known addresses) or queue (getdata) is bounded |
 | `p2p_ping_timeout.py` | a peer that ignores pings is dropped after `-pingtimeout`; a responsive one stays |
+| `p2p_getheaders_auxpow.py` | `getheaders` across a merged-mined block: the node stays up and returns one header with its real AuxPoW proof attached |
+| `rpc_createauxblock_cache.py` | createauxblock hands the same work out again while the tip and memory pool are unchanged, per payout script |
 | `rpc_createauxblock.py` | a merged-mined block end to end: `createauxblock`, proof, `submitauxblock`, relay, finding and spending the reward |
 | `feature_auxpow.py` | merged mining as pools do it: multi-chain proofs, legacy commitment, one rejection per AuxPoW rule (checked against its exact error), stale work, pre-fork guard, `getauxblock`. Proofs come from `auxpow_builder.py` |
+| `rpc_small_fixes.py` | gettxout validates the transaction id |
+| `rpc_mining_info.py` | `getnetworkhashps`/`getmininginfo` with no usable time span; `getnetworkinfo.relayfee` |
 | `rpc_gettxout.py` | `gettxout`: confirmed, unconfirmed and spent outputs, with and without the memory pool |
 | `rpc_getblock_verbose.py` | `getblock <hash> [verbose]`: JSON by default; hex (false or 0) is the network serialization, with the AuxPoW proof of a merged-mined block |
+| `rpc_getblocktemplate.py` | `getblocktemplate` with no argument and on regtest without peers; submit answers duplicate, rejected and undecodable data with -22 |
+| `rpc_rawtransaction.py` | `signrawtransaction` with unknown inputs, output numbers out of range, and variants with different input counts: no crash |
 | `rpc_submitblock.py` | `submitblock`: accepted, duplicate, orphan, rejected and undecodable blocks |
 | `rpc_testmempoolaccept.py` | `testmempoolaccept`: dry-run acceptance and reject reasons, with no change to the pool or wallet |
+| `rpc_mempool_policy.py` | relay policy: a transaction over 100 kB is nonstandard (-acceptnonstdtxn=0), with its reason |
 | `rpc_prioritisetransaction.py` | `prioritisetransaction`: holding a transaction out of blocks, releasing it, and admitting one below the relay fee |
 | `rpc_standard_signatures.py` | the low-S / strict-DER relay policy: wallet signatures, a refused high-S twin, `-standardsigs=0`, and a block carrying a twin |
 | `rpc_mempool_verify.py` | `getmempoolinfo`; `verifychain` on a healthy chain and over a deliberately corrupted block |
+| `rpc_invalidateblock_deep.py` | invalidateblock 400 blocks deep fits the database lock table (-dbmaxlocks) |
 | `rpc_invalidateblock.py` | `invalidateblock` rollback, refusing the invalid chain (also across a restart), `reconsiderblock` |
+| `wallet_hd_version_gate.py` | an HD wallet records 4.5.0.0 as its minimum client version, so releases before HD refuse it |
+| `wallet_hd_lock_secrets.py` | an encrypted HD wallet wipes its recovery phrase and master key from memory when it locks |
+| `wallet_hd_restore.py` | restoring a phrase derives ahead, rescans, finds coins on late keys, and continues after the last used address |
 | `wallet_hd_encryption.py` | `sethdseed` then `encryptwallet`: the wallet reloads, keeps every address handed out, signs for them, survives another restart (regression for the CKey compression-flag bug) |
 | `rpc_multisig_limits.py` | `addmultisigaddress`: 15 compressed keys work and the coins can be spent; 16 keys by size, 17 keys by count, and 8 uncompressed keys are refused with an error instead of an assert or an unspendable address |
 | `rpc_hostile_inputs.py` | wrong types, integers too large for their argument, empty or odd hex, oversized multisig and malformed or look-alike-Unicode recovery phrases: each is refused and the node keeps answering; messily spaced valid phrases are stored canonically |

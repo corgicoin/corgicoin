@@ -14,6 +14,7 @@
 #include "base58.h"
 #include "logging.h"
 #include "bip39.h"
+#include <openssl/crypto.h>
 #include <random>
 
 using namespace std;
@@ -61,12 +62,15 @@ bool CWallet::LoadHDMnemonic(const std::string& mnemonic)
     // valid-looking key nobody can recover (or, for an all-zero seed, everybody can)
     std::vector<unsigned char> seed = bip39::MnemonicToSeed(mnemonic);
     CExtKey master;
-    if (seed.empty() || !master.SetSeed(&seed[0], (unsigned int)seed.size()))
+    const bool fDerived = !seed.empty() && master.SetSeed(&seed[0], (unsigned int)seed.size());
+    OPENSSL_cleanse(seed.data(), seed.size());
+    if (!fDerived)
         return false;
     hdMasterKey = master;
     strHDMnemonic = mnemonic;
     hdSeedId = hdMasterKey.key.GetPubKey().GetID();
     fHDEnabled = true;
+    fHDMasterLoaded = true;
     return true;
 }
 
@@ -78,9 +82,11 @@ bool CWallet::DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn)
     if (!DecryptSecret(vMasterKeyIn, vchCryptedHDMnemonic, HDSeedIV(hdSeedId), sec))
         return false;
     std::string mnemonic(sec.begin(), sec.end());
-    if (!bip39::CheckMnemonic(mnemonic))
-        return false;
-    return LoadHDMnemonic(mnemonic); // sets hdMasterKey, strHDMnemonic, recomputes hdSeedId
+    const bool fOk = bip39::CheckMnemonic(mnemonic) && LoadHDMnemonic(mnemonic); // sets hdMasterKey, strHDMnemonic, recomputes hdSeedId
+    // strHDMnemonic holds the copy this session needs; this one must not stay on the heap after the unlock
+    if (!mnemonic.empty())
+        OPENSSL_cleanse(&mnemonic[0], mnemonic.size());
+    return fOk;
 }
 
 bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& strError)
@@ -98,45 +104,83 @@ bool CWallet::SetHDSeedFromMnemonic(const std::string& mnemonicIn, std::string& 
         return false;
     }
 
+    // Setting the seed the wallet already uses must not rewind the derivation index:
+    // the next address would repeat one already handed out.
+    const bool fSameSeed = fHDEnabled;
+    const CKeyID idBefore = hdSeedId;
+    const uint32_t nIndexBefore = nHDExternalIndex;
+
+    // Everything the seed change touches in memory, so a failed write can put it back: the wallet
+    // must never run on a seed that is not the one on disk.
+    const CExtKey keyBefore = hdMasterKey;
+    const bool fEnabledBefore = fHDEnabled;
+    const std::string mnemonicBefore = strHDMnemonic;
+    const std::vector<unsigned char> cryptedBefore = vchCryptedHDMnemonic;
+    auto Restore = [&]() {
+        hdMasterKey = keyBefore;
+        fHDEnabled = fEnabledBefore;
+        strHDMnemonic = mnemonicBefore;
+        hdSeedId = idBefore;
+        nHDExternalIndex = nIndexBefore;
+        vchCryptedHDMnemonic = cryptedBefore;
+    };
+
     if (!LoadHDMnemonic(mnemonic))
     {
+        // (it leaves the wallet as it was when the derivation fails)
         strError = "Could not derive the seed from the recovery phrase (key derivation failed)";
         return false;
     }
-    nHDExternalIndex = 0;
-    SetMinVersion(WalletFeature::FEATURE_HD);
+    nHDExternalIndex = (fSameSeed && hdSeedId == idBefore) ? nIndexBefore : 0;
 
     if (fFileBacked)
     {
+        // Seed id, chain index, phrase and minimum version go in as one unit: a crash or a failed
+        // write leaves the old seed in the file, never half of the new one.
         CWalletDB walletdb(strWalletFile);
-        if (!walletdb.WriteHDSeedId(hdSeedId) || !walletdb.WriteHDChain(nHDExternalIndex))
+        if (!walletdb.TxnBegin())
         {
-            strError = "Failed to write HD seed to wallet";
+            Restore();
+            strError = "Failed to start a wallet transaction";
             return false;
         }
-        if (IsCrypted())
+        bool fOk = walletdb.WriteHDSeedId(hdSeedId) && walletdb.WriteHDChain(nHDExternalIndex);
+        if (fOk && IsCrypted())
         {
             std::vector<unsigned char> ct;
             CSecret sec(mnemonic.begin(), mnemonic.end());
             if (!EncryptSecret(vMasterKey, sec, HDSeedIV(hdSeedId), ct))
             {
+                walletdb.TxnAbort();
+                Restore();
                 strError = "Failed to encrypt HD seed";
                 return false;
             }
             vchCryptedHDMnemonic = ct;
-            if (!walletdb.WriteCryptedHDMnemonic(ct))
-            {
-                strError = "Failed to write encrypted HD seed";
-                return false;
-            }
-            walletdb.EraseHDMnemonic(); // no plaintext phrase on disk
+            fOk = walletdb.WriteCryptedHDMnemonic(ct) && walletdb.EraseHDMnemonic(); // no plaintext phrase on disk
         }
-        else if (!walletdb.WriteHDMnemonic(mnemonic))
+        else if (fOk)
+            fOk = walletdb.WriteHDMnemonic(mnemonic);
+        if (fOk)
+            fOk = SetMinVersion(HDWalletFeature(), &walletdb);
+        if (fRegTest && GetArg("-testwalletwritefault", "") == "hdseed")
+            fOk = false; // test hook (regtest only): fail the write so the rollback can be checked
+        if (!fOk)
         {
+            walletdb.TxnAbort();
+            Restore();
             strError = "Failed to write HD seed to wallet";
             return false;
         }
+        if (!walletdb.TxnCommit())
+        {
+            Restore();
+            strError = "Failed to commit the HD seed to the wallet file";
+            return false;
+        }
     }
+    else
+        SetMinVersion(HDWalletFeature());
     return true;
 }
 
@@ -150,13 +194,17 @@ CPubKey CWallet::GenerateNewKey()
     // unencrypted wallets and unlocked encrypted ones (doc/hd-wallet-spec.md).
     if (fHDEnabled && !IsLocked())
     {
+        if (!fHDMasterLoaded)
+            throw std::runtime_error("CWallet::GenerateNewKey() : the HD seed is not available (it could not be decrypted when the wallet was unlocked), so no new keys can be made");
         if (!DeriveHDChild(hdMasterKey, nHDExternalIndex, key))
             throw std::runtime_error("CWallet::GenerateNewKey() : HD derivation failed");
-        if (!AddKey(key))
+        // The same index can come up twice: restoring a phrase derives keys ahead, and restoring one that is already
+        // in the wallet derives the same keys again. A key that is already there is the one asked for, not a failure.
+        if (!HaveKey(key.GetPubKey().GetID()) && !AddKey(key))
             throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
         nHDExternalIndex++;
-        if (fFileBacked)
-            CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
+        if (fFileBacked && !CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex))
+            throw std::runtime_error("CWallet::GenerateNewKey() : could not save the HD index");
         if (fCompressed)
             SetMinVersion(WalletFeature::FEATURE_COMPRPUBKEY);
         return key.GetPubKey();
@@ -350,9 +398,8 @@ bool CWallet::UnlockWithMasterKey(const SecureString& strWalletPassphrase, const
 
 bool CWallet::Unlock(const SecureString& strWalletPassphrase)
 {
-    if (!IsLocked())
-        return false;
-
+    // Not refused when the wallet is already unlocked: the passphrase is checked the same way, and walletpassphrase uses
+    // that to extend an unlock. (It returned false here, so a second walletpassphrase failed with "incorrect passphrase".)
     CKeyingMaterial vMasterKey;
 
     {
@@ -361,8 +408,10 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase)
         {
             if (UnlockWithMasterKey(strWalletPassphrase, pMasterKey.second, vMasterKey))
             {
-                // Make the HD seed usable for this unlocked session.
-                DecryptHDSeed(vMasterKey);
+                // Make the HD seed usable for this unlocked session. If it cannot be decrypted the wallet still
+                // unlocks (its existing keys work), but it cannot make new keys: say so, and getwalletinfo reports it
+                if (!DecryptHDSeed(vMasterKey))
+                    LogPrintf("Unlock: the HD seed could not be decrypted; existing keys work but no new keys can be derived (hdseed_available is false)\n");
                 return true;
             }
         }
@@ -417,6 +466,8 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                     pMasterKey.second = kOldMasterKey;
                     if (fWasLocked)
                         Lock();   // verifying the old passphrase unlocked the key store
+                    else
+                        DecryptHDSeed(vMasterKey); // Lock() above wiped the HD seed; the wallet stays unlocked
                     throw;
                 }
                 if (!fPersisted)
@@ -424,10 +475,14 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                     pMasterKey.second = kOldMasterKey;
                     if (fWasLocked)
                         Lock();
+                    else
+                        DecryptHDSeed(vMasterKey);
                     return false;
                 }
                 if (fWasLocked)
                     Lock();
+                else
+                    DecryptHDSeed(vMasterKey); // Lock() at the top wiped the HD seed: without this an unlocked HD wallet could not make keys
                 return true;
             }
         }
@@ -454,6 +509,18 @@ public:
     )
 };
 
+std::atomic<int> nWalletThreadsRunning(0);
+
+WalletFeature HDWalletFeature()
+{
+    return GetBoolArg("-walletcompat", false) ? WalletFeature::FEATURE_HD_LEGACY : WalletFeature::FEATURE_HD;
+}
+
+WalletFeature LatestWalletFeature()
+{
+    return GetBoolArg("-walletcompat", false) ? WalletFeature::FEATURE_HD_LEGACY : WalletFeature::FEATURE_LATEST;
+}
+
 bool CWallet::SetMinVersion(WalletFeature nVersion, CWalletDB* pwalletdbIn, bool fExplicit)
 {
     if (nWalletVersion >= static_cast<int>(nVersion))
@@ -461,7 +528,7 @@ bool CWallet::SetMinVersion(WalletFeature nVersion, CWalletDB* pwalletdbIn, bool
 
     // when doing an explicit upgrade, if we pass the max version permitted, upgrade all the way
     if (fExplicit && static_cast<int>(nVersion) > nWalletMaxVersion)
-            nVersion = WalletFeature::FEATURE_LATEST;
+            nVersion = LatestWalletFeature();
 
     nWalletVersion = static_cast<int>(nVersion);
 
@@ -553,8 +620,19 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         {
             pwalletdbEncryption = std::make_unique<CWalletDB>(strWalletFile);
             if (!pwalletdbEncryption->TxnBegin())
+            {
+                mapMasterKeys.erase(nMasterKeyMaxID--);
+                pwalletdbEncryption.reset();
                 return false;
-            pwalletdbEncryption->WriteMasterKey(nMasterKeyMaxID, kMasterKey);
+            }
+            if (!pwalletdbEncryption->WriteMasterKey(nMasterKeyMaxID, kMasterKey))
+            {
+                pwalletdbEncryption->TxnAbort();
+                pwalletdbEncryption.reset();
+                mapMasterKeys.erase(nMasterKeyMaxID--);
+                LogPrintf("EncryptWallet() : could not write the master key\n");
+                return false;
+            }
         }
 
         if (!EncryptKeys(vMasterKey))
@@ -578,8 +656,11 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             vchCryptedHDMnemonic = ct;
             if (fFileBacked)
             {
-                pwalletdbEncryption->WriteCryptedHDMnemonic(ct);
-                pwalletdbEncryption->EraseHDMnemonic();
+                if (!pwalletdbEncryption->WriteCryptedHDMnemonic(ct) || !pwalletdbEncryption->EraseHDMnemonic())
+                {
+                    pwalletdbEncryption->TxnAbort();
+                    exit(1); // keys are encrypted in memory only: die and let the user reload the unencrypted wallet
+                }
             }
         }
 
@@ -601,7 +682,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 
         // Need to completely rewrite the wallet file; if we don't, bdb might keep
         // bits of the unencrypted private key in slack space in the database file.
-        CDB::Rewrite(strWalletFile);
+        RewriteWalletStorage(strWalletFile);
 
     }
     NotifyStatusChanged(this);
@@ -1308,6 +1389,53 @@ int64 CWallet::GetImmatureBalance() const
     return nTotal;
 }
 
+std::set<uint256> CWallet::GetConflicts(const CWalletTx& wtx) const
+{
+    std::set<uint256> result;
+    // every coinbase has the same null prevout: they never conflict with each other, nor with anything else
+    if (wtx.IsCoinBase())
+        return result;
+    LOCK(cs_wallet);
+    const uint256 hash = wtx.GetHash();
+    for (const auto& item : mapWallet)
+    {
+        if (item.first == hash)
+            continue;
+        if (item.second.IsCoinBase())
+            continue;
+        for (const CTxIn& other : item.second.vin)
+        {
+            bool fShared = false;
+            for (const CTxIn& mine : wtx.vin)
+                if (mine.prevout == other.prevout)
+                {
+                    fShared = true;
+                    break;
+                }
+            if (fShared)
+            {
+                result.insert(item.first);
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+bool CWallet::IsConflicted(const CWalletTx& wtx) const
+{
+    if (wtx.IsCoinBase() || wtx.GetDepthInMainChain() >= 1)
+        return false;
+    LOCK(cs_wallet);
+    for (const uint256& hashOther : GetConflicts(wtx))
+    {
+        auto it = mapWallet.find(hashOther);
+        if (it != mapWallet.end() && it->second.GetDepthInMainChain() >= 1)
+            return true;
+    }
+    return false;
+}
+
 // populate vCoins with vector of spendable COutputs
 void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl* coinControl) const
 {
@@ -1373,6 +1501,8 @@ static void ApproximateBestSubset(vector<pair<int64, pair<const CWalletTx*,unsig
                                   vector<char>& vfBest, int64& nBest, int iterations = 1000)
 {
     vector<char> vfIncluded;
+    // one draw from the system RNG per call, not one per coin per pass: this runs up to 1000 times over every coin, under cs_main
+    std::mt19937 rng{static_cast<std::mt19937::result_type>(GetRandInt(std::numeric_limits<int>::max()))};
 
     vfBest.assign(vValue.size(), true);
     nBest = nTotalLower;
@@ -1386,7 +1516,7 @@ static void ApproximateBestSubset(vector<pair<int64, pair<const CWalletTx*,unsig
         {
             for (unsigned int i = 0; i < vValue.size(); i++)
             {
-                if (nPass == 0 ? rand() % 2 : !vfIncluded[i])
+                if (nPass == 0 ? (rng() & 1) : !vfIncluded[i])
                 {
                     nTotal += vValue[i].first;
                     vfIncluded[i] = true;
@@ -1542,9 +1672,13 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
     int64 nValue = 0;
     for (const std::pair<CScript, int64>& s : vecSend)
     {
-        if (nValue < 0)
+        // Every amount, and every running total, must be a possible amount of money: a signed sum that wraps is
+        // undefined behaviour, and a negative one used to be noticed only by looking at the total afterwards
+        if (s.second < 0 || !MoneyRange(s.second))
             return false;
         nValue += s.second;
+        if (!MoneyRange(nValue))
+            return false;
     }
     if (vecSend.empty() || nValue < 0)
         return false;
@@ -1615,8 +1749,10 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                         scriptChange.SetDestination(vchPubKey.GetID());
                     }
 
-                    // Insert change txn at random position:
-                    auto position = wtxNew.vout.begin()+GetRandInt(wtxNew.vout.size());
+                    // Insert change txn at random position, the last one included: GetRandInt(n) is 0..n-1, so
+                    // with n outputs there are n+1 places. (With one recipient the change used to be always
+                    // output 0, which made every send of this wallet easy to read off the chain.)
+                    auto position = wtxNew.vout.begin()+GetRandInt(wtxNew.vout.size() + 1);
                     wtxNew.vout.insert(position, CTxOut(nChange, scriptChange));
                 }
                 else
@@ -1646,6 +1782,11 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 {
                     nFeeRet = max(nPayFee, nMinFee);
                     continue;
+                }
+                if (nFeeRet > nMaxTxFee)
+                {
+                    LogPrintf("CreateTransaction() : the fee of %s is over -maxtxfee (%s)\n", FormatMoney(nFeeRet).c_str(), FormatMoney(nMaxTxFee).c_str());
+                    return false;
                 }
 
                 // Fill vtxPrev by copying from previous transactions vtxPrev
@@ -1731,7 +1872,9 @@ string CWallet::SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew,
     if (!CreateTransaction(scriptPubKey, nValue, wtxNew, reservekey, nFeeRequired))
     {
         string strError;
-        if (nValue + nFeeRequired > GetBalance())
+        if (nFeeRequired > nMaxTxFee)
+            strError = strprintf(_("Error: The fee for this transaction, %s, is more than -maxtxfee (%s). Send less in one transaction, or raise -maxtxfee.  "), FormatMoney(nFeeRequired).c_str(), FormatMoney(nMaxTxFee).c_str());
+        else if (nValue + nFeeRequired > GetBalance())
             strError = strprintf(_("Error: This transaction requires a transaction fee of at least %s because of its amount, complexity, or use of recently received funds  "), FormatMoney(nFeeRequired).c_str());
         else
             strError = _("Error: Transaction creation failed  ");
@@ -1776,7 +1919,7 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
     int nLoadWalletRet = CWalletDB(strWalletFile,"cr+").LoadWallet(this);
     if (nLoadWalletRet == DB_NEED_REWRITE)
     {
-        if (CDB::Rewrite(strWalletFile, "\x04pool"))
+        if (RewriteWalletStorage(strWalletFile, "\x04pool"))
         {
             setKeyPool.clear();
             // Note: can't top-up keypool here, because wallet is locked.
@@ -1790,7 +1933,28 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
         return nLoadWalletRet;
     fFirstRunRet = !vchDefaultKey.IsValid();
 
-    CreateThread(ThreadFlushWalletDB, &strWalletFile);
+    // HD wallets made by 4.5 to 4.8 carry the old, too low minimum version: raise it, so releases before HD refuse
+    // to open them from now on
+    if (IsHDEnabled())
+    {
+        if (GetBoolArg("-walletcompat", false))
+        {
+            // Put the old number back, so that an older release can open the wallet (the gate cannot otherwise be undone)
+            if (nWalletVersion > static_cast<int>(WalletFeature::FEATURE_HD_LEGACY))
+            {
+                nWalletVersion = static_cast<int>(WalletFeature::FEATURE_HD_LEGACY);
+                if (fFileBacked)
+                    CWalletDB(strWalletFile).WriteMinVersion(nWalletVersion);
+            }
+            LogPrintf("-walletcompat: the wallet's minimum version is %d; releases from before HD wallets will open it and ignore the HD seed\n", nWalletVersion);
+        }
+        else
+            SetMinVersion(WalletFeature::FEATURE_HD);
+    }
+
+    nWalletThreadsRunning++;
+    if (!CreateThread(ThreadFlushWalletDB, &strWalletFile))
+        nWalletThreadsRunning--;
     return DB_LOAD_OK;
 }
 
@@ -1865,6 +2029,77 @@ bool GetWalletFile(CWallet* pwallet, string &strWalletFileOut)
 // Mark old keypool keys as used,
 // and generate all new keys
 //
+bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strError)
+{
+    LOCK2(cs_main, cs_wallet);
+    if (!IsHDSeedAvailable() || IsLocked())
+    {
+        strError = "The HD seed is not available (unlock the wallet first)";
+        return false;
+    }
+    nGap = std::max(1u, nGap);
+
+    // keys 0 .. nDerived-1 are in the key store; mapIndex says which index each one is
+    unsigned int nDerived = 0;
+    std::map<CKeyID, unsigned int> mapIndex;
+    auto DeriveTo = [&](unsigned int nTo) {
+        for (; nDerived < nTo; nDerived++)
+        {
+            CKey key;
+            if (!DeriveHDChild(hdMasterKey, nDerived, key))
+                return false;
+            const CKeyID keyid = key.GetPubKey().GetID();
+            // a key that is already here (an earlier restore of the same phrase, or the key pool) is not an error
+            if (!HaveKey(keyid) && !AddKey(key))
+                return false;
+            mapIndex[keyid] = nDerived;
+        }
+        return true;
+    };
+
+    // Look for the last key that has been paid. Each round derives nGap keys past the last one found and rescans; it ends
+    // when a round finds nothing further.
+    int nHighest = -1;
+    while (true)
+    {
+        if (!DeriveTo(static_cast<unsigned int>(nHighest + 1) + nGap))
+        {
+            strError = "Could not derive the HD keys";
+            return false;
+        }
+        ScanForWalletTransactions(pindexGenesisBlock, true);
+
+        int nFound = nHighest;
+        for (const auto& item : mapWallet)
+            for (const CTxOut& txout : item.second.vout)
+            {
+                CTxDestination dest;
+                if (!ExtractDestination(txout.scriptPubKey, dest))
+                    continue;
+                const CKeyID* pkeyid = std::get_if<CKeyID>(&dest);
+                auto it = pkeyid ? mapIndex.find(*pkeyid) : mapIndex.end();
+                if (it != mapIndex.end())
+                    nFound = std::max(nFound, static_cast<int>(it->second));
+            }
+        if (nFound == nHighest)
+            break;
+        nHighest = nFound;
+        if (nDerived > 1000000)       // a runaway guard: a million keys is not a wallet
+            break;
+    }
+
+    // The next address is the first one never used. (The keys before it stay in the key store: coins sent to any of them
+    // are the wallet's.)
+    // (Never lower it: restoring the phrase the wallet already uses must not hand out addresses it has given out before,
+    // and those are not on the chain yet.)
+    nHDExternalIndex = std::max(nHDExternalIndex, static_cast<uint32_t>(nHighest + 1));
+    if (fFileBacked)
+        CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex);
+    nUsedRet = nHighest + 1;
+    ReacceptWalletTransactions();
+    return true;
+}
+
 bool CWallet::NewKeyPool()
 {
     {
@@ -1887,6 +2122,32 @@ bool CWallet::NewKeyPool()
         LogPrintf("CWallet::NewKeyPool wrote %" PRI64d " new keys\n", nKeys);
     }
     return true;
+}
+
+bool CWallet::Lock()
+{
+    LOCK(cs_wallet);
+    if (!CCryptoKeyStore::Lock())
+        return false;
+    WipeHDSecrets();
+    return true;
+}
+
+void CWallet::WipeHDSecrets()
+{
+    LOCK(cs_wallet);
+    // Only when the encrypted copy of the phrase exists to bring it back at the next unlock
+    if (vchCryptedHDMnemonic.empty())
+        return;
+    if (!strHDMnemonic.empty())
+        OPENSSL_cleanse(&strHDMnemonic[0], strHDMnemonic.size());
+    strHDMnemonic.clear();
+    strHDMnemonic.shrink_to_fit();
+    // CKey assignment (EC_KEY_copy) keeps the private scalar of a key it is given none for: free it explicitly
+    hdMasterKey.key.Reset();
+    OPENSSL_cleanse(hdMasterKey.vchChainCode, sizeof(hdMasterKey.vchChainCode));
+    hdMasterKey = CExtKey();
+    fHDMasterLoaded = false;
 }
 
 bool CWallet::TopUpKeyPool()

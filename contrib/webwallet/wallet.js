@@ -93,6 +93,27 @@ export function validateMnemonicWords(mnemonic) {
   if (![12, 15, 18, 21, 24].includes(words.length)) return false;
   return words.every((w) => WORDLIST.includes(w));
 }
+// Checks the BIP39 checksum as well as the words. The words alone accept a phrase with one wrong (but valid) word,
+// which opens a different, empty wallet without a word of warning.
+export async function validateMnemonicChecksum(mnemonic) {
+  const words = mnemonic.normalize("NFKD").trim().split(/\s+/);
+  if (![12, 15, 18, 21, 24].includes(words.length)) return false;
+  const bits = [];
+  for (const w of words) {
+    const idx = WORDLIST.indexOf(w);
+    if (idx < 0) return false;
+    for (let i = 10; i >= 0; i--) bits.push((idx >> i) & 1);
+  }
+  const csBits = words.length / 3;                 // 11 bits per word = entropy + entropy/32
+  const entBits = bits.length - csBits;
+  const ent = new Uint8Array(entBits / 8);
+  for (let i = 0; i < entBits; i++) ent[i >> 3] |= bits[i] << (7 - (i & 7));
+  const hash = await sha256(ent);
+  for (let i = 0; i < csBits; i++) {
+    if (((hash[i >> 3] >> (7 - (i & 7))) & 1) !== bits[entBits + i]) return false;
+  }
+  return true;
+}
 export async function generateMnemonic(bits = 128) {
   const ent = crypto.getRandomValues(new Uint8Array(bits / 8));
   const hash = await sha256(ent);

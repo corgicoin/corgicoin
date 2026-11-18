@@ -18,6 +18,7 @@
 #include "compat_boost.h"
 #include "logging.h"
 #include "zmqnotify.h"
+#include <cstdlib>
 #include <filesystem>
 #include <boost/interprocess/sync/file_lock.hpp>
 
@@ -76,10 +77,15 @@ void Shutdown(void* parg)
     if (fFirstThread)
     {
         fShutdown = true;
+        DeleteRPCCookie();
         nTransactionsUpdated++;
         bitdb.Flush(false);
         StopNode();
         ZMQShutdown();
+        // the wallet threads that StopNode does not count (flush, key pool top-up, relock timer) must be gone before the
+        // wallet is freed and exit() destroys the mutexes they lock
+        while (nWalletThreadsRunning > 0)
+            Sleep(20);
         bitdb.Flush(true);
         std::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain.get());
@@ -90,7 +96,11 @@ void Shutdown(void* parg)
         fExit = true;
 #ifndef QT_GUI
         // ensure non UI client get's exited here, but let Bitcoin-Qt reach return 0; in bitcoin.cpp
-        exit(0);
+        // _Exit, not exit: everything that has to reach the disk is flushed and closed above, and exit() would run the static
+        // destructors while threads that StopNode does not count (the external IP lookup, a late log line) may still lock the
+        // mutexes being destroyed: an intermittent abort at exit ("mutex lock failed", status -6)
+        fflush(nullptr);
+        std::_Exit(0);
 #endif
     }
     else
@@ -226,6 +236,7 @@ std::string HelpMessage()
         "  -gen=0                 " + _("Don't generate coins") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
         "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 25)") + "\n" +
+        "  -dbmaxlocks=<n>        " + _("Set the Berkeley DB lock table size, which bounds how big a block or reorganisation can be (default: 537000)") + "\n" +
         "  -dblogsize=<n>         " + _("Set database disk log size in megabytes (default: 100)") + "\n" +
         "  -timeout=<n>           " + _("Specify connection timeout (in milliseconds)") + "\n" +
         "  -proxy=<ip:port>       " + _("Connect through socks proxy") + "\n" +
@@ -233,7 +244,7 @@ std::string HelpMessage()
         "  -tor=<ip:port>         " + _("Use proxy to reach tor hidden services (default: same as -proxy)") + "\n"
         "  -dns                   " + _("Allow DNS lookups for -addnode, -seednode and -connect") + "\n" +
         "  -port=<port>           " + _("Listen for connections on <port> (default: 62556 or testnet: 64556)") + "\n" +
-        "  -maxconnections=<n>    " + _("Maintain at most <n> connections to peers (default: 125)") + "\n" +
+        "  -maxconnections=<n>    " + _("Maintain at most <n> connections to peers (default: 125; at most about 870 where select() is used)") + "\n" +
         "  -addnode=<ip>          " + _("Add a node to connect to and attempt to keep the connection open") + "\n" +
         "  -connect=<ip>          " + _("Connect only to the specified node(s)") + "\n" +
         "  -seednode=<ip>         " + _("Connect to a node to retrieve peer addresses, and disconnect") + "\n" +
@@ -275,17 +286,29 @@ std::string HelpMessage()
 #endif
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
+        "  -norpccookie           " + _("Without -rpcuser and -rpcpassword, refuse to serve RPC instead of making a cookie file (<datadir>/.cookie) the client reads") + "\n" +
+        "  -rpcmaxauthfailures=<n> " + _("Refuse a client address for a minute after <n> failed logins (default: 20)") + "\n" +
         "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 62555)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
+        "  -rpcservertimeout=<n>  " + _("Close a JSON-RPC connection that makes no progress for <n> seconds (default: 30)") + "\n" +
+        "  -rpcmaxbody=<n>        " + _("Largest JSON-RPC request body accepted, in bytes (default: 8388608)") + "\n" +
+        "  -rpcmaxconnections=<n> " + _("Most JSON-RPC connections served at once; more get HTTP 503 (default: 64)") + "\n" +
+        "  -rpcbind=<ip>          " + _("Listen for JSON-RPC connections on this address only (repeatable; default: loopback, or every interface if -rpcallowip is set)") + "\n" +
         "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
+        "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
         "  -zmqpubhashblock=<address> " + _("Publish the hash of each new best block on a ZeroMQ socket, e.g. tcp://127.0.0.1:28332") + "\n" +
         "  -zmqpubrawblock=<address>  " + _("Publish each new best block, serialized") + "\n" +
         "  -zmqpubhashtx=<address>    " + _("Publish the txid of each transaction entering the memory pool or a block") + "\n" +
         "  -zmqpubrawtx=<address>     " + _("Publish each such transaction, serialized") + "\n" +
         "  -upgradewallet         " + _("Upgrade wallet to latest format") + "\n" +
         "  -keypool=<n>           " + _("Set key pool size to <n> (default: 100)") + "\n" +
+        "  -hdrestoregap=<n>      " + _("How many keys past the last used one sethdseed derives and looks for when restoring a phrase (default: 1000)") + "\n" +
+        "  -maxmempoolkb=<n>      " + _("Keep the transaction memory pool under <n> kB, dropping the lowest fee rate first (default: 100000)") + "\n" +
+        "  -mempoolexpiry=<n>     " + _("Drop transactions that have waited <n> hours in the memory pool (default: 72)") + "\n" +
+        "  -walletcompat          " + _("Record the old low minimum version in HD wallets so releases from before HD wallets can open them (they ignore the HD seed: use only on purpose)") + "\n" +
+        "  -maxtxfee=<amt>        " + _("Refuse to make a transaction that pays more than <amt> in fees (default: 10000)") + "\n" +
         "  -rescan                " + _("Rescan the block chain for missing wallet transactions") + "\n" +
         "  -checkblocks=<n>       " + _("How many blocks to check at startup (default: 2500, 0 = all)") + "\n" +
         "  -checklevel=<n>        " + _("How thorough the block verification is (0-6, default: 1)") + "\n" +
@@ -386,15 +409,21 @@ bool AppInit2()
     // ********************************************************* Step 3: parameter-to-internal-flags
 
     // Initialize logging subsystem
-    InitLogging(GetArg("-debug", ""), GetBoolArg("-printtoconsole"), GetBoolArg("-logtimestamps"));
+    // a bare -debug is stored as "", which InitLogging reads as no categories: it means all of them
+    InitLogging(mapArgs.count("-debug") && mapArgs["-debug"].empty() ? std::string("1") : GetArg("-debug", ""),
+                GetBoolArg("-printtoconsole"), GetBoolArg("-logtimestamps"));
 
-    fDebug = GetBoolArg("-debug");
-
-    // -debug implies fDebug*
-    if (fDebug)
+    // InitLogging has set fDebug and fDebugNet from the -debug categories ("-debug=net" is a list of categories, not a
+    // boolean: reading it as one switched everything off again). A plain -debug (or -debug=1) turns on all of it, and
+    // -debugnet adds the network output.
+    const bool fDebugAll = GetBoolArg("-debug");
+    fDebug = fDebug || fDebugAll;
+    if (fDebugAll || GetBoolArg("-debugnet"))
         fDebugNet = true;
-    else
-        fDebugNet = GetBoolArg("-debugnet");
+
+    if (GetArg("-maxconnections", 125) > GetMaxConnections())
+        LogPrintf("-maxconnections reduced from %d to %d: select() cannot wait on more descriptors than that%s",
+                  static_cast<int>(GetArg("-maxconnections", 125)), GetMaxConnections(), "\n");
 
     bitdb.SetDetach(GetBoolArg("-detachdb", false));
 
@@ -439,6 +468,16 @@ bool AppInit2()
             InitWarning(_("Warning: -paytxfee is set very high. This is the transaction fee you will pay if you send a transaction."));
     }
 
+    if (mapArgs.count("-maxtxfee"))
+    {
+        int64 nMax = 0;
+        if (!ParseMoney(mapArgs["-maxtxfee"], nMax) || nMax <= 0)
+            return InitError(strprintf(_("Invalid amount for -maxtxfee=<amount>: '%s'"), mapArgs["-maxtxfee"].c_str()));
+        nMaxTxFee = nMax;
+        if (nTransactionFee > nMaxTxFee)
+            return InitError(_("-paytxfee is more than -maxtxfee. Lower one of them."));
+    }
+
     if (mapArgs.count("-mininput"))
     {
         if (!ParseMoney(mapArgs["-mininput"], nMinimumInputValue))
@@ -477,8 +516,8 @@ bool AppInit2()
     }
 #endif
 
-    if (!fDebug)
-        ShrinkDebugFile();
+    // With -debug the log is kept for looking through, so it is cut only when it is huge
+    ShrinkDebugFile(fDebug ? 1000ULL * 1000000 : 10 * 1000000);
     LogPrintf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
     LogPrintf("CorgiCoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
 
@@ -673,6 +712,23 @@ bool AppInit2()
     LogPrintf("Loading wallet...\n");
     nStart = GetTimeMillis();
     bool fFirstRun;
+    {
+        // A wallet rewrite keeps the original as wallet.dat.rewrite-orig until the new file is in place (and builds the new one
+        // as wallet.dat.rewrite). If wallet.dat is missing but one of those is there, the process stopped in the
+        // middle of a rewrite: starting now would create a new, empty wallet.dat next to the real one, and the
+        // user would see an empty wallet. Stop and say where the wallet is.
+        const std::filesystem::path pathWallet = GetDataDir() / "wallet.dat";
+        std::error_code ec;
+        if (!std::filesystem::exists(pathWallet, ec))
+            for (const char* pszSuffix : {".rewrite-orig", ".rewrite"})
+            {
+                const std::filesystem::path pathOther = pathWallet.string() + pszSuffix;
+                if (std::filesystem::exists(pathOther, ec))
+                    return InitError(strprintf(_("wallet.dat is missing, but %s exists: CorgiCoin stopped in the middle of rewriting the wallet. "
+                                                 "Your keys are in that file. Stop CorgiCoin, copy it to wallet.dat, and start again. "
+                                                 "(Not starting, so that a new empty wallet does not hide it.)"), pathOther.string().c_str()));
+            }
+    }
     pwalletMain = std::make_unique<CWallet>("wallet.dat");
     int nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
     if (nLoadWalletRet != DB_LOAD_OK)
@@ -696,9 +752,9 @@ bool AppInit2()
         int nMaxVersion = GetArg("-upgradewallet", 0);
         if (nMaxVersion == 0) // the -upgradewallet without argument case
         {
-            LogPrintf("Performing wallet upgrade to %i\n", static_cast<int>(WalletFeature::FEATURE_LATEST));
+            LogPrintf("Performing wallet upgrade to %i\n", static_cast<int>(LatestWalletFeature()));
             nMaxVersion = CLIENT_VERSION;
-            pwalletMain->SetMinVersion(WalletFeature::FEATURE_LATEST); // permanently upgrade the wallet immediately
+            pwalletMain->SetMinVersion(LatestWalletFeature()); // permanently upgrade the wallet immediately
         }
         else
             LogPrintf("Allowing wallet upgrade up to %i\n", nMaxVersion);

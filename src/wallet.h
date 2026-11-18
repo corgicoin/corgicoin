@@ -33,10 +33,33 @@ enum class WalletFeature
 
     FEATURE_WALLETCRYPT = 40000, // wallet encryption
     FEATURE_COMPRPUBKEY = 60000, // compressed public keys
-    FEATURE_HD = 130000,         // BIP32/39 hierarchical deterministic keys
+    // BIP32/39 hierarchical deterministic keys. This is the client version that first had them (4.5.0.0): the
+    // wallet's minimum version is compared with CLIENT_VERSION, so a number below the client versions of the 4.x
+    // releases that predate HD (130000 was) let those releases open an HD wallet. They skip the HD records and top
+    // the key pool up with random keys that the recovery phrase does not cover.
+    FEATURE_HD = 4050000,
 
-    FEATURE_LATEST = 130000
+    // What releases before this gate recorded for an HD wallet. Only used with -walletcompat.
+    FEATURE_HD_LEGACY = 130000,
+
+    FEATURE_LATEST = 4050000
 };
+
+/** The minimum version to record for an HD wallet, and for a wallet made or upgraded to the latest format. With
+ *  -walletcompat the old, low number: any 4.x release then opens the wallet, as before. Those that predate HD skip the HD
+ *  records and top the key pool up with random keys that the recovery phrase does not cover, so use it only to open a
+ *  wallet in an old release on purpose. */
+WalletFeature HDWalletFeature();
+
+/** Wallet background threads still running (the flush thread, key pool top-ups, the relock timer). Shutdown() waits for them before it
+ *  frees the wallet and the process exits: one still running then locks a mutex that is being destroyed (an abort at exit). The
+ *  code that starts such a thread counts it before starting it, and the thread uncounts itself when it ends (WalletThreadGuard). */
+extern std::atomic<int> nWalletThreadsRunning;
+struct WalletThreadGuard
+{
+    ~WalletThreadGuard() { nWalletThreadsRunning--; }
+};
+WalletFeature LatestWalletFeature();
 
 // BIP44 coin type for CorgiCoin HD derivation: m/44'/HD_COIN_TYPE'/0'/0/index.
 // Wallet-local only (not consensus); fixed so a seed always maps to the same
@@ -124,16 +147,23 @@ public:
     CExtKey hdMasterKey;
     bool fHDEnabled = false;
     uint32_t nHDExternalIndex = 0;   // next external chain child index
-    std::string strHDMnemonic;       // recovery phrase (in memory; empty while locked)
+    std::string strHDMnemonic;       // recovery phrase (in memory; empty while an encrypted wallet is locked)
+    bool fHDMasterLoaded = false;    // hdMasterKey and strHDMnemonic hold the seed (false while locked, or if it failed to decrypt)
     CKeyID hdSeedId;                 // fingerprint of the HD master pubkey (non-secret)
     std::vector<unsigned char> vchCryptedHDMnemonic; // encrypted phrase (crypted wallets)
 
     bool IsHDEnabled() const { return fHDEnabled; }
+    bool IsHDSeedAvailable() const { return fHDEnabled && fHDMasterLoaded; }
     std::string GetHDMnemonic() const { return strHDMnemonic; }
     CKeyID GetHDSeedId() const { return hdSeedId; }
     // Set the HD seed from a BIP39 mnemonic, persist it (encrypted if the
     // wallet is encrypted and unlocked), and reset the keypool to HD keys.
     bool SetHDSeedFromMnemonic(const std::string& mnemonic, std::string& strError);
+    // After a seed was restored from a phrase: derive keys ahead of the last one the chain shows in use (nGap past it, at
+    // least 1), rescan the block chain for what they received, and move the next-address counter past the last used key.
+    // Without it a restored wallet knows only the first -keypool keys, shows no balance until -rescan, and misses coins
+    // on later keys. nUsedRet is the number of keys up to and including the last used one.
+    bool RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strError);
     // Decrypt the stored HD mnemonic using the master key (called from Unlock).
     bool DecryptHDSeed(const CKeyingMaterial& vMasterKeyIn);
     // Load-time setup (no persistence, no counter reset) — used by CWalletDB.
@@ -155,6 +185,11 @@ public:
     bool IsLockedCoin(const uint256& hash, unsigned int n) const;
     void ListLockedCoins(std::vector<COutPoint>& vOutpts) const;
 
+    /** The other wallet transactions that spend an output this one spends (a double spend, or a malleated twin). */
+    std::set<uint256> GetConflicts(const CWalletTx& wtx) const;
+    /** True if wtx is not in the main chain and a transaction that conflicts with it is. Such a transaction can never
+     *  confirm: what it paid, and its change, are not the wallet's to count or to spend. */
+    bool IsConflicted(const CWalletTx& wtx) const;
     // With a coinControl that has selected outputs, only those are returned.
     void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl* coinControl = nullptr) const;
     bool SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
@@ -189,6 +224,12 @@ public:
     bool LoadCScript(const CScript& redeemScript) { return CCryptoKeyStore::AddCScript(redeemScript); }
 
     bool Unlock(const SecureString& strWalletPassphrase);
+    /** Lock the wallet. Waits for cs_wallet, so key generation, signing and dumps that are under way finish first
+     *  (a relock in the middle of them used to make them throw). */
+    bool Lock();
+    /** Forget the HD recovery phrase and master key in memory (an encrypted wallet that is locked keeps only the
+     *  encrypted phrase, so memory dumps, swap and crash reports no longer hold the root secret). */
+    void WipeHDSecrets();
     // Derive the key for one master key from the passphrase, decrypt the master key and unlock the keystore with it
     bool UnlockWithMasterKey(const SecureString& strWalletPassphrase, const CMasterKey& kMasterKey, CKeyingMaterial& vMasterKeyOut);
     bool ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase);
@@ -617,6 +658,9 @@ public:
             return true;
         if (!IsFromMe()) // using wtx's cached debit
             return false;
+        // after IsFromMe: the scan is over the whole wallet, and anyone can send us unconfirmed transactions
+        if (pwallet->IsConflicted(*this))
+            return false;
 
         // If no confirmations but it's from us, we can still
         // consider it confirmed if all dependencies are confirmed
@@ -634,6 +678,14 @@ public:
                 continue;
             if (!pwallet->IsFromMe(*ptx))
                 return false;
+            if (ptx != this) // this one was checked above
+            {
+                // a dependency that a transaction in the chain conflicts with will never confirm either
+                LOCK(pwallet->cs_wallet);
+                auto itDep = pwallet->mapWallet.find(ptx->GetHash());
+                if (itDep != pwallet->mapWallet.end() && pwallet->IsConflicted(itDep->second))
+                    return false;
+            }
 
             if (mapPrev.empty())
             {

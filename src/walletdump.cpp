@@ -9,6 +9,10 @@
 #include "util.h"
 
 #include <fstream>
+#ifndef WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 #include <set>
 #include <sstream>
 #include <vector>
@@ -59,11 +63,36 @@ bool DumpWalletToFile(CWallet* pwallet, const std::filesystem::path& path, bool 
     pwallet->GetKeys(setKeys);
     pwallet->GetAllReserveKeys(setReserve);
 
-    std::ofstream file(path, std::ios::out | std::ios::trunc);
+    // Write to a temporary file next to the target and move it into place only when it is complete, so a failure
+    // part way leaves no half-written backup that looks like a real one. Owner-only permissions where the platform
+    // has them: the file holds every private key.
+    // A fresh name, so a file of the user's called <path>.tmp is never truncated, and (not on Windows) created owner-only
+    // and exclusively: never written first and chmod-ed after, and never through a symlink someone left there.
+    const std::filesystem::path pathTmp = path.string() + strprintf(".tmp%08x", (unsigned int)GetRand(0xffffffff));
+#ifndef WIN32
+    {
+        int fd = open(pathTmp.string().c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (fd < 0) {
+            strError = "Cannot create the wallet dump file";
+            return false;
+        }
+        close(fd);
+    }
+#endif
+    std::ofstream file(pathTmp, std::ios::out | std::ios::trunc);
     if (!file.is_open()) {
+        std::error_code ec;
+        std::filesystem::remove(pathTmp, ec);
         strError = "Cannot open wallet dump file";
         return false;
     }
+    auto Abort = [&](const std::string& strWhy) {
+        file.close();
+        std::error_code ec;
+        std::filesystem::remove(pathTmp, ec);
+        strError = strWhy;
+        return false;
+    };
 
     file << strprintf("# Wallet dump created by CorgiCoin %s\n", FormatFullVersion().c_str());
     file << strprintf("# * Created on %s\n", DateTimeStrFormat("%Y-%m-%dT%H:%M:%SZ", GetTime()).c_str());
@@ -81,7 +110,8 @@ bool DumpWalletToFile(CWallet* pwallet, const std::filesystem::path& path, bool 
         CSecret secret;
         bool fCompressed;
         if (!pwallet->GetSecret(keyid, secret, fCompressed))
-            continue;
+            return Abort("Could not read the private key of " + CBitcoinAddress(keyid).ToString() +
+                         " (the wallet may have been locked while it was being dumped). Nothing was written.");
         string strAddr = CBitcoinAddress(keyid).ToString();
         string strSecret = CBitcoinSecret(secret, fCompressed).ToString();
         string strKind;
@@ -96,9 +126,15 @@ bool DumpWalletToFile(CWallet* pwallet, const std::filesystem::path& path, bool 
     }
     file << "\n# End of dump\n";
     file.close();
-    if (file.fail()) {
-        strError = "Error writing wallet dump file";
-        return false;
+    if (file.fail())
+        return Abort("Error writing wallet dump file");
+    {
+        std::error_code ec;
+        if (!fOverwrite && std::filesystem::exists(path))
+            return Abort(path.string() + " appeared while the dump was being written. Choose a new filename.");
+        std::filesystem::rename(pathTmp, path, ec);
+        if (ec)
+            return Abort("Cannot move the wallet dump into place: " + ec.message());
     }
     return true;
 }
