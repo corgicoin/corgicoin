@@ -6,7 +6,7 @@
 
 CorgiCoin is a Scrypt-based Proof of Work cryptocurrency. Originally launched in 2014 as a fork of Dogecoin (itself from Litecoin/Bitcoin), CorgiCoin is back in 2026 with a fully modernized codebase and a vision to bridge PoW mining with the Solana memecoin ecosystem through a proof-of-burn token bridge and partner program.
 
-**Version 4.9.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining with pool RPCs and ZeroMQ notifications, an HD (seed-phrase) wallet with Coin Control, and a non-custodial web wallet:
+**Version 4.10.0.0** — fully modernized, network live, with a multipartner cross-chain burn bridge, LWMA difficulty, AuxPoW merged mining with pool RPCs and ZeroMQ notifications, an HD (seed-phrase) wallet with Coin Control, and a non-custodial web wallet:
 - C++17 codebase (modernized from C++03)
 - OpenSSL 3.x, Qt 5/6, nlohmann/json, std::filesystem
 - Proper logging framework with categories
@@ -119,7 +119,8 @@ rpcport=62555
 
 ## Version History
 
-### Unreleased
+### v4.10.0.0 — Security Hardening (upgrade every node)
+- **Upgrade now.** Every earlier release can be crashed by a single peer message (`getheaders` across a merged-mined block). This release fixes that and many other robustness and security issues found in review. It also raises the Berkeley DB lock table, so upgrade every node, miners and pools first. Read *Behaviour changes* below before upgrading: an example or `#`-containing `rpcpassword` now refuses to start the node
 - **Security fixes** (thanks @colneech-dev for everything in this release):
   - A peer could crash a node by asking for headers across a merged-mined block (`getheaders`, GHSA-m4qq-w45q-8q92, #113)
   - `signrawtransaction` no longer reads past the end of a vector (#114); `listtransactions` count/from no longer overflow (#115)

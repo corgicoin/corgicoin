@@ -4,12 +4,12 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 4.9.x   | :white_check_mark: |
-| < 4.9   | :x:                |
+| 4.10.x  | :white_check_mark: |
+| < 4.10  | :x:                |
 
 Only the latest release receives security fixes; there is no long-term support branch. Upgrade to it. In particular,
 v4.5–v4.7 have a wallet bug that leaves HD-wallet coins unspendable and, in encrypted HD wallets, private keys
-unencrypted on disk (fixed in v4.8.0.0).
+unencrypted on disk (fixed in v4.8.0.0). Every release before v4.10.0.0 can be crashed remotely by one `getheaders` message (GHSA-m4qq-w45q-8q92).
 
 ## Reporting a Vulnerability
 
