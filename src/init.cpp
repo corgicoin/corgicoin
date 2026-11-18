@@ -400,7 +400,9 @@ bool AppInit2()
     // ********************************************************* Step 3: parameter-to-internal-flags
 
     // Initialize logging subsystem
-    InitLogging(GetArg("-debug", ""), GetBoolArg("-printtoconsole"), GetBoolArg("-logtimestamps"));
+    // a bare -debug is stored as "", which InitLogging reads as no categories: it means all of them
+    InitLogging(mapArgs.count("-debug") && mapArgs["-debug"].empty() ? std::string("1") : GetArg("-debug", ""),
+                GetBoolArg("-printtoconsole"), GetBoolArg("-logtimestamps"));
 
     // InitLogging has set fDebug and fDebugNet from the -debug categories ("-debug=net" is a list of categories, not a
     // boolean: reading it as one switched everything off again). A plain -debug (or -debug=1) turns on all of it, and
