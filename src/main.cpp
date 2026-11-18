@@ -1998,6 +1998,9 @@ static bool ConnectTxFromCoins(CTransaction& tx, const CDiskTxPos& posThisTx, co
     case COINS_FETCH_SPENT:
         return LogError("ConnectInputs() : %s prev tx already used (input %u)", tx.GetHash().ToString().substr(0,10).c_str(), nBad);
     default:
+        // the set does not hold what the chain spends: the block may well be valid and the set wrong, so the block is not marked failed
+        fConnectFailureMaybeLocal = true;
+        CoinsDistrust("an input is not in the set");
         return LogError("FetchInputs() : %s prev tx %s not in the unspent set", tx.GetHash().ToString().substr(0,10).c_str(), tx.vin[nBad].prevout.hash.ToString().substr(0,10).c_str());
     }
 
@@ -2053,8 +2056,12 @@ static bool ConnectTxFromCoins(CTransaction& tx, const CDiskTxPos& posThisTx, co
     {
         CTxIndex txindex;
         if (!view.Read(txin.prevout.hash, txindex) || txin.prevout.n >= txindex.vSpent.size() || !txindex.vSpent[txin.prevout.n].IsNull())
+        {
+            fConnectFailureMaybeLocal = true;
+            CoinsDistrust("the set and the index disagree");
             return LogError("ConnectInputs() : %s the index and the unspent set disagree about %s:%u", tx.GetHash().ToString().substr(0,10).c_str(),
                             txin.prevout.hash.ToString().substr(0,10).c_str(), txin.prevout.n);
+        }
         txindex.vSpent[txin.prevout.n] = posThisTx;
         view.Write(txin.prevout.hash, txindex);
     }
@@ -2202,6 +2209,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         }
     }
 
+    CoinsEndBlock(pindex, coinsUndo);
+    if (fFromCoins)
+        CoinsNoteBlockFromSet();
+
     // (The wallet and ZMQ are told after the database commit: see NotifyConnected.)
     return true;
 }
@@ -2214,13 +2225,6 @@ void CBlock::NotifyConnected() const
 {
     const bool fNotifyZMQ = !IsInitialBlockDownload();
     for (const CTransaction& tx : vtx)
-    CoinsConnectBlock(*this, pindex);
-    CoinsEndBlock(pindex, coinsUndo);
-    if (fFromCoins)
-        CoinsNoteBlockFromSet();
-
-    // Watch for transactions paying to me
-    for (CTransaction& tx : vtx)
     {
         SyncWithWallets(tx, this, true);
         if (fNotifyZMQ)
