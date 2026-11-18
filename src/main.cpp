@@ -1508,6 +1508,7 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
 }
 
 unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock);
+static bool fQuietRetarget = false;
 unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock *pblock)
 {
     unsigned int nProofOfWorkLimit = bnProofOfWorkLimit.GetCompact();
@@ -1595,18 +1596,24 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     if (bnNew > bnProofOfWorkLimit)
         bnNew = bnProofOfWorkLimit;
 
-    /// debug print
-    LogPrintf("GetNextWorkRequired RETARGET\n");
-    LogPrintf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d "\n", nTargetTimespan, nActualTimespan);
-    LogPrintf("Before: %08x  %s\n", pindexLast->nBits, CBigNum().SetCompact(pindexLast->nBits).getuint256().ToString().c_str());
-    LogPrintf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString().c_str());
+    /// debug print (not for a header being checked: headers-first sync checks thousands of them, and each would write four lines)
+    if (!fQuietRetarget)
+    {
+        LogPrintf("GetNextWorkRequired RETARGET\n");
+        LogPrintf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d "\n", nTargetTimespan, nActualTimespan);
+        LogPrintf("Before: %08x  %s\n", pindexLast->nBits, CBigNum().SetCompact(pindexLast->nBits).getuint256().ToString().c_str());
+        LogPrintf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString().c_str());
+    }
 
     return bnNew.GetCompact();
 }
 
 unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock)
 {
-    return GetNextWorkRequired(pindexLast, pblock);
+    fQuietRetarget = true;                // cs_main is held, so nothing else reads this meanwhile
+    const unsigned int nBits = GetNextWorkRequired(pindexLast, pblock);
+    fQuietRetarget = false;
+    return nBits;
 }
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits)
@@ -1778,6 +1785,7 @@ static void MarkFailedChain(CBlockIndex* pindexBad)
         if (q == pindexBad)
             p->fFailedChain = true;
     }
+    HeadersFirstChainInvalidated();
 }
 
 void static InvalidChainFound(CBlockIndex* pindexNew)
@@ -2685,6 +2693,7 @@ void UpdateFailedChainFlags()
         pindex->fFailedChain = setInvalidatedBlocks.count(pindex->GetBlockHash()) ||
                                (pindex->pprev && pindex->pprev->fFailedChain);
     }
+    HeadersFirstChainInvalidated();
 }
 
 static bool WriteInvalidatedSet()

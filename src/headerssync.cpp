@@ -40,6 +40,19 @@ constexpr size_t MAX_HEADER_INDEX = 4000000;        // headers held that are not
 constexpr int BLOCK_DOWNLOAD_WINDOW = 512;          // below MAX_ORPHAN_BLOCKS, so blocks that arrive early do not push each other out
 constexpr size_t MAX_BLOCKS_IN_FLIGHT_PER_PEER = 64;      // the message loop ticks every 100 ms, so 16 made an initial download slower than getblocks
 constexpr int MAX_HEADER_SYNC_PEERS = 3;            // peers asked for the same headers at once
+constexpr int MAX_HEADER_FORK_DEPTH = 2000;         // a header that forks off the best header chain further back than this is refused
+constexpr size_t MAX_BRANCH_HEADERS = 50000;        // headers held that are on no branch we follow (the best header chain is not counted)
+constexpr int64 HEADERS_RETRY_SECONDS = 60;         // a peer that sent a header that failed a time check is asked again after this
+constexpr int64 HEADERS_FALLBACK_SECONDS = 1800;    // after a peer let a headers request go unanswered, peers are synced the old way for this long
+
+size_t nBranchHeaders = 0;                          // header-only entries that were not the best chain when they came in
+int64 nHeadersFallbackUntil = 0;
+
+int64 HeaderSyncTimeout()
+{
+    const int64 n = GetArg("-headersynctimeout", 120);
+    return n < 1 ? 120 : n;
+}
 
 bool SameBlock(const CBlockIndex* a, const CBlockIndex* b)
 {
@@ -74,6 +87,61 @@ void EnsureHeaderChain()
         SetBestHeader(pindexBest);
 }
 
+bool OnHeaderChain(const CBlockIndex* p)
+{
+    return p->nHeight < (int)vHeaderChain.size() && SameBlock(vHeaderChain[p->nHeight], p);
+}
+
+// The best header is what a connected peer has told us of, or our own tip: nothing else is worth following. Called when what
+// was the best header is no longer one (it descends from a block that failed, or the peer that had it went away or never sent the blocks).
+void RepickBestHeader(const CNode* pExclude)
+{
+    CBlockIndex* pindexCand = (pindexBest && !pindexBest->fFailedChain) ? pindexBest : nullptr;      // (during a rollback the tip may still be the failed block)
+    {
+        LOCK(cs_vNodes);
+        for (CNode* pnode : vNodes)
+        {
+            CBlockIndex* p = pnode->pindexBestKnown;
+            if (pnode == pExclude || pnode->fDisconnect || !p || p->fFailedChain)
+                continue;
+            if (!pindexCand || p->bnChainWork > pindexCand->bnChainWork)
+                pindexCand = p;
+        }
+    }
+    if (pindexCand && pindexCand != pindexBestHeader)
+    {
+        LogPrintf("headers-first: the best header is now %s at %d (it was %d)\n", pindexCand->phashBlock->ToString().substr(0, 20).c_str(),
+                  pindexCand->nHeight, pindexBestHeader ? pindexBestHeader->nHeight : -1);
+        SetBestHeader(pindexCand);
+    }
+}
+
+// the header entries that are on no branch we follow: gone, and no peer is left pointing at one
+void EvictBranchHeaders()
+{
+    std::set<CBlockIndex*> setGone;
+    for (auto it = mapHeaderIndex.begin(); it != mapHeaderIndex.end();)
+    {
+        if (!OnHeaderChain(it->second))
+        {
+            setGone.insert(it->second);
+            it = mapHeaderIndex.erase(it);
+        }
+        else
+            ++it;
+    }
+    {
+        LOCK(cs_vNodes);
+        for (CNode* pnode : vNodes)
+            if (pnode->pindexBestKnown && setGone.count(pnode->pindexBestKnown))
+                pnode->pindexBestKnown = nullptr;
+    }
+    for (CBlockIndex* p : setGone)
+        delete p;
+    nBranchHeaders = 0;
+    LogPrintf("headers-first: %u header(s) on side branches dropped\n", (unsigned)setGone.size());
+}
+
 enum HeaderResult { HEADER_OK, HEADER_BAD, HEADER_UNCONNECTED };
 
 HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
@@ -88,6 +156,9 @@ HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
             nDoS = 10;
             return HEADER_BAD;
         }
+        // one that was dropped as the best header (nobody served its blocks) and is announced again
+        if (pindexBestHeader && pindexKnown->bnChainWork > pindexBestHeader->bnChainWork)
+            SetBestHeader(pindexKnown);
         return HEADER_OK;
     }
 
@@ -135,10 +206,31 @@ HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
         nDoS = 100;
         return HEADER_BAD;
     }
+    // A header that forks off the best header chain far back needs the same work as every header after the fork to matter, and a peer
+    // that sends a few of them gains nothing but our memory: refuse it, and what is built on it.
+    EnsureHeaderChain();
+    if (pindexBestHeader && pindexPrev->nHeight + MAX_HEADER_FORK_DEPTH < pindexBestHeader->nHeight && !OnHeaderChain(pindexPrev))
+    {
+        nDoS = 20;
+        LogPrintf("headers-first: header %s forks off at %d, more than %d below the best header (%d)\n", hash.ToString().substr(0, 20).c_str(),
+                  pindexPrev->nHeight, MAX_HEADER_FORK_DEPTH, pindexBestHeader->nHeight);
+        return HEADER_BAD;
+    }
+    if (nBranchHeaders >= MAX_BRANCH_HEADERS)
+    {
+        // side branches are never worth much memory: drop them all, and the peer that filled the space is scored
+        EvictBranchHeaders();
+        nDoS = 20;
+        return HEADER_BAD;
+    }
     if (mapHeaderIndex.size() >= MAX_HEADER_INDEX)
     {
-        LogPrintf("headers-first: the header index is full (%u), not keeping %s\n", (unsigned)mapHeaderIndex.size(), hash.ToString().substr(0, 20).c_str());
-        return HEADER_BAD;
+        EvictBranchHeaders();
+        if (mapHeaderIndex.size() >= MAX_HEADER_INDEX)
+        {
+            LogPrintf("headers-first: the header index is full (%u), not keeping %s\n", (unsigned)mapHeaderIndex.size(), hash.ToString().substr(0, 20).c_str());
+            return HEADER_BAD;
+        }
     }
 
     CBlock copy(hdr);
@@ -149,9 +241,10 @@ HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
     pindexNew->nHeight = nHeight;
     pindexNew->bnChainWork = pindexPrev->bnChainWork + pindexNew->GetBlockWork();
     pindexNew->fFailedChain = false;
-    EnsureHeaderChain();
     if (!pindexBestHeader || pindexNew->bnChainWork > pindexBestHeader->bnChainWork)
         SetBestHeader(pindexNew);
+    else
+        nBranchHeaders++;
     *ppindex = pindexNew;
     return HEADER_OK;
 }
@@ -181,7 +274,30 @@ bool HeadersFirstEnabled()
 
 bool HeadersFirstWith(const CNode* pnode)
 {
-    return pnode && HeadersFirstEnabled() && pnode->nVersion >= HEADERSFIRST_VERSION;
+    return pnode && HeadersFirstEnabled() && pnode->nVersion >= HEADERSFIRST_VERSION && GetTime() >= nHeadersFallbackUntil;
+}
+
+void HeadersFirstChainInvalidated()
+{
+    if (mapHeaderIndex.empty() && !pindexBestHeader)
+        return;
+    // a header entry built on a block that failed, or was invalidated, fails with it (parents first, so by height)
+    std::vector<std::pair<int, CBlockIndex*> > vByHeight;
+    vByHeight.reserve(mapHeaderIndex.size());
+    for (const auto& item : mapHeaderIndex)
+        vByHeight.emplace_back(item.second->nHeight, item.second);
+    std::sort(vByHeight.begin(), vByHeight.end());
+    for (const auto& item : vByHeight)
+    {
+        CBlockIndex* p = item.second;
+        p->fFailedChain = setInvalidatedBlocks.count(*p->phashBlock) || (p->pprev && p->pprev->fFailedChain);
+    }
+    // and the best header must not be one of them
+    if (pindexBestHeader && pindexBestHeader->fFailedChain)
+    {
+        LogPrintf("headers-first: the best header descends from a block that failed\n");
+        RepickBestHeader(nullptr);
+    }
 }
 
 size_t HeaderOnlyCount()
@@ -252,6 +368,12 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
         {
             if (nDoS)
                 pfrom->Misbehaving(nDoS);
+            else
+            {
+                // a time check, say: an honest peer with a wrong clock. It is asked again later rather than never
+                pfrom->nHeadersRetryTime = GetTime() + HEADERS_RETRY_SECONDS;
+                pfrom->fSyncStarted = false;
+            }
             LogPrintf("headers-first: bad header from %s, stopping at %s\n", pfrom->addr.ToString().c_str(), hdr.GetHash().ToString().substr(0, 20).c_str());
             return true;
         }
@@ -265,6 +387,7 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
     if (vHeaders.size() == MAX_HEADERS_RESULTS && pindexLast)
     {
         pfrom->fSyncing = true;
+        pfrom->nSyncRequestTime = GetTime();
         PushGetHeaders(pfrom, pindexLast);          // there may be more
     }
     return true;
@@ -280,14 +403,57 @@ void HeadersFirstBlockArrived(const uint256& hash)
 
 void HeadersFirstSendMessages(CNode* pto)
 {
+    const int64 nNow = GetTime();
+
+    // 0. a getheaders that was not answered: the peer holds one of the few slots, so it is dropped, and the others are synced the old
+    //    way (getblocks) for a while, so that peers that answer pings and nothing else cannot stop a node from syncing. (Checked for every
+    //    peer that was asked, also once the fallback is on and headers-first is off for the new ones.)
+    if (HeadersFirstEnabled() && pto->fSyncing && nNow - pto->nSyncRequestTime > HeaderSyncTimeout())
+    {
+        LogPrintf("headers-first: %s did not answer getheaders in %d seconds, disconnecting; syncing the old way for %d minutes\n",
+                  pto->addr.ToString().c_str(), (int)HeaderSyncTimeout(), (int)(HEADERS_FALLBACK_SECONDS / 60));
+        pto->fSyncing = false;
+        pto->fDisconnect = true;
+        nHeadersFallbackUntil = nNow + HEADERS_FALLBACK_SECONDS;
+        LOCK(cs_vNodes);
+        for (CNode* pnode : vNodes)
+            if (pnode != pto && !pnode->fDisconnect && !pnode->fClient && !pnode->fOneShot && pnode->fSuccessfullyConnected && pnode->nStartingHeight > nBestHeight)
+                pnode->PushGetBlocks(pindexBest, uint256(0));
+        return;
+    }
+
     if (!HeadersFirstWith(pto) || !pto->fSuccessfullyConnected || pto->fClient || pto->fOneShot)
         return;
     EnsureHeaderChain();
     if (!pindexBestHeader)
         return;
 
+    // 0a. the best header descends from a block that failed (the chain has been rolled back since it was marked): not the best any more
+    if (pindexBestHeader->fFailedChain)
+        RepickBestHeader(nullptr);
+
+    // 0b. the best header is not one that any connected peer has told us of (the peer that had it went, or was dropped for not
+    //     sending the blocks): it must not stay the best, or the node waits for blocks nobody has and asks no one else
+    static int64 nLastServedCheck = 0;
+    if (nNow - nLastServedCheck >= 10)
+    {
+        nLastServedCheck = nNow;
+        if (pindexBestHeader->bnChainWork > pindexBest->bnChainWork)
+        {
+            bool fServed = false;
+            {
+                LOCK(cs_vNodes);
+                for (CNode* pnode : vNodes)
+                    if (!pnode->fDisconnect && pnode->pindexBestKnown && pnode->pindexBestKnown->bnChainWork >= pindexBestHeader->bnChainWork)
+                        fServed = true;
+            }
+            if (!fServed)
+                RepickBestHeader(nullptr);
+        }
+    }
+
     // 1. ask a peer that has more than we do for its headers
-    if (!pto->fSyncStarted && pto->nStartingHeight > pindexBestHeader->nHeight)
+    if ((!pto->fSyncStarted && nNow >= pto->nHeadersRetryTime) && pto->nStartingHeight > pindexBestHeader->nHeight)
     {
         int nSyncing = 0;
         {
@@ -299,6 +465,7 @@ void HeadersFirstSendMessages(CNode* pto)
         {
             pto->fSyncStarted = true;
             pto->fSyncing = true;
+            pto->nSyncRequestTime = nNow;
             LogPrintf("headers-first: asking %s for headers from %d (its height %d)\n", pto->addr.ToString().c_str(), pindexBestHeader->nHeight, pto->nStartingHeight);
             PushGetHeaders(pto, pindexBestHeader);
         }
@@ -316,8 +483,7 @@ void HeadersFirstSendMessages(CNode* pto)
     }
 
     // 2. a block asked for and not delivered in time: this peer is not doing its part
-    const int64 nTimeout = GetArg("-blocktimeout", 120);
-    const int64 nNow = GetTime();
+    const int64 nTimeout = GetArg("-blocktimeout", 120) < 1 ? 120 : GetArg("-blocktimeout", 120);
     for (const auto& kv : pto->mapBlocksInFlight)
         if (nNow - kv.second > nTimeout)
         {
@@ -327,7 +493,7 @@ void HeadersFirstSendMessages(CNode* pto)
         }
 
     // 3. blocks of the best header chain this peer has, a window ahead of our tip, that nobody is bringing yet
-    if (!pto->pindexBestKnown || pto->pindexBestKnown->bnChainWork <= pindexBest->bnChainWork)
+    if (!pto->pindexBestKnown || pto->pindexBestKnown->fFailedChain || pto->pindexBestKnown->bnChainWork <= pindexBest->bnChainWork)
         return;
     const int nPeerHeight = pto->pindexBestKnown->nHeight;
     if (nPeerHeight >= (int)vHeaderChain.size() || !SameBlock(vHeaderChain[nPeerHeight], pto->pindexBestKnown))

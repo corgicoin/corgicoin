@@ -121,6 +121,7 @@ size_t HeaderOnlyCount();
 bool HaveHeaderFor(const uint256& hash);
 bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv);
 void HeadersFirstSendMessages(CNode* pto);
+void HeadersFirstChainInvalidated();     // blocks were marked failed or invalidated (or reconsidered): mark the header entries built on them, pick the best header again
 void HeadersFirstBlockArrived(const uint256& hash);
 bool IsOrphanBlock(const uint256& hash);
 unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock);

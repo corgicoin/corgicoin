@@ -310,6 +310,8 @@ public:
     bool fSyncStarted;                              // we have asked it for headers
     bool fSyncing;                                  // and it has not yet said it has no more
     int nUnconnectingHeaders;                       // headers messages from it that did not connect
+    int64 nSyncRequestTime;                         // when the getheaders it has not yet answered was sent
+    int64 nHeadersRetryTime;                        // do not ask it for headers again before this (it sent a header that failed a time check)
     std::map<uint256, int64> mapBlocksInFlight;     // block hash -> when we asked it for the block
     bool fPingQueued;          // `ping` RPC asked for an immediate ping
 
@@ -353,6 +355,8 @@ public:
         fSyncStarted = false;
         fSyncing = false;
         nUnconnectingHeaders = 0;
+        nSyncRequestTime = 0;
+        nHeadersRetryTime = 0;
         setInventoryKnown.max_size(SendBufferSize() / 1000);
         setAddrKnown.max_size(5000);
 
