@@ -7,7 +7,7 @@ the coins itself.
 """
 from decimal import Decimal
 
-from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_error
+from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_error, wait_until
 
 
 class FundRawTest(CorgiTestFramework):
@@ -60,6 +60,7 @@ class FundRawTest(CorgiTestFramework):
         signed = signer.signrawtransaction(funded["hex"])
         assert_equal(signed["complete"], True)
         txid = watcher.sendrawtransaction(signed["hex"])
+        wait_until(lambda: txid in signer.getrawmempool(), timeout=30, what="the payment to reach the signer's pool")
         signer.generate(1)
         self.sync_blocks()
         assert_equal(watcher.getwatchonlybalance(), 0)      # the cold coin is spent; the change went to another address
