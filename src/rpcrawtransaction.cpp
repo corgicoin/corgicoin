@@ -720,8 +720,16 @@ Value sendrawtransaction(const Array& params, bool fHelp)
     {
         // push to local node
         CTxDB txdb("r");
-        if (!tx.AcceptToMemoryPool(txdb))
-            throw JSONRPCError(-22, "TX rejected");
+        CTxAcceptCheck check;
+        bool fMissingInputs = false;
+        if (!tx.AcceptToMemoryPool(txdb, true, &fMissingInputs, &check))
+        {
+            // say why: the caller otherwise has to guess between a bad signature, a spent input, a low fee, a full pool...
+            std::string strWhy = check.strReject;
+            if (strWhy.empty())
+                strWhy = fMissingInputs ? "missing-inputs" : "rejected";
+            throw JSONRPCError(-22, "TX rejected: " + strWhy);
+        }
 
         SyncWithWallets(tx, nullptr, true);
     }
