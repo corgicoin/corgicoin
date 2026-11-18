@@ -3329,8 +3329,7 @@ static void ProcessGetData(CNode* pfrom)
                 if (!block.ReadFromDisk((*mi).second, true, false))
                 {
                     // pruned, or the file is damaged: say nothing for it (an empty block would be taken for a bad one), and carry on
-                    LogPrintf("getdata : block %s is not available%s
-", inv.hash.ToString().substr(0,20).c_str(), IsBlockPruned((*mi).second) ? " (pruned)" : "");
+                    LogPrintf("getdata : block %s is not available%s\n", inv.hash.ToString().substr(0,20).c_str(), IsBlockPruned((*mi).second) ? " (pruned)" : "");
                     continue;
                 }
                 pfrom->PushMessage("block", block);
