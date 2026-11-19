@@ -730,8 +730,10 @@ Value sendrawtransaction(const Array& params, bool fHelp)
     {
         // push to local node
         CTxDB txdb("r");
-        if (!tx.AcceptToMemoryPool(txdb))
-            throw JSONRPCError(-22, "TX rejected");
+        CTxAcceptCheck check;
+        bool fMissingInputs = false;
+        if (!tx.AcceptToMemoryPool(txdb, true, &fMissingInputs, &check))
+            throw JSONRPCError(-22, string("TX rejected: ") + (check.strReject.empty() ? string("rejected") : check.strReject) + (fMissingInputs ? " (missing inputs)" : ""));
 
         SyncWithWallets(tx, nullptr, true);
     }

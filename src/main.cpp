@@ -478,7 +478,7 @@ bool CTransaction::CheckTransaction() const
     for (const CTxIn& txin : vin)
     {
         if (vInOutPoints.count(txin.prevout))
-            return false;
+            return DoS(100, LogError("CTransaction::CheckTransaction() : duplicate inputs"));
         vInOutPoints.insert(txin.prevout);
     }
 
@@ -3322,7 +3322,12 @@ static void ProcessGetData(CNode* pfrom)
                 }
                 CBlock block;
                 // already accepted, so its proof of work was checked: do not pay for it again on every read
-                block.ReadFromDisk((*mi).second, true, false);
+                if (!block.ReadFromDisk((*mi).second, true, false))
+                {
+                    // (a corrupt or missing block file: an empty block is not what the peer asked for)
+                    LogPrintf("getdata: ReadFromDisk failed for block %s, not sent\n", inv.hash.ToString().substr(0,20).c_str());
+                    continue;
+                }
                 pfrom->PushMessage("block", block);
 
                 // Trigger them to send a getblocks request for the next batch of inventory
@@ -3359,7 +3364,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     static map<CService, CPubKey> mapReuseKey;
     RandAddSeedPerfmon();
     LogDebug("received: %s (%d bytes)\n", strCommand.c_str(), (int)vRecv.size());
-    if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
+    if (fRegTest && mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
     {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
         return true;
