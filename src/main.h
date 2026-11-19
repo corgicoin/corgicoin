@@ -1775,7 +1775,7 @@ public:
     std::vector<std::pair<double, uint256> > EvictionCandidates() const;
     /** Would a transaction of this size and fee be the first one dropped if it were added now? (No side effects: a dry
      *  run asks this, because the cap is only applied after a transaction is stored.) */
-    bool WouldBeDropped(int64 nFee, unsigned int nSize);
+    bool WouldBeDropped(int64 nFee, unsigned int nSize, const std::set<uint256>* pEvicted = nullptr);
     /** Remove a transaction and every pool transaction that spends it. */
     void RemoveRecursive(const uint256& hash);
     void RemoveConflicts(const CTransaction& tx);       // the pool transactions that spend a coin tx (in a block) spends, and what is built on them

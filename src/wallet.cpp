@@ -969,6 +969,22 @@ bool CWallet::AbandonTransaction(const uint256& hashTx, std::string& strError)
     return true;
 }
 
+// The pool took these out for a replacement that pays more (another party's, or a copy of this wallet's): the wallet stops counting
+// them, as for an abandoned transaction, or their change would stay in the balance, their coins would stay spent, and they would be
+// sent again (and, put back into the pool without its fee checks, would push the replacement out). One that is in a block is left.
+void CWallet::TransactionsReplaced(const std::set<uint256>& setReplaced)
+{
+    LOCK(cs_wallet);
+    for (const uint256& hash : setReplaced)
+    {
+        if (!mapWallet.count(hash))
+            continue;
+        std::string strError;
+        if (!AbandonTransaction(hash, strError))
+            LogPrintf("CWallet::TransactionsReplaced() : %s kept: %s\n", hash.ToString().substr(0,10).c_str(), strError.c_str());
+    }
+}
+
 bool CWallet::EraseFromWallet(uint256 hash)
 {
     if (!fFileBacked)

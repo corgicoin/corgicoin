@@ -341,10 +341,38 @@ EnsureWalletIsUnlocked()
         throw JSONRPCError(-13, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 }
 
+// BIP 125: "yes" if the transaction, or an unconfirmed one it rests on, signals that it can be replaced; "no" if it is confirmed
+// or nothing it rests on signals; "unknown" for an unconfirmed one this node's pool does not hold
+static std::string Bip125Replaceable(const CWalletTx& wtx, int confirms)
+{
+    if (confirms > 0)
+        return "no";
+    LOCK(mempool.cs);
+    if (!mempool.exists(wtx.GetHash()))
+        return "unknown";
+    std::set<uint256> setSeen;
+    std::vector<const CTransaction*> vWork(1, static_cast<const CTransaction*>(&wtx));
+    while (!vWork.empty())
+    {
+        const CTransaction* ptx = vWork.back();
+        vWork.pop_back();
+        for (const CTxIn& txin : ptx->vin)
+        {
+            if (txin.nSequence < 0xfffffffe)
+                return "yes";
+            auto itParent = mempool.mapTx.find(txin.prevout.hash);
+            if (itParent != mempool.mapTx.end() && setSeen.insert(txin.prevout.hash).second)
+                vWork.push_back(&itParent->second);
+        }
+    }
+    return "no";
+}
+
 void WalletTxToJSON(const CWalletTx& wtx, Object& entry)
 {
     int confirms = wtx.GetDepthInMainChain();
     entry.emplace_back("confirmations", confirms);
+    entry.emplace_back("bip125-replaceable", Bip125Replaceable(wtx, confirms));
     if (confirms)
     {
         entry.emplace_back("blockhash", wtx.hashBlock.GetHex());
@@ -5196,8 +5224,9 @@ Value bumpfee(const Array& params, bool fHelp)
     CReserveKey reservekey(pwalletMain.get());
     if (!pwalletMain->CommitTransaction(wtxNew, reservekey))
         throw JSONRPCError(-4, "The replacement could not be committed");
+    // the pool told the wallet when the replacement took the old one out: abandon it here only if that did not happen
     std::string strError;
-    if (!pwalletMain->AbandonTransaction(hash, strError))
+    if (pwalletMain->mapWallet.count(hash) && !pwalletMain->AbandonTransaction(hash, strError))
         throw JSONRPCError(-4, "The replacement was sent but the old transaction could not be abandoned: " + strError);
 
     Object result;
@@ -5341,6 +5370,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "burncoin"              && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "burnforpartner"         && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]);
+    if (strMethod == "bumpfee"                && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "setmininput"            && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "getreceivedbyaddress"   && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getreceivedbyaccount"   && n > 1) ConvertTo<int64_t>(params[1]);

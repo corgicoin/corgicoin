@@ -312,6 +312,7 @@ std::string HelpMessage()
         "  -feefilter=<n>         " + _("Ask peers (protocol 70013) not to announce transactions that pay less than n satoshi per kB; 0 asks nothing (default: 0)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (regtest only in this release, default: 0; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
         "  -mempoolreplacement    " + _("Let a transaction that pays more replace one in the pool that signalled it can be replaced (BIP 125; default: 1)") + "\n" +
+        "  -mempoolreplacement    " + _("Let a transaction that pays more replace one in the pool that signalled it can be replaced (BIP 125, see doc/replace-by-fee.md; wallets report bip125-replaceable; default: 1)") + "\n" +
         "  -walletrbf             " + _("Send the wallet's transactions as replaceable, so that bumpfee can raise their fee (default: 0)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
