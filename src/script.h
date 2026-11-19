@@ -595,6 +595,8 @@ enum
     SCRIPT_VERIFY_NONE  = 0,
     SCRIPT_VERIFY_DERSIG = (1U << 0),   // signatures must be strict DER (BIP 66 encoding)
     SCRIPT_VERIFY_LOW_S  = (1U << 1),   // and S must be in the lower half of the curve order
+    SCRIPT_VERIFY_NO_INFINITY_KEY = (1U << 2),   // a signature is never checked against the key 0x00 (OpenSSL reads it as the point at
+                                                // infinity, against which anyone can make a signature that verifies)
 };
 
 /** The signature (with its trailing hash type byte) is exactly the strict DER encoding of an ECDSA signature. */

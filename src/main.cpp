@@ -657,14 +657,17 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         // payments (Bitcoin Core likewise shipped low-S signing well before it enforced low-S relay). A third party can otherwise re-encode a
         // valid signature and change the txid of a transaction in flight. (The checks above already verified the
         // signatures, so this pass mostly hits the signature cache.)
-        if (GetBoolArg("-standardsigs", false))
+        // Always: no signature checked against the key 0x00, which anyone can sign for (see CheckPubKeyEncoding). Blocks still
+        // accept it; this keeps such spends out of relay and out of the blocks this node mines.
+        const bool fStandardSigs = GetBoolArg("-standardsigs", false);
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
         {
-            for (unsigned int i = 0; i < tx.vin.size(); i++)
-            {
-                const CTransaction& txPrev = mapInputs[tx.vin[i].prevout.hash].second;
-                if (!VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
-                    return RejectTx(pcheck, "non-canonical-signature", LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str()));
-            }
+            const CTransaction& txPrev = mapInputs[tx.vin[i].prevout.hash].second;
+            // (the consensus check above passed, so a failure here can only be the rule being checked)
+            if (!VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_NO_INFINITY_KEY))
+                return RejectTx(pcheck, "infinity-pubkey", LogError("CTxMemPool::accept() : %s checks a signature against the key 0x00", hash.ToString().substr(0,10).c_str()));
+            if (fStandardSigs && !VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
+                return RejectTx(pcheck, "non-canonical-signature", LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str()));
         }
     }
 

@@ -312,6 +312,16 @@ static bool CheckSignatureEncoding(const valtype& vchSig, unsigned int flags)
     return true;
 }
 
+// Policy check on a public key before a signature is checked against it. The one-byte key 0x00 is the point at infinity to
+// OpenSSL, and ECDSA_verify accepts for it a signature anyone can compute (r = x(e·G) with s = 1): coins locked to that key, or
+// to its hash, can be taken by anyone. Blocks still accept such a spend (refusing it is a soft fork); relay and our miner do not.
+static bool CheckPubKeyEncoding(const valtype& vchPubKey, unsigned int flags)
+{
+    if ((flags & SCRIPT_VERIFY_NO_INFINITY_KEY) && vchPubKey.size() == 1 && vchPubKey[0] == 0x00)
+        return false;
+    return true;
+}
+
 bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType)
 {
     return EvalScript(stack, script, txTo, nIn, nHashType, SCRIPT_VERIFY_NONE);
@@ -1005,6 +1015,8 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
 
                     if (!CheckSignatureEncoding(vchSig, flags))
                         return false;
+                    if (!CheckPubKeyEncoding(vchPubKey, flags))
+                        return false;
                     bool fSuccess = CheckSig(vchSig, vchPubKey, scriptCode, txTo, nIn, nHashType);
 
                     popstack(stack);
@@ -1066,6 +1078,8 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
 
                         // Check signature
                         if (!CheckSignatureEncoding(vchSig, flags))
+                            return false;
+                        if (!CheckPubKeyEncoding(vchPubKey, flags))
                             return false;
                         if (CheckSig(vchSig, vchPubKey, scriptCode, txTo, nIn, nHashType))
                         {
