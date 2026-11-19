@@ -1132,7 +1132,7 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions, boo
         // AuxPoW version bit set and no proof attached -- undefined behaviour
         // once serialized (see CBlock::SerializationOp). Go to disk for those.
         if (IsAuxPowVersion(pindex->nVersion))
-            return ReadFromDisk(pindex->nFile, pindex->nBlockPos, false);
+            return ReadFromDisk(pindex->nFile, pindex->nBlockPos, false, fCheckPoW);
         *this = pindex->GetBlockHeader();
         return true;
     }
@@ -3705,6 +3705,11 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
+        if (locator.vHave.size() > MAX_LOCATOR_SZ)
+        {
+            pfrom->Misbehaving(20);
+            return LogError("getblocks locator size = %u", (unsigned)locator.vHave.size());
+        }
 
         // Find the last block the caller has in the main chain
         CBlockIndex* pindex = locator.GetBlockIndex();
@@ -3739,6 +3744,11 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
+        if (locator.vHave.size() > MAX_LOCATOR_SZ)
+        {
+            pfrom->Misbehaving(20);
+            return LogError("getheaders locator size = %u", (unsigned)locator.vHave.size());
+        }
 
         CBlockIndex* pindex = nullptr;
         if (locator.IsNull())
@@ -3770,7 +3780,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                 // (see CBlock::SerializationOp). CBlock::ReadFromDisk(pindex, false)
                 // knows to go to disk for this case; use it instead of the shortcut.
                 CBlock block;
-                if (!block.ReadFromDisk(pindex, false))
+                if (!block.ReadFromDisk(pindex, false, false))
                 {
                     LogPrintf("getheaders : ReadFromDisk failed for %s, stopping\n", pindex->GetBlockHash().ToString().substr(0,20).c_str());
                     break;

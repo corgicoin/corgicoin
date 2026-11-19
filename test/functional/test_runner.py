@@ -90,6 +90,7 @@ TESTS = [
     "rpc_mempool_conflict_block.py",
     "rpc_sendrawtransaction_reason.py",
     "p2p_free_relay_limit.py",
+    "p2p_locator_limit.py",
     "wallet_maxtxfee.py",
     "wallet_notify.py",
     "tool_makeseeds.py",
