@@ -1771,6 +1771,7 @@ public:
     bool WouldBeDropped(int64 nFee, unsigned int nSize);
     /** Remove a transaction and every pool transaction that spends it. */
     void RemoveRecursive(const uint256& hash);
+    void RemoveConflicts(const CTransaction& tx);       // the pool transactions that spend a coin tx (in a block) spends, and what is built on them
 
     bool accept(CTxDB& txdb, CTransaction &tx,
                 bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck = nullptr);

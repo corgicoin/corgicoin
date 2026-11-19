@@ -773,6 +773,23 @@ void CTxMemPool::RemoveRecursive(const uint256& hash)
     }
 }
 
+// The pool transactions that spend a coin tx spends, other than tx itself: tx is in a block, so they can never confirm. They go, and what is built
+// on them (it would never be mined either, and was announced to peers and counted against the pool until it expired).
+void CTxMemPool::RemoveConflicts(const CTransaction& tx)
+{
+    LOCK(cs);
+    const uint256 hashTx = tx.GetHash();
+    for (const CTxIn& txin : tx.vin)
+    {
+        auto it = mapNextTx.find(txin.prevout);
+        if (it == mapNextTx.end())
+            continue;
+        const uint256 hashConflict = it->second.ptx->GetHash();       // (a copy: the entry goes with the transaction)
+        if (hashConflict != hashTx)
+            RemoveRecursive(hashConflict);
+    }
+}
+
 // -maxmempoolkb in bytes, clamped so that absurd values cannot overflow the multiplication
 static size_t MaxMempoolBytes()
 {
@@ -2214,7 +2231,10 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
 
     // Delete redundant memory transactions that are in the connected branch
     for (CTransaction& tx : vDelete)
+    {
+        mempool.RemoveConflicts(tx);
         mempool.remove(tx);
+    }
 
     LogPrintf("REORGANIZE: done\n");
 
@@ -2262,7 +2282,10 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 
     // Delete redundant memory transactions
     for (CTransaction& tx : vtx)
+    {
+        mempool.RemoveConflicts(tx);
         mempool.remove(tx);
+    }
 
     return true;
 }
