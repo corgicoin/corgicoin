@@ -7,6 +7,11 @@
 #include "script.h"
 #include "util.h"
 
+#include <openssl/bn.h>
+#include <openssl/ec.h>
+#include <openssl/ecdsa.h>
+#include <openssl/obj_mac.h>
+
 using namespace std;
 
 extern uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType);
@@ -222,6 +227,82 @@ BOOST_AUTO_TEST_CASE(multisig_signatures_are_checked_too)
     txTo.vin[0].scriptSig = CScript() << OP_0 << high;
     BOOST_CHECK(VerifySignature(txFrom, txTo, 0, true, 0, SCRIPT_VERIFY_NONE));
     BOOST_CHECK(!VerifySignature(txFrom, txTo, 0, true, 0, SCRIPT_VERIFY_LOW_S));
+}
+
+// A signature that verifies against the key 0x00, which OpenSSL reads as the point at infinity: with Q = infinity, ECDSA verification
+// computes R = (e/s)·G, so s = 1 and r = x(e·G) works for any message. Made the way anyone could make it, with no private key.
+static valtype ForgeForInfinityKey(const uint256& hash)
+{
+    EC_GROUP* group = EC_GROUP_new_by_curve_name(NID_secp256k1);
+    BN_CTX* ctx = BN_CTX_new();
+    BIGNUM* n = BN_new();
+    BIGNUM* e = BN_bin2bn((const unsigned char*)&hash, sizeof(hash), nullptr);   // the bytes CKey::Verify hands to OpenSSL
+    BIGNUM* x = BN_new();
+    BIGNUM* r = BN_new();
+    BIGNUM* s = BN_new();
+    EC_GROUP_get_order(group, n, ctx);
+    BN_mod(e, e, n, ctx);
+    EC_POINT* R = EC_POINT_new(group);
+    EC_POINT_mul(group, R, e, nullptr, nullptr, ctx);
+    EC_POINT_get_affine_coordinates(group, R, x, nullptr, ctx);
+    BN_mod(r, x, n, ctx);
+    BN_one(s);
+    ECDSA_SIG* sig = ECDSA_SIG_new();
+    ECDSA_SIG_set0(sig, r, s);           // takes r and s
+    unsigned char der[80];
+    unsigned char* p = der;
+    const int len = i2d_ECDSA_SIG(sig, &p);
+    valtype vch(der, der + len);
+    vch.push_back(static_cast<unsigned char>(SIGHASH_ALL));
+    ECDSA_SIG_free(sig);
+    EC_POINT_free(R);
+    BN_free(x);
+    BN_free(e);
+    BN_free(n);
+    BN_CTX_free(ctx);
+    EC_GROUP_free(group);
+    return vch;
+}
+
+// Coins locked to the key 0x00 (bare, by its hash, or in a multisig) can be spent with that forged signature. Blocks accept it, as
+// they always have (refusing it would be a soft fork); SCRIPT_VERIFY_NO_INFINITY_KEY, which the memory pool applies, refuses it.
+BOOST_AUTO_TEST_CASE(infinity_key_spend_is_valid_in_blocks_but_refused_by_policy)
+{
+    const valtype vchInfinity(1, 0x00);
+    CScript scriptBare;
+    scriptBare << vchInfinity << OP_CHECKSIG;
+    CScript scriptHash;
+    scriptHash << OP_DUP << OP_HASH160 << Hash160(vchInfinity) << OP_EQUALVERIFY << OP_CHECKSIG;
+    CScript scriptMulti;
+    scriptMulti << OP_1 << vchInfinity << OP_1 << OP_CHECKMULTISIG;
+
+    for (int nCase = 0; nCase < 3; nCase++)
+    {
+        CTransaction txFrom, txTo;
+        txFrom.vout.resize(1);
+        txFrom.vout[0].scriptPubKey = nCase == 0 ? scriptBare : nCase == 1 ? scriptHash : scriptMulti;
+        txFrom.vout[0].nValue = 1000;
+        txTo.vin.resize(1);
+        txTo.vin[0].prevout.hash = txFrom.GetHash();
+        txTo.vin[0].prevout.n = 0;
+        txTo.vout.resize(1);
+        txTo.vout[0].nValue = 900;
+
+        const valtype sig = ForgeForInfinityKey(SignatureHash(txFrom.vout[0].scriptPubKey, txTo, 0, SIGHASH_ALL));
+        if (nCase == 0)
+            txTo.vin[0].scriptSig = CScript() << sig;
+        else if (nCase == 1)
+            txTo.vin[0].scriptSig = CScript() << sig << vchInfinity;
+        else
+            txTo.vin[0].scriptSig = CScript() << OP_0 << sig;
+
+        BOOST_CHECK_MESSAGE(VerifySignature(txFrom, txTo, 0, true, 0, SCRIPT_VERIFY_NONE), "case " << nCase << ": blocks accept it");
+        BOOST_CHECK_MESSAGE(!VerifySignature(txFrom, txTo, 0, true, 0, SCRIPT_VERIFY_NO_INFINITY_KEY), "case " << nCase << ": policy refuses it");
+    }
+
+    // and the flag leaves ordinary keys alone
+    SpendFixture f;
+    BOOST_CHECK(f.Check(f.Sign(), SCRIPT_VERIFY_NO_INFINITY_KEY));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

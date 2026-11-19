@@ -120,6 +120,7 @@ rpcport=62555
 ## Version History
 
 ### Unreleased
+- **Relay policy: no signatures checked against the key `00`.** OpenSSL reads the one-byte public key `00` as the point at infinity and accepts, for it, a signature anyone can compute, so coins locked to that key (bare, by its hash, or in a multisig) can be taken by anyone. Nobody should have sent coins there; the node no longer relays or mines a transaction that spends them (`infinity-pubkey`). Blocks still accept such a spend: refusing it in blocks would be a soft fork, for a later release
 - **New for operators** (thanks @colneech-dev for everything in this release):
   - `-walletnotify=<cmd>` runs a command with the txid when a wallet transaction is new or changes (#151)
   - `-walletkdf=scrypt` derives the wallet passphrase key with scrypt (memory hard, about 32 MiB per unlock). A wallet encrypted or re-passphrased with it can be opened only by 4.11.0.0 and later (#152)
