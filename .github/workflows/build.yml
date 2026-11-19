@@ -86,7 +86,8 @@ jobs:
       - name: Build unit tests with sanitizers
         run: |
           mkdir build-san && cd build-san
-          SAN="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -D_GLIBCXX_ASSERTIONS"
+          # vptr is off: the pinned LevelDB is built without RTTI (as its own CMake asks), and vptr checks need the typeinfo of the classes it declares
+          SAN="-fsanitize=address,undefined -fno-sanitize=vptr -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -D_GLIBCXX_ASSERTIONS"
           cmake .. -DCMAKE_BUILD_TYPE=Debug             -DCMAKE_CXX_FLAGS="$SAN" -DCMAKE_C_FLAGS="$SAN" -DCMAKE_EXE_LINKER_FLAGS="$SAN"             -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a
           make -j$(nproc) test_corgicoin corgicoind
 
