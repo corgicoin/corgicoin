@@ -87,6 +87,7 @@ TESTS = [
     "rpc_config_hardening.py",
     "rpc_failed_block.py",
     "rpc_mempool_cap.py",
+    "p2p_free_relay_limit.py",
     "wallet_maxtxfee.py",
     "wallet_notify.py",
     "tool_makeseeds.py",
