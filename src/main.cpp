@@ -505,6 +505,12 @@ static bool RejectTx(CTxAcceptCheck* pcheck, const char* strReason, bool fResult
     return fResult;
 }
 
+// the free-relay limiter (see accept): a free transaction is counted once its inputs and signatures have been checked, so that transactions
+// that fail those checks (cheap to make, nothing paid) cannot use up the allowance of the ones that would pass
+static CCriticalSection csFreeRelay;
+static double dFreeRelayCount = 0;
+static int64 nFreeRelayLast = 0;
+
 bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
                         bool* pfMissingInputs, CTxAcceptCheck* pcheck)
 {
@@ -623,25 +629,22 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         // Continuously rate-limit free transactions
         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
         // be annoying or make other's transactions take longer to confirm.
+        bool fChargeFree = false;       // charged below, once the transaction has passed the checks that cost CPU
         if (nModifiedFees < MIN_RELAY_TX_FEE)
         {
-            static CCriticalSection cs;
-            static double dFreeCount;
-            static int64 nLastTime;
             int64 nNow = GetTime();
 
             {
-                LOCK(cs);
+                LOCK(csFreeRelay);
                 // Use an exponentially decaying ~10-minute window:
-                dFreeCount *= pow(1.0 - 1.0/600.0, static_cast<double>(nNow - nLastTime));
-                nLastTime = nNow;
+                dFreeRelayCount *= pow(1.0 - 1.0/600.0, static_cast<double>(nNow - nFreeRelayLast));
+                nFreeRelayLast = nNow;
                 // -limitfreerelay unit is thousand-bytes-per-minute
                 // At default rate it would take over a month to fill 1GB
-                if (dFreeCount > GetArg("-limitfreerelay", 15)*10*1000 && !IsFromMe(tx))
+                if (dFreeRelayCount > GetArg("-limitfreerelay", 15)*10*1000 && !IsFromMe(tx))
                     return RejectTx(pcheck, "rate-limited", LogError("CTxMemPool::accept() : free transaction rejected by rate limiter"));
-                LogDebug("Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount+nSize);
-                if (!(pcheck && pcheck->fTestOnly))
-                    dFreeCount += nSize;
+                LogDebug("Rate limit dFreeCount: %g => %g\n", dFreeRelayCount, dFreeRelayCount+nSize);
+                fChargeFree = !(pcheck && pcheck->fTestOnly);
             }
         }
 
@@ -668,6 +671,11 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
                 return RejectTx(pcheck, "infinity-pubkey", LogError("CTxMemPool::accept() : %s checks a signature against the key 0x00", hash.ToString().substr(0,10).c_str()));
             if (fStandardSigs && !VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
                 return RejectTx(pcheck, "non-canonical-signature", LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str()));
+        }
+        if (fChargeFree)
+        {
+            LOCK(csFreeRelay);
+            dFreeRelayCount += nSize;
         }
     }
 
