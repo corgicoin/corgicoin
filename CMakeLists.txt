@@ -292,12 +292,11 @@ endif()
 # contrib/build-secp256k1.sh builds the pinned release. The library is linked through ZMQ_LIBRARIES, which every target already uses.
 option(USE_LIBSECP256K1 "Verify signatures with libsecp256k1 instead of OpenSSL" OFF)
 if(USE_LIBSECP256K1)
-    find_library(SECP256K1_LIBRARY secp256k1)
-    find_path(SECP256K1_INCLUDE_DIR secp256k1.h)
-    if(NOT SECP256K1_LIBRARY OR NOT SECP256K1_INCLUDE_DIR)
-        message(FATAL_ERROR "libsecp256k1 not found. Build the pinned release with contrib/build-secp256k1.sh <prefix> and pass "
-                            "-DSECP256K1_INCLUDE_DIR=<prefix>/include -DSECP256K1_LIBRARY=<prefix>/lib/libsecp256k1.a, or install "
-                            "libsecp256k1-dev, or leave -DUSE_LIBSECP256K1 off.")
+    # no search of the system: a distribution's libsecp256k1 is not the pinned release, and may be a shared library
+    if(NOT SECP256K1_LIBRARY OR NOT SECP256K1_INCLUDE_DIR OR NOT EXISTS "${SECP256K1_LIBRARY}" OR NOT EXISTS "${SECP256K1_INCLUDE_DIR}/secp256k1.h")
+        message(FATAL_ERROR "Build the pinned libsecp256k1 with contrib/build-secp256k1.sh <prefix> and pass "
+                            "-DSECP256K1_INCLUDE_DIR=<prefix>/include -DSECP256K1_LIBRARY=<prefix>/lib/libsecp256k1.a, "
+                            "or leave -DUSE_LIBSECP256K1 off.")
     endif()
     add_definitions(-DUSE_LIBSECP256K1)
     include_directories(${SECP256K1_INCLUDE_DIR})
@@ -606,8 +605,9 @@ endif()
 # does (src/fuzz/secp_diff.cpp). With -DUSE_LIBSECP256K1=ON it compares libsecp256k1 with OpenSSL; with it off it checks the harness itself.
 option(BUILD_SECP_DIFF "Build the signature verification differential" OFF)
 if(BUILD_SECP_DIFF)
-    find_library(SECP256K1_LIBRARY secp256k1 REQUIRED)
-    find_path(SECP256K1_INCLUDE_DIR secp256k1.h REQUIRED)
+    if(NOT SECP256K1_LIBRARY OR NOT SECP256K1_INCLUDE_DIR OR NOT EXISTS "${SECP256K1_LIBRARY}" OR NOT EXISTS "${SECP256K1_INCLUDE_DIR}/secp256k1.h")
+        message(FATAL_ERROR "BUILD_SECP_DIFF needs the pinned libsecp256k1 (contrib/build-secp256k1.sh): pass -DSECP256K1_INCLUDE_DIR and -DSECP256K1_LIBRARY.")
+    endif()
     set(DIFF_DAEMON_SOURCES ${DAEMON_SOURCES})
     list(REMOVE_ITEM DIFF_DAEMON_SOURCES src/init.cpp)
     add_executable(secp_diff src/fuzz/secp_diff.cpp ${DIFF_DAEMON_SOURCES} ${JSON_SOURCES})
