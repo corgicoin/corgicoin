@@ -4,3 +4,6 @@ Licenses of statically linked libraries:
                software must be free open source
  Boost         MIT-like license
  miniupnpc     New (3-clause) BSD license
+ LevelDB       New (3-clause) BSD license (Google Inc., the LevelDB Authors):
+               the unspent-output database (chainstate); the licence text is
+               in the LevelDB release, https://github.com/google/leveldb/blob/1.23/LICENSE

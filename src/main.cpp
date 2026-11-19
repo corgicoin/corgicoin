@@ -2131,8 +2131,9 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     int64 nFees = 0;
     unsigned int nSigOps = 0;
 
-    // -coinsvalidate: this block's inputs are checked against the unspent set. Only while the set is known to be the chain's.
-    const bool fFromCoins = GetBoolArg("-coinsvalidate", false) && CoinsUsable();
+    // -coinsvalidate: this block's inputs are checked against the unspent set. Only on regtest in this release (the set is not yet shown to
+    // be safe as the judge of a block), and only while the set is known to be the chain's.
+    const bool fFromCoins = fRegTest && GetBoolArg("-coinsvalidate", false) && CoinsUsable();
     if (fFromCoins && fEnforceBIP30)
     {
         // BIP30 against the chain before this block: the set as it is now, before any transaction of this block is applied
@@ -2198,17 +2199,12 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         CoinsConnectTx(tx, pindex->nHeight, coinsUndo);
     }
 
-    // Write queued txindex changes
-    for (const auto& mi : mapQueuedChanges)
-    {
-        if (!txdb.UpdateTxIndex(mi.first, mi.second))
-        {
-            fConnectFailureMaybeLocal = true;
-            return LogError("ConnectBlock() : UpdateTxIndex failed");
-        }
-    }
+    // Write the queued txindex changes, once (a failed write is the disk's, not the block's)
     if (!view.Flush())
+    {
+        fConnectFailureMaybeLocal = true;
         return LogError("ConnectBlock() : UpdateTxIndex failed");
+    }
 
 	uint256 prevHash = 0;
 	if(pindex->pprev)
@@ -3297,6 +3293,13 @@ string GetWarnings(string strFor)
     {
         nPriority = 1000;
         strStatusBar = strMiscWarning;
+    }
+
+    // The unspent-output database disagreed with the block index (it decides nothing in this release: the index does)
+    if (nPriority < 900 && CoinsCheckFailures() > 0)
+    {
+        nPriority = 900;
+        strStatusBar = strRPC = "Warning: the unspent-output database (chainstate) disagreed with the block index, see COINS CHECK in debug.log. It will be rebuilt at the next start; nothing depends on it in this release.";
     }
 
     // Longer invalid proof-of-work chain
