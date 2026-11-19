@@ -38,6 +38,13 @@ bool CBasicKeyStore::AddCScript(const CScript& redeemScript)
     return true;
 }
 
+void CBasicKeyStore::GetCScripts(std::vector<CScript>& vScriptsOut) const
+{
+    LOCK(cs_KeyStore);
+    for (const auto& item : mapScripts)
+        vScriptsOut.push_back(item.second);
+}
+
 bool CBasicKeyStore::HaveCScript(const CScriptID& hash) const
 {
     bool result;

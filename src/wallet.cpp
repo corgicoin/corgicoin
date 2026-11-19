@@ -238,6 +238,27 @@ void CWallet::SetKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta)
         CWalletDB(strWalletFile).WriteKeyMetadata(vchPubKey, meta);
 }
 
+bool CWallet::AddKeyWithMetadata(const CKey& key, const CKeyMetadata& meta)
+{
+    LOCK(cs_wallet);
+    const CPubKey pubkey = key.GetPubKey();
+    const CKeyID keyid = pubkey.GetID();
+    const bool fHad = mapKeyMetadata.count(keyid) != 0;
+    const CKeyMetadata metaBefore = fHad ? mapKeyMetadata[keyid] : CKeyMetadata();
+    mapKeyMetadata[keyid] = meta;           // in memory only: AddKey then does not stamp "now" or write it
+    if (!AddKey(key))
+    {
+        if (fHad)
+            mapKeyMetadata[keyid] = metaBefore;
+        else
+            mapKeyMetadata.erase(keyid);
+        return false;
+    }
+    if (fFileBacked)
+        CWalletDB(strWalletFile).WriteKeyMetadata(pubkey, meta);
+    return true;
+}
+
 bool CWallet::AddKey(const CKey& key)
 {
     // A key that arrives now is new to this wallet as of now. (Keys the wallet already had when this was added have no time:
@@ -792,6 +813,12 @@ bool CWallet::VerifyKeys(int& nKeysChecked, int& nHDChecked, std::vector<std::st
         {
             for (uint32_t i = 0; i < nHDExternalIndex; i++)
             {
+                if (vProblems.size() >= 100)
+                {
+                    // enough to know the wallet is not right: not a list as long as the index, and not the time it takes to make it
+                    vProblems.push_back("more problems were found; the check stopped after 100");
+                    break;
+                }
                 CKey key;
                 if (!DeriveHDChild(hdMasterKey, i, key))
                 {
@@ -812,9 +839,43 @@ bool CWallet::AddWatchOnly(const CScript& script)
     LOCK(cs_wallet);
     if (::IsMine(*this, script))
         return false;   // the wallet holds the key: it is not watch-only
-    setWatchOnly.insert(script);
+    const bool fNew = setWatchOnly.insert(script).second;
     if (fFileBacked && !CWalletDB(strWalletFile).WriteWatchOnly(script))
+    {
+        if (fNew)
+            setWatchOnly.erase(script);     // not saved: not kept in memory either
         return false;
+    }
+    MarkDirty();                            // what is counted changes
+    return true;
+}
+
+bool CWallet::AddWatchOnlyScripts(const std::vector<CScript>& vScripts)
+{
+    LOCK(cs_wallet);
+    for (const CScript& script : vScripts)
+        if (::IsMine(*this, script))
+            return false;
+    std::vector<CScript> vAdded;
+    for (const CScript& script : vScripts)
+    {
+        const bool fNew = setWatchOnly.insert(script).second;
+        if (fFileBacked && !CWalletDB(strWalletFile).WriteWatchOnly(script))
+        {
+            if (fNew)
+                setWatchOnly.erase(script);
+            for (const CScript& done : vAdded)
+            {
+                setWatchOnly.erase(done);
+                if (fFileBacked)
+                    CWalletDB(strWalletFile).EraseWatchOnly(done);
+            }
+            return false;
+        }
+        if (fNew)
+            vAdded.push_back(script);
+    }
+    MarkDirty();
     return true;
 }
 
@@ -1516,6 +1577,10 @@ void CWallet::ResendWalletTransactions()
         for (std::pair<const uint256, CWalletTx>& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
+            // Only what we sent: a payment to a watched address (or any payment from someone else) is not ours to broadcast, and doing
+            // so would tell the network which addresses this wallet follows.
+            if (!wtx.IsFromMe())
+                continue;
             // Don't rebroadcast until it's had plenty of time that
             // it should have gotten in already by now.
             if (nTimeBestReceived - static_cast<int64>(wtx.nTimeReceived) > 5 * 60)
@@ -2272,12 +2337,27 @@ bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strEr
                 return false;
             const CKeyID keyid = key.GetPubKey().GetID();
             // a key that is already here (an earlier restore of the same phrase, or the key pool) is not an error
+            const std::string strPath = strprintf("m/44'/%u'/0'/0/%u", (unsigned)HD_COIN_TYPE, (unsigned)nDerived);
+            if (!HaveKey(keyid))
+            {
                 // a restored key may already have years of history: its birth is unknown (0), not today (which would start a later
-                // backup's rescan at today and miss everything before it). Set first: AddKey stamps "now" only on a key with no metadata,
-                // and this way each key costs one metadata write, not two.
-                SetKeyMetadata(key.GetPubKey(), CKeyMetadata(0));
-            if (!HaveKey(keyid) && !AddKey(key))
-                return false;
+                // backup's rescan at today and miss everything before it). It is a new key here, so its metadata is new too.
+                CKeyMetadata meta(0);
+                meta.strHDKeypath = strPath;
+                if (!AddKeyWithMetadata(key, meta))
+                    return false;
+            }
+            else
+            {
+                // a key the wallet has keeps its creation time; it only gets the path if it had none
+                auto itMeta = mapKeyMetadata.find(keyid);
+                if (itMeta != mapKeyMetadata.end() && itMeta->second.strHDKeypath.empty())
+                {
+                    CKeyMetadata meta = itMeta->second;
+                    meta.strHDKeypath = strPath;
+                    SetKeyMetadata(key.GetPubKey(), meta);
+                }
+            }
             mapIndex[keyid] = nDerived;
         }
         return true;

@@ -297,8 +297,13 @@ public:
     // when each key was made, and where an HD key sits (see CKeyMetadata)
     std::map<CKeyID, CKeyMetadata> mapKeyMetadata;
     void SetKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta);
+    // Add a key and its metadata: the key is written first and the metadata after it, so a key that fails to be added leaves no
+    // metadata record behind. (AddKey on its own stamps "now" on a key with no metadata.)
+    bool AddKeyWithMetadata(const CKey& key, const CKeyMetadata& meta);
     bool LoadKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta) { mapKeyMetadata[vchPubKey.GetID()] = meta; return true; }
     bool AddWatchOnly(const CScript& script);
+    // all of them or none: a script that cannot be saved takes back the ones added before it
+    bool AddWatchOnlyScripts(const std::vector<CScript>& vScripts);
     bool VerifyKeys(int& nKeysChecked, int& nHDChecked, std::vector<std::string>& vProblems);
     bool LoadWatchOnly(const CScript& script) { setWatchOnly.insert(script); return true; }
     bool IsWatchOnly(const CTxOut& txout) const { return setWatchOnly.count(txout.scriptPubKey) != 0 && !::IsMine(*this, txout.scriptPubKey); }

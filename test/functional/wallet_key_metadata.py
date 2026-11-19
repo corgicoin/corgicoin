@@ -10,10 +10,15 @@ from test_framework import CorgiTestFramework, assert_equal
 
 
 class KeyMetadataTest(CorgiTestFramework):
-    num_nodes = 1
+    num_nodes = 2
 
     def run_test(self):
         node = self.nodes[0]
+        # keys of a wallet that is not HD yet, to import later (once it has a phrase, its new keys are derived ones the first wallet would already hold)
+        foreign = self.nodes[1].getnewaddress()
+        foreign_secret = self.nodes[1].dumpprivkey(foreign)
+        foreign2 = self.nodes[1].getnewaddress()
+        foreign2_secret = self.nodes[1].dumpprivkey(foreign2)
 
         self.log("a new key has the time it was made, and no HD path in a non-HD wallet")
         before = int(time.time())
@@ -34,8 +39,31 @@ class KeyMetadataTest(CorgiTestFramework):
             paths.append(int(i["hdkeypath"].rsplit("/", 1)[1]))
         assert paths == sorted(paths) and len(set(paths)) == 3, paths
 
-        self.log("an imported key is dated from the day it was imported, and has no HD path")
-        other = self.nodes[0].dumpprivkey(addr)
+        self.log("restoring the phrase the wallet already uses keeps what each key already carries (times and paths)")
+        phrase = node.gethdseed(True)["mnemonic"]
+        kept = {x: node.validateaddress(x) for x in (addr, a)}
+        node.sethdseed(phrase)
+        for x, was in kept.items():
+            now = node.validateaddress(x)
+            assert_equal(now.get("timestamp"), was.get("timestamp"))
+            assert_equal(now.get("hdkeypath"), was.get("hdkeypath"))
+
+        self.log("a wallet restored from the phrase gives the keys it derives their path, and no made-up date")
+        other_node = self.nodes[1]
+        other_node.sethdseed(phrase)
+        restored = other_node.validateaddress(a)
+        assert_equal(restored["ismine"], True)
+        assert_equal(restored["hdkeypath"], kept[a]["hdkeypath"])
+        assert "timestamp" not in restored, restored
+
+        self.log("an imported key has no date unless it is given one (never the day it was imported), and no HD path")
+        node.importprivkey(foreign_secret, "undated")
+        undated = node.validateaddress(foreign)
+        assert "timestamp" not in undated and "hdkeypath" not in undated, undated
+        node.importprivkey(foreign2_secret, "dated", 1700000000)
+        assert_equal(node.validateaddress(foreign2)["timestamp"], 1700000000)
+
+        self.log("and the times survive a restart")
         node.stop()
         node.start()
         assert_equal(node.validateaddress(addr)["timestamp"], info["timestamp"])      # survived a restart
