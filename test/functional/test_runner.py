@@ -88,6 +88,7 @@ TESTS = [
     "rpc_failed_block.py",
     "rpc_mempool_cap.py",
     "rpc_mempool_conflict_block.py",
+    "rpc_sendrawtransaction_reason.py",
     "wallet_maxtxfee.py",
     "wallet_notify.py",
     "tool_makeseeds.py",
