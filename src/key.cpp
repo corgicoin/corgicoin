@@ -476,6 +476,12 @@ bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
     static secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
     if (vchSig.empty() || !fSet || !IsCanonicalDERSignature(vchSig))
         return false;
+    // The single byte 0x00 is read by OpenSSL as the point at infinity. Master accepts signatures made to verify under it (anyone can make
+    // one), and libsecp256k1 has no such key; to stay exactly as master is, that case is left to OpenSSL on the raw bytes. It is tested for
+    // here, not inferred from GetPubKey failing; and any key with no serialisation is left to OpenSSL as well.
+    const EC_POINT* point = EC_KEY_get0_public_key(pkey);
+    if (point == nullptr || EC_POINT_is_at_infinity(EC_KEY_get0_group(pkey), point))
+        return ECDSA_verify(0, (unsigned char*)&hash, sizeof(hash), &vchSig[0], vchSig.size(), pkey) == 1;
     std::vector<unsigned char> pub;
     try
     {
@@ -483,8 +489,6 @@ bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& vchSig)
     }
     catch (const key_error&)
     {
-        // A "key" with no serialisation: the single byte 0x00, which OpenSSL reads as the point at infinity. Master accepts signatures made
-        // to verify under it (anyone can make one), libsecp256k1 has no such key; to stay exactly as master is, this case is left to OpenSSL.
         return ECDSA_verify(0, (unsigned char*)&hash, sizeof(hash), &vchSig[0], vchSig.size(), pkey) == 1;
     }
     secp256k1_pubkey pk;

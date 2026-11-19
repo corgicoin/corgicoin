@@ -22,6 +22,7 @@
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/ecdsa.h>
+#include <openssl/err.h>
 #include <openssl/obj_mac.h>
 
 #include <cstdint>
@@ -198,8 +199,105 @@ static void InfinityVectors(std::mt19937_64& rng)
         const Bytes sig = EncodeSigDER(r32, s32);
         for (const Bytes& k : keys)
             Compare("a key that is not a point", k, hash, sig);
+        // with s = n - 1 (high S) the same r verifies under infinity too, and so with odd encodings of the same numbers
+        unsigned char hs32[32];
+        NegateModOrder(s32, hs32);
+        const Bytes sigHigh = EncodeSigDER(r32, hs32);
+        for (const Bytes& k : keys)
+        {
+            Compare("infinity, high S", k, hash, sigHigh);
+            Compare("infinity, odd encoding", k, hash, EncodeSigOdd(r32, s32, rng));
+            Compare("infinity, odd encoding, high S", k, hash, EncodeSigOdd(r32, hs32, rng));
+        }
         BN_free(x);
         EC_POINT_free(R);
+        BN_free(z);
+    }
+    BN_free(order);
+    BN_CTX_free(ctx);
+    EC_GROUP_free(group);
+}
+
+// hand-written signatures with the one-byte numbers DER can get wrong (a zero, a negative), under a real key
+static void SmallNumberVectors(std::mt19937_64& rng)
+{
+    const Bytes sigs[] = {
+        Bytes{0x30, 0x06, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00},      // r = 0, s = 0
+        Bytes{0x30, 0x06, 0x02, 0x01, 0x80, 0x02, 0x01, 0x01},      // r = -128 (a negative integer)
+        Bytes{0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x80},      // s = -128
+        Bytes{0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x00},      // s = 0
+        Bytes{0x30, 0x06, 0x02, 0x01, 0x00, 0x02, 0x01, 0x01},      // r = 0
+        Bytes{0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01},      // r = 1, s = 1
+        Bytes{0x30, 0x08, 0x02, 0x02, 0x00, 0x01, 0x02, 0x02, 0x00, 0x01},    // a pad on a number that does not need one
+    };
+    for (int i = 0; i < 20; i++)
+    {
+        CKey key;
+        key.MakeNewKey(i & 1);
+        const Bytes pub = key.GetPubKey().Raw();
+        uint256 hash;
+        for (int j = 0; j < 32; j++)
+            hash.begin()[j] = (unsigned char)rng();
+        for (const Bytes& s : sigs)
+            Compare("small numbers", pub, hash, s);
+    }
+}
+
+// r in [n, p): the signature is valid if r is taken mod n, and neither side may take it. Pick x = n + t on the curve, R = (x, y), s = 1,
+// and derive Q = (R - hash * G) / r, so that the check would pass for r mod n.
+static void RangeVectors(std::mt19937_64& rng)
+{
+    EC_GROUP* group = EC_GROUP_new_by_curve_name(NID_secp256k1);
+    BN_CTX* ctx = BN_CTX_new();
+    BIGNUM* order = BN_new();
+    EC_GROUP_get_order(group, order, ctx);
+    for (int i = 0; i < 10; i++)
+    {
+        uint256 hash;
+        for (int j = 0; j < 32; j++)
+            hash.begin()[j] = (unsigned char)rng();
+        BIGNUM* z = BN_bin2bn((const unsigned char*)&hash, 32, nullptr);
+        BN_mod(z, z, order, ctx);
+        BIGNUM* nz = BN_new();
+        BN_sub(nz, order, z);                                       // n - z, so that (n - z) * G = -z * G
+        BIGNUM* t = BN_new();
+        BN_set_word(t, 1 + rng() % 1000);
+        BIGNUM* x = BN_new();
+        EC_POINT* R = EC_POINT_new(group);
+        for (;;)
+        {
+            BN_add(x, order, t);
+            if (EC_POINT_set_compressed_coordinates(group, R, x, 0, ctx) == 1)
+                break;
+            ERR_clear_error();
+            BN_add_word(t, 1);
+        }
+        BIGNUM* one = BN_new();
+        BN_one(one);
+        EC_POINT* P = EC_POINT_new(group);
+        EC_POINT_mul(group, P, nz, R, one, ctx);                    // R - z * G
+        BIGNUM* rinv = BN_mod_inverse(nullptr, t, order, ctx);      // x mod n is t
+        EC_POINT* Q = EC_POINT_new(group);
+        EC_POINT_mul(group, Q, nullptr, P, rinv, ctx);
+        unsigned char pub[65];
+        const size_t len = EC_POINT_point2oct(group, Q, POINT_CONVERSION_UNCOMPRESSED, pub, sizeof(pub), ctx);
+        unsigned char r32[32], s32[32];
+        BN_bn2binpad(x, r32, 32);
+        memset(s32, 0, 32);
+        s32[31] = 1;
+        Compare("r in [n, p)", Bytes(pub, pub + len), hash, EncodeSigDER(r32, s32));
+        // and the same with r reduced, which is a valid signature that both must accept
+        unsigned char rr32[32];
+        BN_bn2binpad(t, rr32, 32);
+        Compare("r reduced mod n", Bytes(pub, pub + len), hash, EncodeSigDER(rr32, s32));
+        EC_POINT_free(Q);
+        BN_free(rinv);
+        EC_POINT_free(P);
+        BN_free(one);
+        EC_POINT_free(R);
+        BN_free(x);
+        BN_free(t);
+        BN_free(nz);
         BN_free(z);
     }
     BN_free(order);
@@ -214,6 +312,8 @@ int main(int argc, char** argv)
     std::mt19937_64 rng(nSeed);
 
     InfinityVectors(rng);
+    SmallNumberVectors(rng);
+    RangeVectors(rng);
 
     for (uint64_t it = 0; it < nIter && nDiff < 20; it++)
     {

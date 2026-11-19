@@ -65,7 +65,7 @@ jobs:
 
   build-linux-secp256k1:
     # Signature verification with libsecp256k1 (-DUSE_LIBSECP256K1=ON, off by default): the pinned release is built, the unit tests and the
-    # signature functional tests run with it, and secp_diff checks it against OpenSSL's ECDSA_verify (what master uses) on a million cases.
+    # signature functional tests run with it, and secp_diff checks it against OpenSSL's ECDSA_verify (what master uses) on two runs of a million cases.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
