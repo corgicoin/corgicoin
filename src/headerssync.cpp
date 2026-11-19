@@ -23,6 +23,8 @@
 #include "util.h"
 
 #include <algorithm>
+#include <map>
+#include <queue>
 #include <set>
 
 using namespace std;
@@ -51,6 +53,13 @@ size_t MaxBranchHeaders()
     if (fRegTest && mapArgs.count("-testmaxbranchheaders"))
         return (size_t)std::max<int64>(1, GetArg("-testmaxbranchheaders", MAX_BRANCH_HEADERS));
     return MAX_BRANCH_HEADERS;
+}
+
+int MaxForkDepth()
+{
+    if (fRegTest && mapArgs.count("-testmaxforkdepth"))
+        return (int)std::max<int64>(1, GetArg("-testmaxforkdepth", MAX_HEADER_FORK_DEPTH));
+    return MAX_HEADER_FORK_DEPTH;
 }
 
 size_t nBranchHeaders = 0;                          // header-only entries that were not the best chain when they came in
@@ -121,23 +130,48 @@ void RepickBestHeader(const CNode* pExclude)
         LogPrintf("headers-first: the best header is now %s at %d (it was %d)\n", pindexCand->phashBlock->ToString().substr(0, 20).c_str(),
                   pindexCand->nHeight, pindexBestHeader ? pindexBestHeader->nHeight : -1);
         SetBestHeader(pindexCand);
+        // every peer is asked for headers again from where we are: one that was asked before the best header moved would never be again
+        LOCK(cs_vNodes);
+        for (CNode* pnode : vNodes)
+            pnode->fSyncStarted = false;
     }
 }
 
-// the header entries that are on no branch we follow: gone, and no peer is left pointing at one
-void EvictBranchHeaders()
+// The header entries that are on no branch we follow, dropped from the lowest work up (a branch is dropped from its tip back, so no entry
+// is left with a parent that is gone) until no more than nTarget are held. What is on the best header chain is never dropped, nor is
+// pKeep (the parent of the header being added) nor what it stands on. Counts what is held afresh: the running count is an estimate
+// (a reorganisation of the header chain moves entries from one side to the other). No peer is left pointing at a dropped entry.
+void EvictBranchHeaders(const CBlockIndex* pKeep, size_t nTarget)
 {
-    std::set<CBlockIndex*> setGone;
-    for (auto it = mapHeaderIndex.begin(); it != mapHeaderIndex.end();)
+    std::map<const CBlockIndex*, unsigned> mapChildren;
+    std::vector<CBlockIndex*> vBranch;
+    for (const auto& item : mapHeaderIndex)
     {
-        if (!OnHeaderChain(it->second))
-        {
-            setGone.insert(it->second);
-            it = mapHeaderIndex.erase(it);
-        }
-        else
-            ++it;
+        CBlockIndex* p = item.second;
+        if (p->pprev)
+            mapChildren[p->pprev]++;
+        if (!OnHeaderChain(p))
+            vBranch.push_back(p);
     }
+    auto lowerWork = [](const CBlockIndex* a, const CBlockIndex* b) { return a->bnChainWork > b->bnChainWork; };
+    std::priority_queue<CBlockIndex*, std::vector<CBlockIndex*>, decltype(lowerWork)> leaves(lowerWork);
+    for (CBlockIndex* p : vBranch)
+        if (!mapChildren.count(p) && p != pKeep)
+            leaves.push(p);
+    size_t nHeld = vBranch.size();
+    std::set<CBlockIndex*> setGone;
+    while (nHeld > nTarget && !leaves.empty())
+    {
+        CBlockIndex* p = leaves.top();
+        leaves.pop();
+        setGone.insert(p);
+        nHeld--;
+        CBlockIndex* pparent = p->pprev;
+        if (pparent && --mapChildren[pparent] == 0 && pparent != pKeep && mapHeaderIndex.count(*pparent->phashBlock) && !OnHeaderChain(pparent))
+            leaves.push(pparent);
+    }
+    for (CBlockIndex* p : setGone)
+        { const uint256 h = *p->phashBlock; mapHeaderIndex.erase(h); }
     {
         LOCK(cs_vNodes);
         for (CNode* pnode : vNodes)
@@ -146,11 +180,13 @@ void EvictBranchHeaders()
     }
     for (CBlockIndex* p : setGone)
         delete p;
-    nBranchHeaders = 0;
-    LogPrintf("headers-first: %u header(s) on side branches dropped\n", (unsigned)setGone.size());
+    nBranchHeaders = nHeld;
+    if (!setGone.empty())
+        LogPrintf("headers-first: %u header(s) on side branches dropped (%u held)\n", (unsigned)setGone.size(), (unsigned)nHeld);
 }
 
-enum HeaderResult { HEADER_OK, HEADER_BAD, HEADER_UNCONNECTED };
+// HEADER_REFUSED: a header we will not keep (a deep fork, no room), by no fault of the peer's that we can tell: no score, and not asked again for it
+enum HeaderResult { HEADER_OK, HEADER_BAD, HEADER_UNCONNECTED, HEADER_REFUSED };
 
 HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
 {
@@ -217,27 +253,30 @@ HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
     // A header that forks off the best header chain far back needs the same work as every header after the fork to matter, and a peer
     // that sends a few of them gains nothing but our memory: refuse it, and what is built on it.
     EnsureHeaderChain();
-    if (pindexBestHeader && pindexPrev->nHeight + MAX_HEADER_FORK_DEPTH < pindexBestHeader->nHeight && !OnHeaderChain(pindexPrev))
+    // The depth is measured from our own validated tip, which a peer cannot move without the work of real blocks. (Measured from the best
+    // header, which is not validated, a run of cheap low-work headers moved it, and then every header of the honest chain was refused.)
+    // A header whose parent is itself a header entry stands on one that passed this test, or on the best header chain from our tip.
+    if (pindexBest && !mapHeaderIndex.count(hdr.hashPrevBlock) && pindexPrev->nHeight + MaxForkDepth() < pindexBest->nHeight)
     {
-        nDoS = 20;
-        LogPrintf("headers-first: header %s forks off at %d, more than %d below the best header (%d)\n", hash.ToString().substr(0, 20).c_str(),
-                  pindexPrev->nHeight, MAX_HEADER_FORK_DEPTH, pindexBestHeader->nHeight);
-        return HEADER_BAD;
+        LogPrintf("headers-first: header %s forks off at %d, more than %d below our tip (%d): not followed\n", hash.ToString().substr(0, 20).c_str(),
+                  pindexPrev->nHeight, MaxForkDepth(), pindexBest->nHeight);
+        return HEADER_REFUSED;          // no score: it is a fork nobody should follow, not proof that the peer is at fault
     }
+    // Side branches are held up to a cap; past it the lowest-work ones are dropped (not scored: an honest fork is one of them, and the peer
+    // that sends the header that fills the space is not the one that filled it). pindexPrev is kept.
     if (nBranchHeaders >= MaxBranchHeaders())
     {
-        // side branches are never worth much memory: drop them all, and the peer that filled the space is scored
-        EvictBranchHeaders();
-        nDoS = 20;
-        return HEADER_BAD;
+        EvictBranchHeaders(pindexPrev, MaxBranchHeaders() * 9 / 10);
+        if (nBranchHeaders >= MaxBranchHeaders())
+            return HEADER_REFUSED;
     }
     if (mapHeaderIndex.size() >= MAX_HEADER_INDEX)
     {
-        EvictBranchHeaders();
+        EvictBranchHeaders(pindexPrev, 0);
         if (mapHeaderIndex.size() >= MAX_HEADER_INDEX)
         {
             LogPrintf("headers-first: the header index is full (%u), not keeping %s\n", (unsigned)mapHeaderIndex.size(), hash.ToString().substr(0, 20).c_str());
-            return HEADER_BAD;
+            return HEADER_REFUSED;
         }
     }
 
@@ -330,11 +369,12 @@ bool HaveHeaderFor(const uint256& hash)
 
 bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
 {
-    if (!HeadersFirstWith(pfrom))
-        return true;
     // whatever this message holds, the request it answers is over; it is asked again below only if there may be more. (An empty answer, a
     // bad header or one that does not connect used to leave the flag set, and three such peers kept header sync from every other peer.)
+    // This is before the check that headers-first is on for the peer: during the fallback a peer that answers must not be taken for one that did not.
     pfrom->fSyncing = false;
+    if (!HeadersFirstWith(pfrom))
+        return true;
     vector<CBlock> vHeaders;
     vRecv >> vHeaders;
     if (vHeaders.size() > MAX_HEADERS_RESULTS)
@@ -343,7 +383,12 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
         return LogError("headers message size = %u", (unsigned)vHeaders.size());
     }
     if (vHeaders.empty())
+    {
+        // nothing more, although it said at the start that its chain is longer than what we have: if the tip does not move, it is asked for blocks
+        if (pfrom->nStartingHeight > (pindexBestHeader ? pindexBestHeader->nHeight : 0))
+            pfrom->nShortAnswerTime = GetTime();
         return true;
+    }
     EnsureHeaderChain();
 
     // each header must carry no transactions and follow the one before it
@@ -372,6 +417,8 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
             LogPrintf("headers-first: headers from %s do not connect (%d)\n", pfrom->addr.ToString().c_str(), pfrom->nUnconnectingHeaders);
             return true;
         }
+        if (r == HEADER_REFUSED)
+            return true;
         if (r == HEADER_BAD)
         {
             if (nDoS)
@@ -388,7 +435,9 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
         pindexLast = pindex;
     }
     pfrom->nUnconnectingHeaders = 0;
-    if (pindexLast && (!pfrom->pindexBestKnown || pindexLast->bnChainWork > pfrom->pindexBestKnown->bnChainWork))
+    if (pindexLast && vHeaders.size() < MAX_HEADERS_RESULTS && pfrom->nStartingHeight > pindexLast->nHeight)
+        pfrom->nShortAnswerTime = GetTime();        // an answer that ends short of the chain it claims
+    if (pindexLast &&(!pfrom->pindexBestKnown || pindexLast->bnChainWork > pfrom->pindexBestKnown->bnChainWork))
         pfrom->pindexBestKnown = pindexLast;
     LogPrintf("headers-first: %u headers from %s, best header %d\n", (unsigned)vHeaders.size(), pfrom->addr.ToString().c_str(), pindexBestHeader ? pindexBestHeader->nHeight : -1);
 
@@ -424,15 +473,45 @@ void HeadersFirstSendMessages(CNode* pto)
         pto->fDisconnect = true;
         nHeadersFallbackUntil = nNow + HEADERS_FALLBACK_SECONDS;
         LOCK(cs_vNodes);
+        int nAsked = 0;
         for (CNode* pnode : vNodes)
-            if (pnode != pto && !pnode->fDisconnect && !pnode->fClient && !pnode->fOneShot && pnode->fSuccessfullyConnected && pnode->nStartingHeight > nBestHeight)
+        {
+            // the others are not waited on any more (they would be dropped in their turn for an answer that is not wanted), and two taller peers are asked
+            pnode->fSyncing = false;
+            if (pnode != pto && !pnode->fDisconnect && !pnode->fClient && !pnode->fOneShot && pnode->fSuccessfullyConnected && pnode->nStartingHeight > nBestHeight && nAsked < 2)
+            {
                 pnode->PushGetBlocks(pindexBest, uint256(0));
+                nAsked++;
+            }
+        }
         return;
     }
 
     if (!HeadersFirstWith(pto) || !pto->fSuccessfullyConnected || pto->fClient || pto->fOneShot)
         return;
     EnsureHeaderChain();
+
+    // 0-. a peer that has answered for headers with none (or too few) while it claims a longer chain than ours, and the tip has not moved for
+    //     the length of a header timeout: it is asked for blocks the old way, now and then, so that it can not hold a node still by answering nothing
+    static int nLastBestHeight = -1;
+    static int64 nLastBestChange = 0;
+    if (nBestHeight != nLastBestHeight)
+    {
+        nLastBestHeight = nBestHeight;
+        nLastBestChange = nNow;
+    }
+    if (pto->nShortAnswerTime)
+    {
+        if (nBestHeight >= pto->nStartingHeight)
+            pto->nShortAnswerTime = 0;
+        else if (nNow - std::max(pto->nShortAnswerTime, nLastBestChange) > HeaderSyncTimeout())
+        {
+            LogPrintf("headers-first: %s has no headers for us beyond %d and the tip has not moved: asking it for blocks\n", pto->addr.ToString().c_str(), nBestHeight);
+            pto->PushGetBlocks(pindexBest, uint256(0));
+            pto->nShortAnswerTime = nNow;
+        }
+    }
+
     if (!pindexBestHeader)
         return;
 

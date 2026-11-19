@@ -1563,7 +1563,7 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
 
     // Limit adjustment step
     int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
-    LogPrintf("  nActualTimespan = %" PRI64d "  before bounds\n", nActualTimespan);
+    if (!fQuietRetarget) LogPrintf("  nActualTimespan = %" PRI64d "  before bounds\n", nActualTimespan);
 
 	if(pindexLast->nHeight+1 > 10000)	
 	{

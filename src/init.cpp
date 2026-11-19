@@ -317,7 +317,7 @@ std::string HelpMessage()
         "  -blocktimeout=<n>      " + _("Seconds a peer may hold a requested block before it is dropped (headers-first sync; default: 120)") + "\n" +
         "  -headersfirst          " + _("Download the block headers first, check them, then fetch the blocks from several peers at once (default: 0, the old one-peer getblocks sync)") + "\n" +
         "  -headersynctimeout=<n> " + _("Seconds a peer may take to answer a request for headers before it is dropped and the others are synced with getblocks for a while (headers-first sync; default: 120)") + "\n" +
-        "  -blocktimeout=<n>     " + _("Seconds a peer may hold a requested block before it is dropped (headers-first sync; default: 120; below 1 means the default)") + "\n" +
+        "  -blocktimeout=<n>      " + _("Seconds a peer may hold a requested block before it is dropped (headers-first sync; default: 120; below 1 means the default)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
         "  -standardsigs=<0|1>    " + _("Relay only transactions whose signatures are strict DER with a low S value (default: 0)") + "\n" +
         "  -acceptnonstdtxn=<0|1> " + _("Relay and mine non-standard transactions (default: 0 on mainnet, 1 on testnet and regtest)") + "\n" +
