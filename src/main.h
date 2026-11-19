@@ -42,6 +42,7 @@ constexpr unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
 // Orphan blocks (parent not yet known) are held in memory. Cap how many, and how many bytes in total.
 constexpr unsigned int MAX_ORPHAN_BLOCKS = 750;
 constexpr unsigned int MAX_ORPHAN_BLOCKS_BYTES = 32 * MAX_BLOCK_SIZE;
+constexpr unsigned int MAX_LOCATOR_SZ = 101;                    // hashes in a block locator from a peer (an honest one has about 30)
 constexpr int64 MIN_TX_FEE = 100000000;
 constexpr int64 MIN_RELAY_TX_FEE = MIN_TX_FEE;
 constexpr int64 MAX_MONEY = 10000000000 * COIN;
