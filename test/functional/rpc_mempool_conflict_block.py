@@ -39,6 +39,23 @@ class MempoolConflictBlockTest(CorgiTestFramework):
         self.log("T1 and its child are gone from the pool: T1 can never confirm")
         assert_equal(n0.getrawmempool(), [])
 
+        self.log("the same through a reorganisation: node 0 mines T3 in its own block, node 1 mines the conflicting T4 on a longer chain")
+        self.disconnect_nodes(0, 1)
+        coin = [c for c in n0.listunspent() if c["txid"] != coin["txid"]][0]
+        inputs = [{"txid": coin["txid"], "vout": coin["vout"]}]
+        t3_hex = n0.signrawtransaction(n0.createrawtransaction(inputs, {n0.getnewaddress(): coin["amount"] - 1}))["hex"]
+        t4_hex = n0.signrawtransaction(n0.createrawtransaction(inputs, {n1.getnewaddress(): coin["amount"] - 5}))["hex"]
+        t3 = n0.sendrawtransaction(t3_hex)
+        n0.generate(1)                                   # T3 is in node 0's chain
+        assert_equal(n0.gettransaction(t3)["confirmations"], 1)
+        t4 = n1.sendrawtransaction(t4_hex)
+        n1.generate(3)                                   # the longer chain, with T4
+        self.connect_nodes(0, 1)
+        self.sync_blocks()
+        assert_equal(n0.gettransaction(t4)["confirmations"] > 0, True)
+        self.log("T3 went back to the pool when its block was disconnected, and went again with the conflict that is now in the chain")
+        assert_equal(n0.getrawmempool(), [])
+
 
 if __name__ == "__main__":
     MempoolConflictBlockTest().main()
