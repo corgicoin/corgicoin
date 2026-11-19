@@ -478,6 +478,7 @@ void HeadersFirstSendMessages(CNode* pto)
         {
             // the others are not waited on any more (they would be dropped in their turn for an answer that is not wanted), and two taller peers are asked
             pnode->fSyncing = false;
+            pnode->fSyncStarted = false;        // asked for headers again once the fallback is over (a silent one is then dropped in its turn)
             if (pnode != pto && !pnode->fDisconnect && !pnode->fClient && !pnode->fOneShot && pnode->fSuccessfullyConnected && pnode->nStartingHeight > nBestHeight && nAsked < 2)
             {
                 pnode->PushGetBlocks(pindexBest, uint256(0));

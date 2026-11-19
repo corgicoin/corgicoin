@@ -39,8 +39,11 @@ class HeadersFirstStallsTest(CorgiTestFramework):
         silent = [P2PConnection(a.p2p_port, start_height=50) for _ in range(3)]
         for p in silent:
             wait_until(lambda p=p: p.got_verack, what="verack")
-        wait_until(lambda: all(p.closed for p in silent), timeout=60, what="the silent peers to be dropped")
+        # The first to time out is dropped and the fallback starts; the others are no longer waited on (an honest peer that did answer would
+        # otherwise be dropped with them, and each drop would extend the fallback), and are asked again when it is over.
+        wait_until(lambda: any(p.closed for p in silent), timeout=60, what="a silent peer to be dropped")
         assert "did not answer getheaders" in self.log_text(a)
+        assert_equal(self.log_text(a).count("did not answer getheaders"), 1)
         self.connect_nodes(0, 1)
         wait_until(lambda: a.getblockcount() == 40, timeout=120, what="the sync that falls back to getblocks")
         assert_equal(a.getbestblockhash(), b.getbestblockhash())
