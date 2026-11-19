@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
@@ -58,7 +58,7 @@ jobs:
         run: CORGICOIND_ALT="$PWD/prev/corgicoin-v4.9.0.0-linux-x64/corgicoind" python3 test/functional/test_runner.py --corgicoind build/corgicoind
 
       - name: Upload Linux daemon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoind-linux-x64
           path: build/corgicoind
@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
@@ -103,7 +103,7 @@ jobs:
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
@@ -149,7 +149,7 @@ jobs:
           echo "loaded $(grep -c 'dist/lib/' dyld.log) bundled libraries"
 
       - name: Upload macOS daemon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoind-macos-arm64
           path: build/corgicoind
@@ -158,7 +158,7 @@ jobs:
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
@@ -186,7 +186,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install MinGW cross-compiler and dependencies
         run: |
@@ -212,9 +212,17 @@ jobs:
           export HOST=x86_64-w64-mingw32
           export PREFIX=/tmp/deps/install
 
+          # Each source tarball is checked against a pinned SHA256 before it is unpacked (fetch <url> <sha256> <tar flags>)
+          fetch() {
+            local f="${1##*/}"
+            curl -fsSL -o "$f" "$1"
+            echo "$2  $f" | sha256sum -c -
+            tar "x$3f" "$f"
+          }
+
           # Boost
           cd /tmp/deps
-          curl -fsSL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 | tar xj
+          fetch https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c68275c14c3e7949c24109454 j
           cd boost_1_84_0
           echo "using gcc : mingw : x86_64-w64-mingw32-g++ ;" > user-config.jam
           ./bootstrap.sh --without-icu
@@ -225,7 +233,7 @@ jobs:
 
           # OpenSSL
           cd /tmp/deps
-          curl -fsSL https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz | tar xz
+          fetch https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz 2e8a40b01979afe8be0bbfb3de5dc1c6709fedb46d6c89c10da114ab5fc3d281 z
           cd openssl-3.3.2
           ./Configure mingw64 no-shared --cross-compile-prefix=x86_64-w64-mingw32- --prefix=$PREFIX
           make -j$(nproc) 2>&1 | tail -3
@@ -233,7 +241,7 @@ jobs:
 
           # Berkeley DB 4.8 (cross-compiles cleanly with MinGW, unlike 5.3)
           cd /tmp/deps
-          curl -fsSL https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz | tar xz
+          fetch https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz e0491a07cdb21fb9aa82773bbbedaeb7639cbd0e7f96147ab46141e0045db72a z
           cd db-4.8.30/build_unix
           # Patch: fix WinIoCtl.h case sensitivity for MinGW
           sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h 2>/dev/null || true
@@ -277,7 +285,7 @@ jobs:
           make -j$(nproc)
 
       - name: Upload Windows daemon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoind-windows-x64
           path: build-win/corgicoind.exe
@@ -289,11 +297,11 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup MSYS2
         id: msys
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         with:
           msystem: MINGW64
           update: true
@@ -340,13 +348,13 @@ jobs:
           CORGICOIND_ALT="$PWD/../prev/build/corgicoind.exe" python3 test/functional/test_runner.py --corgicoind build/corgicoind.exe -j 2
 
       - name: Upload Windows Qt wallet
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoin-qt-windows-x64
           path: build/corgicoin-qt.exe
 
       - name: Upload Windows daemon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoind-msys2-windows-x64
           path: build/corgicoind.exe
