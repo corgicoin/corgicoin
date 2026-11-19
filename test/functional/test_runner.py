@@ -47,6 +47,7 @@ TESTS = [
     "p2p_log_injection.py",
     "p2p_upload_target.py",
     "feature_chainstate_catchup.py",
+    "feature_chainstate_stale.py",
     "rpc_createauxblock.py",
     "rpc_createauxblock_cache.py",
     "feature_auxpow.py",

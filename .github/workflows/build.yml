@@ -78,13 +78,16 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y             build-essential             cmake             libboost-all-dev libleveldb-dev             libssl-dev             libdb++-dev             libminiupnpc-dev
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y             build-essential             cmake             libboost-all-dev             libssl-dev             libdb++-dev             libminiupnpc-dev
+
+      - name: Build LevelDB (the pinned release, static, the same on every platform)
+        run: contrib/build-leveldb.sh "$HOME/leveldb"
 
       - name: Build unit tests with sanitizers
         run: |
           mkdir build-san && cd build-san
           SAN="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g -D_GLIBCXX_ASSERTIONS"
-          cmake .. -DCMAKE_BUILD_TYPE=Debug             -DCMAKE_CXX_FLAGS="$SAN" -DCMAKE_C_FLAGS="$SAN" -DCMAKE_EXE_LINKER_FLAGS="$SAN"             -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Debug             -DCMAKE_CXX_FLAGS="$SAN" -DCMAKE_C_FLAGS="$SAN" -DCMAKE_EXE_LINKER_FLAGS="$SAN"             -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a
           make -j$(nproc) test_corgicoin corgicoind
 
       - name: Run unit tests under the sanitizers

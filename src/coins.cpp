@@ -4,6 +4,7 @@
 
 #include "coins.h"
 #include "util.h"
+#include "ui_interface.h"
 
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
@@ -248,6 +249,7 @@ bool OpenDb(bool fWipe)
     leveldb::Options options;
     options.create_if_missing = true;
     options.compression = leveldb::kNoCompression;
+    options.max_open_files = 64;        // the node's select() budget refuses sockets at or above FD_SETSIZE: LevelDB must not take it all
     leveldb::Status status = leveldb::DB::Open(options, path.string(), &pdb);
     if (!status.ok())
     {
@@ -281,6 +283,17 @@ bool Rebuild(const CBlockIndex* ptip)
     for (auto it = vChain.rbegin(); it != vChain.rend(); ++it)
     {
         const CBlockIndex* pindex = *it;
+        if (fShutdown)
+        {
+            // what was written stays: the next start takes it from there (CatchUp), it does not begin again
+            LogPrintf("COINS: the rebuild was interrupted at height %d\n", pindex->nHeight);
+            return false;
+        }
+        if (pindex->nHeight > 0 && pindex->nHeight % 10000 == 0)
+        {
+            LogPrintf("COINS: rebuilding the unspent set: height %d of %d\n", pindex->nHeight, ptip->nHeight);
+            uiInterface.InitMessage(strprintf(_("Rebuilding the unspent set... (%d / %d)"), pindex->nHeight, ptip->nHeight));
+        }
         if (pindex->nHeight > 0)          // the genesis block's output can never be spent and the index never holds it
         {
             CBlock block;
@@ -314,7 +327,7 @@ bool Rebuild(const CBlockIndex* ptip)
 // set, in either order, perhaps in the middle of a reorganisation): take the blocks of the set's own branch off, newest first, with the undo
 // data kept for each, back to the fork point with the chain, then apply the chain's blocks above it: instead of every block since the first.
 // False, with the set as it was (or at a consistent earlier tip), if a block cannot be read, its undo data is missing or a block does not
-// apply; the caller then rebuilds, which a pruned node cannot (it does not try, and leaves the set alone: see CoinsInit).
+// apply; the caller then rebuilds from the first block (at the start only: see CoinsInit).
 bool CatchUp(const CBlockIndex* pMarker, const CBlockIndex* ptip)
 {
     // the fork point: the newest block that both are built on
@@ -377,6 +390,14 @@ bool CatchUp(const CBlockIndex* pMarker, const CBlockIndex* ptip)
     for (auto it = vChain.rbegin(); it != vChain.rend(); ++it)
     {
         const CBlockIndex* pindex = *it;
+        if (fShutdown)
+        {
+            LogPrintf("COINS: the catch-up was interrupted at height %d\n", pindex->nHeight);
+            ClearPending();
+            return false;
+        }
+        if (pindex->nHeight % 10000 == 0)
+            uiInterface.InitMessage(strprintf(_("Bringing the unspent set up to date... (%d / %d)"), pindex->nHeight, ptip->nHeight));
         CBlock block;
         if (!block.ReadFromDisk(pindex, true))
         {
@@ -407,6 +428,13 @@ bool CatchUp(const CBlockIndex* pMarker, const CBlockIndex* ptip)
     return true;
 }
 
+// The set cannot be trusted whatever tip it is on: with no marker the next start rebuilds it.
+void ForgetBest()
+{
+    if (pdb && !pdb->Delete(leveldb::WriteOptions(), std::string(1, 'B')).ok())
+        LogPrintf("COINS: the tip marker of the set could not be removed\n");
+}
+
 void GiveUp()
 {
     LogPrintf("COINS: the unspent set is not available; the node runs on the transaction index alone\n");
@@ -433,8 +461,9 @@ void CoinsDistrust(const char* pszWhy)
     if (!pdb)
         return;
     nCheckFailures++;
-    LogPrintf("COINS: the unspent set refused an input of a block (%s). It is not used until it has been rebuilt from the blocks; the index decides\n", pszWhy);
+    LogPrintf("COINS: the unspent set refused an input of a block (%s). It is not used until it has been rebuilt from the blocks (at the next start); the index decides\n", pszWhy);
     fDistrust = true;
+    ForgetBest();
 }
 
 CoinsFetchResult CoinsFetchInputs(const CTransaction& tx, std::vector<CCoinInput>& vIn, unsigned int& nBad)
@@ -472,6 +501,7 @@ bool CoinsInit()
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
     fStale = false;
+    fDistrust = false;
     ClearPending();
     if (!OpenDb(false))
         return false;
@@ -488,6 +518,11 @@ bool CoinsInit()
         auto mi = mapBlockIndex.find(hashBest);
         if (mi != mapBlockIndex.end() && CatchUp(mi->second, pindexBest))
             return true;
+        if (fShutdown)          // interrupted: the set is left as it is (a consistent earlier tip), not wiped to begin again
+        {
+            GiveUp();
+            return false;
+        }
     }
     if (!Rebuild(pindexBest))
     {
@@ -499,6 +534,7 @@ bool CoinsInit()
 
 void CoinsShutdown()
 {
+    LOCK(cs_main);          // no block is being connected while the database closes
     std::lock_guard<std::mutex> lock(mutexCoins);
     CloseDb();
 }
@@ -530,6 +566,12 @@ void CoinsTxnCommit()
         ClearPending();
         return;
     }
+    if (fStale)
+    {
+        // a write failed earlier: write nothing more, so that 'B' stays on the last good tip and the next start mends the set from there
+        ClearPending();
+        return;
+    }
     const bool fBroken = fTxnBroken || fDistrust;
     const bool fHaveBest = fHavePendingBest;
     const uint256 hashBest = hashPendingBest;
@@ -548,10 +590,12 @@ void CoinsTxnCommit()
         ClearPending();
         return;
     }
+    // Not rebuilt here: this runs with cs_main held and a rebuild reads every block (minutes to hours). The set is left as it is, marked
+    // stale (nothing more is written, nothing is read from it), and its tip marker is removed so that the next start rebuilds it.
     ClearPending();
-    auto it = mapBlockIndex.find(hashBest);
-    if (it == mapBlockIndex.end() || !Rebuild(it->second))
-        GiveUp();
+    fStale = true;
+    ForgetBest();
+    LogPrintf("COINS: the unspent set is out of step with the chain; it will be rebuilt at the next start\n");
 }
 
 void CoinsConnectTx(const CTransaction& tx, int nHeight, CBlockUndo& undo)
@@ -567,6 +611,12 @@ void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo)
     std::lock_guard<std::mutex> lock(mutexCoins);
     if (!pdb || fTxnBroken)
         return;
+    // regtest can put the set out of step at one height, to test what the node does about it
+    if (fRegTest && mapArgs.count("-testcoinsbreak") && pindex->nHeight == GetArg("-testcoinsbreak", 0))
+    {
+        Broken("test: out of step on request at", pindex->GetBlockHash());
+        return;
+    }
     mapPendingUndo[pindex->GetBlockHash()] = undo;
 }
 
@@ -616,7 +666,9 @@ void CoinsCheckInputs(const CTransaction& tx, const MapPrevTx& mapInputs, const 
         if (pszWhy)
         {
             nCheckFailures++;
-            LogPrintf("COINS CHECK: %s (%s:%u, in block %d)\n", pszWhy, txin.prevout.hash.ToString().substr(0, 20).c_str(), txin.prevout.n, pindex->nHeight);
+            // a set that is wrong disagrees at every input: log the first ones and then one in a thousand, not a line per input for ever
+            if (nCheckFailures <= 20 || nCheckFailures % 1000 == 0)
+                LogPrintf("COINS CHECK: %s (%s:%u, in block %d) [%" PRI64u " so far]\n", pszWhy, txin.prevout.hash.ToString().substr(0, 20).c_str(), txin.prevout.n, pindex->nHeight, nCheckFailures);
         }
     }
 }

@@ -296,7 +296,7 @@ if(NOT LEVELDB_LIBRARY OR NOT LEVELDB_INCLUDE_DIR)
                         "-DLEVELDB_INCLUDE_DIR=<prefix>/include -DLEVELDB_LIBRARY=<prefix>/lib/libleveldb.a, or install libleveldb-dev.")
 endif()
 include_directories(${LEVELDB_INCLUDE_DIR})
-list(APPEND ZMQ_LIBRARIES ${LEVELDB_LIBRARY})
+set(LEVELDB_LIBRARIES ${LEVELDB_LIBRARY})
 
 # Daemon executable
 add_executable(corgicoind ${DAEMON_SOURCES} ${JSON_SOURCES})
@@ -308,6 +308,7 @@ target_link_libraries(corgicoind
     ${BERKELEYDB_LIBRARY}
     ${Boost_LIBRARIES}
     ${ZMQ_LIBRARIES}
+    ${LEVELDB_LIBRARIES}
     Threads::Threads
     ${CMAKE_DL_LIBS}
 )
@@ -538,7 +539,7 @@ if(BUILD_QT_GUI)
 
     # Link other libraries
     target_link_libraries(corgicoin-qt
-        ${ZMQ_LIBRARIES}
+        ${LEVELDB_LIBRARIES}
         ${OPENSSL_LIBRARIES}
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
@@ -587,7 +588,7 @@ if(BUILD_FUZZ)
         target_compile_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer-no-link)
         target_link_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer)
     endif()
-    target_link_libraries(fuzz_corgicoin ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
+    target_link_libraries(fuzz_corgicoin ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES} ${LEVELDB_LIBRARIES}
         Threads::Threads ${CMAKE_DL_LIBS})
     if(LINUX)
         target_link_libraries(fuzz_corgicoin rt)
@@ -655,6 +656,7 @@ if(BUILD_TESTS)
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
         ${ZMQ_LIBRARIES}
+        ${LEVELDB_LIBRARIES}
         Threads::Threads
         ${CMAKE_DL_LIBS}
     )
