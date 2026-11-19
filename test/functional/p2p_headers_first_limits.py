@@ -93,7 +93,7 @@ class HeadersFirstLimitsTest(CorgiTestFramework):
             n.generate(AUXPOW_FORK_REGTEST + 5)
         c.generate(6)
         d.generate(30)
-        f.generate(15)
+        f.generate(DEPTH * 5)           # heavier than the blob below (DEPTH * 3 headers of the same difficulty)
 
         self.log("an AuxPoW header with a proof that does not meet the work is refused")
         tip = a.getbestblockhash()
