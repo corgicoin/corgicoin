@@ -41,6 +41,11 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const CWallet *
     uint256 hash = wtx.GetHash();
     std::map<std::string, std::string> mapValue = wtx.mapValue;
 
+    // a payment to or from a watched address that moves nothing of the wallet's own: not a row of its own (it would be a
+    // 0-amount "Other"); the RPCs list the watch-only coins
+    if (nCredit == 0 && nDebit == 0 && !wtx.IsCoinBase() && wallet->IsWatchOnlyTx(wtx))
+        return parts;
+
     if (nNet > 0 || wtx.IsCoinBase())
     {
         //

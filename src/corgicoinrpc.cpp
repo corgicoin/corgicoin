@@ -5176,7 +5176,7 @@ Value importpubkey(const Array& params, bool fHelp)
     scriptKey << pubkey << OP_CHECKSIG;
     CScript scriptAddress;
     scriptAddress.SetDestination(pubkey.GetID());
-    if (!pwalletMain->AddWatchOnly(scriptKey) || !pwalletMain->AddWatchOnly(scriptAddress))
+    if (!pwalletMain->AddWatchOnlyScripts({scriptKey, scriptAddress}))
         throw JSONRPCError(-4, "This key is already spendable by the wallet, or could not be saved");
     if (params.size() < 2 || params[1].get_bool())
         pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
@@ -5322,7 +5322,41 @@ Value fundrawtransaction(const Array& params, bool fHelp)
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
     // the coins that could pay, largest first
-    std::vector<std::pair<int64, COutPoint> > vCoins;
+    struct FundCoin { int64 nValue; COutPoint out; unsigned int nInputBytes; };
+    std::vector<FundCoin> vCoins;
+    // What the input that spends this output will weigh once signed: the outpoint and sequence (41 bytes), the script's length,
+    // and the signature script, which depends on the kind of output.
+    auto InputBytes = [&](const CScript& scriptPubKey) -> unsigned int {
+        txnouttype type;
+        std::vector<std::vector<unsigned char> > vSolutions;
+        if (!Solver(scriptPubKey, type, vSolutions))
+            return 41 + 3 + 148;                     // unknown: a generous guess
+        switch (type)
+        {
+        case TX_PUBKEY:
+            return 41 + 1 + 74;                      // <signature>
+        case TX_PUBKEYHASH:
+            return 41 + 1 + 74 + 34;                 // <signature> <public key>, up to 33 bytes (65 if the key is not compressed: the fee then falls short by 32 bytes, which the rate's 1000-byte steps absorb)
+        case TX_MULTISIG:
+            return 41 + 3 + 1 + 74 * (unsigned int)std::max(1, ScriptSigArgsExpected(type, vSolutions) - 1);
+        case TX_SCRIPTHASH:
+        {
+            CScript redeem;
+            if (pwalletMain->GetCScript(CScriptID(uint160(vSolutions[0])), redeem))
+            {
+                txnouttype typeInner;
+                std::vector<std::vector<unsigned char> > vInner;
+                unsigned int nSigs = 1;
+                if (Solver(redeem, typeInner, vInner) && typeInner == TX_MULTISIG)
+                    nSigs = (unsigned int)std::max(1, ScriptSigArgsExpected(typeInner, vInner) - 1);
+                return 41 + 3 + 1 + 74 * nSigs + 3 + (unsigned int)redeem.size();
+            }
+            return 41 + 3 + 400;                     // a redeem script this wallet does not have (watch-only): about a 3-of-5
+        }
+        default:
+            return 41 + 3 + 148;
+        }
+    };
     for (const auto& item : pwalletMain->mapWallet)
     {
         const CWalletTx& wtx = item.second;
@@ -5334,39 +5368,52 @@ Value fundrawtransaction(const Array& params, bool fHelp)
                 continue;
             const bool fOk = fWatching ? pwalletMain->IsWatchOnly(wtx.vout[i]) : pwalletMain->IsMine(wtx.vout[i]);
             if (fOk)
-                vCoins.emplace_back(wtx.vout[i].nValue, COutPoint(item.first, i));
+                vCoins.push_back({wtx.vout[i].nValue, COutPoint(item.first, i), InputBytes(wtx.vout[i].scriptPubKey)});
         }
     }
-    std::sort(vCoins.begin(), vCoins.end(), [](const std::pair<int64, COutPoint>& a, const std::pair<int64, COutPoint>& b) { return a.first > b.first; });
+    std::sort(vCoins.begin(), vCoins.end(), [](const FundCoin& a, const FundCoin& b) { return a.nValue > b.nValue; });
 
-    // A signed input is about 148 bytes (pay to key hash) and the change output 34: the fee is for the size the signed
-    // transaction will be, at the same rate the wallet's own sends pay
+    // The fee is for the size the signed transaction will have (each input by what spends it: see InputBytes; the change output
+    // is 34 bytes), at the same rate the wallet's own sends pay, and like them it adds one rate for every output under 1 coin
+    // (the dust rule of GetMinFee).
     const unsigned int nBaseBytes = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
     const int64 nRate = std::max<int64>(nTransactionFee, MIN_TX_FEE);
-    auto FeeFor = [&](size_t nInputs, bool fChange) {
-        const unsigned int nBytes = nBaseBytes + (unsigned int)nInputs * 148 + (fChange ? 34 : 0);
-        return nRate * (1 + (int64)nBytes / 1000);
+    int64 nDustOutputs = 0;
+    for (const CTxOut& out : tx.vout)
+        if (out.nValue < COIN)
+            nDustOutputs++;
+    auto FeeFor = [&](unsigned int nInputBytes, bool fChange) {
+        const unsigned int nBytes = nBaseBytes + nInputBytes + (fChange ? 34 : 0);
+        return nRate * (1 + (int64)nBytes / 1000) + nRate * nDustOutputs;
     };
 
     int64 nValueIn = 0;
+    unsigned int nInputBytes = 0;
     size_t nUsed = 0;
-    while (nUsed < vCoins.size() && nValueIn < nValueOut + FeeFor(nUsed, true))
-        nValueIn += vCoins[nUsed++].first;
-    if (nValueIn < nValueOut + FeeFor(nUsed, false))
+    while (nUsed < vCoins.size() && nValueIn < nValueOut + FeeFor(nInputBytes, true))
+    {
+        nValueIn += vCoins[nUsed].nValue;
+        nInputBytes += vCoins[nUsed].nInputBytes;
+        nUsed++;
+    }
+    if (nValueIn < nValueOut + FeeFor(nInputBytes, false))
         throw JSONRPCError(-4, "Insufficient funds");
 
-    int64 nFee = FeeFor(nUsed, true);
+    int64 nFee = FeeFor(nInputBytes, true);
     int64 nChange = nValueIn - nValueOut - nFee;
     int nChangePos = -1;
-    if (nChange < CENT)
+    if (nChange < COIN)
     {
-        // too little to be worth an output (and under the dust rule): it goes to the miner
+        // an output under 1 coin would cost another rate in fee under the dust rule, and is worth no more than that: it goes to the miner
         nFee = nValueIn - nValueOut;
         nChange = 0;
     }
+    if (nFee > nMaxTxFee)
+        throw JSONRPCError(-8, strprintf("The fee, %s, is more than -maxtxfee (%s). Pay less in one transaction, or raise -maxtxfee.",
+                                         FormatMoney(nFee).c_str(), FormatMoney(nMaxTxFee).c_str()));
 
     for (size_t i = 0; i < nUsed; i++)
-        tx.vin.push_back(CTxIn(vCoins[i].second));
+        tx.vin.push_back(CTxIn(vCoins[i].out));
     if (nChange > 0)
     {
         if (scriptChange.empty())
@@ -5519,6 +5566,8 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "fundrawtransaction"     && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "importaddress"          && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "importpubkey"           && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "importprivkey"          && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "importwalletencrypted"  && n > 2) ConvertTo<bool>(params[2]);
     if (strMethod == "getwatchonlybalance"    && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "listwatchonlyunspent"   && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);

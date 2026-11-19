@@ -97,6 +97,8 @@ public:
     bool AddCScript(const CScript& redeemScript) override;
     bool HaveCScript(const CScriptID &hash) const override;
     bool GetCScript(const CScriptID &hash, CScript& redeemScriptOut) const override;
+    // every redeem script held (for a backup)
+    void GetCScripts(std::vector<CScript>& vScriptsOut) const;
 };
 
 // Modern C++11 type alias for encrypted key storage

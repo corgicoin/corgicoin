@@ -99,7 +99,8 @@ Value exportwalletencrypted(const Array& params, bool fHelp)
             "exportwalletencrypted <filename> <passphrase>\n"
             "Writes the wallet's keys, recovery phrase, labels, key dates and watch-only entries to a new file, encrypted with\n"
             "a key made from <passphrase> (scrypt, AES-256-GCM). Unlike dumpwallet, the file is safe to keep on a USB stick or in\n"
-            "the cloud, as long as the passphrase is long and is not kept with it (at least 8 characters). Restore with\n"
+            "the cloud, as long as the passphrase is long and is not kept with it (at least 8 characters). Redeem scripts are\n"
+            "included, and a wallet whose recovery phrase cannot be read is refused rather than backed up without it. Restore with\n"
             "importwalletencrypted. The wallet must be unlocked. The passphrase is an argument here, so it shows in a shell's\n"
             "history and in the process list if you type it on a command line: call it from a script or a JSON-RPC client.");
     EnsureWalletIsUnlocked();
@@ -114,21 +115,28 @@ Value exportwalletencrypted(const Array& params, bool fHelp)
 
 Value importwalletencrypted(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 2)
+    if (fHelp || params.size() < 2 || params.size() > 3)
         throw runtime_error(
-            "importwalletencrypted <filename> <passphrase>\n"
-            "Adds what an encrypted backup (exportwalletencrypted) holds and this wallet does not: keys, labels, watch-only\n"
-            "entries and, for a wallet with no recovery phrase yet, the phrase. Refuses a backup of another network, of another\n"
-            "recovery phrase, with the wrong passphrase, or that has been changed. Then searches the chain from the oldest key's\n"
-            "date. The wallet must be unlocked. Returns {keys_added, labels}.");
+            "importwalletencrypted <filename> <passphrase> [adoptphrase=false]\n"
+            "Adds what an encrypted backup (exportwalletencrypted) holds and this wallet does not: keys, redeem scripts, watch-only\n"
+            "entries, and labels for addresses that have none. Refuses a backup of another network, of another recovery phrase,\n"
+            "with the wrong passphrase, or that has been changed. Then searches the chain from the oldest key's date. The wallet\n"
+            "must be unlocked.\n"
+            "A wallet with no recovery phrase takes the backup's only with adoptphrase=true: every new address then comes from\n"
+            "that phrase, so say so only for a backup you made yourself. Without it the keys are added and the phrase is left.\n"
+            "Returns {keys_added, labels, phrase_adopted}.");
+    RPCTypeCheck(params, {str_type, str_type, bool_type});
     EnsureWalletIsUnlocked();
     int nKeys = 0, nLabels = 0;
+    bool fAdopted = false;
     string strError;
-    if (!ImportEncryptedBackup(pwalletMain.get(), std::filesystem::absolute(params[0].get_str()), params[1].get_str(), nKeys, nLabels, strError))
+    if (!ImportEncryptedBackup(pwalletMain.get(), std::filesystem::absolute(params[0].get_str()), params[1].get_str(),
+                               params.size() > 2 && params[2].get_bool(), nKeys, nLabels, fAdopted, strError))
         throw JSONRPCError(-8, strError);
     Object result;
     result.emplace_back("keys_added", nKeys);
     result.emplace_back("labels", nLabels);
+    result.emplace_back("phrase_adopted", fAdopted);
     return result;
 }
 

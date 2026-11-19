@@ -182,6 +182,12 @@ public:
         return Write(std::make_pair(std::string("watchs"), script), (char)1);
     }
 
+    bool EraseWatchOnly(const CScript& script)
+    {
+        nWalletDBUpdated++;
+        return Erase(std::make_pair(std::string("watchs"), script));
+    }
+
     bool WriteCScript(const uint160& hash, const CScript& redeemScript)
     {
         nWalletDBUpdated++;

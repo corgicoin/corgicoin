@@ -36,6 +36,11 @@ class FundRawTest(CorgiTestFramework):
         signer.generate(1)
         self.sync_blocks()
 
+        self.log("an output under 1 coin costs one more rate in fee (the dust rule the wallet's own sends follow)")
+        small = signer.fundrawtransaction(signer.createrawtransaction([], {dest: Decimal("0.5")}))
+        big = signer.fundrawtransaction(signer.createrawtransaction([], {dest: Decimal(3)}))
+        assert_equal(small["fee"] - big["fee"], Decimal(1))
+
         self.log("a watch-only wallet funds a payment from the address it follows; the keys elsewhere sign it")
         cold = signer.getnewaddress()
         # put 40 coins at the cold address, from a coin chosen for the purpose
@@ -73,6 +78,11 @@ class FundRawTest(CorgiTestFramework):
                                 watcher.createrawtransaction([], {payee: Decimal(1)}), {"includeWatching": True})
         assert_raises_rpc_error(-22, "decode", watcher.fundrawtransaction, "zz")
         assert_raises_rpc_error(-8, "already has inputs", signer.fundrawtransaction, signed["hex"])
+
+        self.log("a fee over -maxtxfee is refused, as the wallet's own sends refuse it")
+        signer.stop()
+        signer.start(["-maxtxfee=0.5"])
+        assert_raises_rpc_error(-8, "maxtxfee", signer.fundrawtransaction, signer.createrawtransaction([], {payee: Decimal(3)}))
 
 
 if __name__ == "__main__":

@@ -31,8 +31,10 @@ bool ImportPrivateKey(CWallet* pwallet, const std::string& strSecret, const std:
  *  The wallet must be unlocked. Export refuses to touch an existing file. Import adds what the wallet does not have, refuses a
  *  backup of another network or of a different recovery phrase, and rescans from the oldest key's date. */
 bool ExportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, const std::string& strPass, std::string& strError);
-bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, const std::string& strPass,
-                           int& nKeysAdded, int& nLabels, std::string& strError);
+/** fAdoptPhrase: a wallet that has no recovery phrase takes the backup's only when this is set (every later address comes from
+ *  it); fPhraseAdopted says whether it did. */
+bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, const std::string& strPass, bool fAdoptPhrase,
+                           int& nKeysAdded, int& nLabels, bool& fPhraseAdopted, std::string& strError);
 
 std::string EncodeDumpString(const std::string& str);
 std::string DecodeDumpString(const std::string& str);

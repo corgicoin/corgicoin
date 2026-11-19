@@ -9,6 +9,7 @@
 #include "base58.h"
 #include "util.h"
 #include "main.h"
+#include "bip39.h"
 #include "json/json_compat.h"
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
@@ -18,6 +19,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #endif
+#include <cerrno>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -172,8 +174,10 @@ static void RescanWallet(CWallet* pwallet, int64 nStartTime = 0)
 // ---------------------------------------------------------------------------------------------------------------------------
 
 static const unsigned char BACKUP_MAGIC[8] = {'C', 'O', 'R', 'G', 'I', 'B', 'K', '1'};
-static const unsigned int BACKUP_LOG2N = 15;                   // 32 MiB to derive the key: slow for a thief, a tenth of a second for you
-static const unsigned int BACKUP_LOG2N_MIN = 14, BACKUP_LOG2N_MAX = 20;
+static const unsigned int BACKUP_LOG2N = 17;                   // 128 MiB to derive the key: slow for a thief, under a second for you
+// What a file may ask for: 2^18 is 256 MiB, as much as this wallet will spend on a file it was handed (the file chooses the cost,
+// and the RPC runs with the wallet and the chain locked). Backups made at 2^15 by the first version still open.
+static const unsigned int BACKUP_LOG2N_MIN = 14, BACKUP_LOG2N_MAX = 18;
 static const size_t BACKUP_SALT = 16, BACKUP_NONCE = 12, BACKUP_TAG = 16, BACKUP_HEADER = 8 + 1 + BACKUP_SALT + BACKUP_NONCE;
 static const size_t BACKUP_MIN_PASSPHRASE = 8;
 
@@ -298,6 +302,12 @@ bool ExportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         root.emplace_back("version", 1);
         root.emplace_back("created", (int64_t)GetTime());
         root.emplace_back("chain", std::string(BackupChainName()));
+        // A wallet with an HD seed whose phrase cannot be read (it did not decrypt when the wallet was unlocked) would give a backup
+        // with no phrase, which restores none of the keys made after it: refuse rather than write that.
+        if (pwallet->IsHDEnabled() && (!pwallet->IsHDSeedAvailable() || pwallet->GetHDMnemonic().empty())) {
+            strError = "This wallet has an HD seed whose recovery phrase is not available (it could not be decrypted), so a backup would not hold it. Nothing was written.";
+            return false;
+        }
         root.emplace_back("hdmnemonic", pwallet->IsHDEnabled() ? pwallet->GetHDMnemonic() : std::string());
         root.emplace_back("hdindex", (int64_t)pwallet->nHDExternalIndex);
 
@@ -334,6 +344,14 @@ bool ExportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
             watch.push_back(HexStr(script.begin(), script.end()));
         root.emplace_back("watchonly", watch);
 
+        // redeem scripts (pay-to-script-hash, multisig): without them the coins sent to them cannot be spent after a restore
+        std::vector<CScript> vRedeem;
+        pwallet->GetCScripts(vRedeem);
+        Array cscripts;
+        for (const CScript& script : vRedeem)
+            cscripts.push_back(HexStr(script.begin(), script.end()));
+        root.emplace_back("cscript", cscripts);
+
         strPlain = write_string(Value(root), false);
     }
 
@@ -345,38 +363,102 @@ bool ExportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         return false;
     }
 
-    const std::filesystem::path pathTmp = path.string() + ".tmp";
+    // A fresh name next to the target (a file of the user's called <path>.tmp is never truncated), created owner-only and
+    // exclusively, and not through a symlink someone left there, as DumpWalletToFile does it: never written first and
+    // chmod-ed after. (Windows has no such flags; there the file is created new, and the directory's permissions apply.)
+    const std::filesystem::path pathTmp = path.string() + strprintf(".tmp%08x", (unsigned int)GetRand(0xffffffff));
+    auto Remove = [&]() {
+        std::error_code ec;
+        std::filesystem::remove(pathTmp, ec);
+    };
+#ifndef WIN32
     {
-        std::ofstream file(pathTmp, std::ios::out | std::ios::trunc | std::ios::binary);
+        int fd = open(pathTmp.string().c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (fd < 0) {
+            strError = "Cannot create the backup file";
+            return false;
+        }
+        size_t nDone = 0;
+        while (nDone < vchFile.size()) {
+            ssize_t n = write(fd, vchFile.data() + nDone, vchFile.size() - nDone);
+            if (n <= 0) {
+                close(fd);
+                Remove();
+                strError = "Error writing the backup file";
+                return false;
+            }
+            nDone += (size_t)n;
+        }
+        if (fsync(fd) != 0 || close(fd) != 0) {
+            Remove();
+            strError = "Error writing the backup file";
+            return false;
+        }
+    }
+#else
+    {
+        std::ofstream file(pathTmp, std::ios::out | std::ios::binary);
         if (!file.is_open()) {
-            strError = "Cannot open the backup file";
+            strError = "Cannot create the backup file";
             return false;
         }
         file.write((const char*)vchFile.data(), (std::streamsize)vchFile.size());
         file.close();
         if (file.fail()) {
-            std::error_code ec;
-            std::filesystem::remove(pathTmp, ec);
+            Remove();
             strError = "Error writing the backup file";
             return false;
         }
     }
+#endif
+    // the check at the top and the move are apart: look again, so a file that appeared in between is not replaced
     std::error_code ec;
-    std::filesystem::permissions(pathTmp, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
-                                 std::filesystem::perm_options::replace, ec);
+    if (std::filesystem::exists(path, ec)) {
+        Remove();
+        strError = path.string() + " appeared while the backup was being written. Choose a new filename.";
+        return false;
+    }
+#ifndef WIN32
+    // link() fails if the name is taken, where rename() would replace it; a file system without hard links falls back to rename
+    if (link(pathTmp.string().c_str(), path.string().c_str()) == 0) {
+        Remove();
+        return true;
+    }
+    if (errno == EEXIST) {
+        Remove();
+        strError = path.string() + " appeared while the backup was being written. Choose a new filename.";
+        return false;
+    }
+#endif
     std::filesystem::rename(pathTmp, path, ec);
     if (ec) {
-        std::filesystem::remove(pathTmp, ec);
+        Remove();
         strError = "Cannot move the backup into place";
         return false;
     }
     return true;
 }
 
-bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, const std::string& strPass,
-                           int& nKeysAdded, int& nLabels, std::string& strError)
+// An HD key path from a file, "m/44'/<coin>'/0'/0/<index>": the index, or -1 if it is not one (a file is not trusted to say anything else)
+static int64 HDIndexFromPath(const std::string& strPath)
+{
+    if (strPath.size() > 64 || strPath.compare(0, 2, "m/") != 0)
+        return -1;
+    const size_t nSlash = strPath.rfind('/');
+    const std::string strIndex = strPath.substr(nSlash + 1);
+    if (strIndex.empty() || strIndex.size() > 9 || strIndex.find_first_not_of("0123456789") != std::string::npos)
+        return -1;
+    for (char c : strPath)
+        if (!((c >= '0' && c <= '9') || c == 'm' || c == '/' || c == '\''))
+            return -1;
+    return atoll(strIndex.c_str());
+}
+
+bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, const std::string& strPass, bool fAdoptPhrase,
+                           int& nKeysAdded, int& nLabels, bool& fPhraseAdopted, std::string& strError)
 {
     nKeysAdded = nLabels = 0;
+    fPhraseAdopted = false;
     if (pwallet->IsLocked()) {
         strError = "Wallet is locked";
         return false;
@@ -410,27 +492,58 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
     }
 
     LOCK2(cs_main, pwallet->cs_wallet);
+    if (pwallet->IsLocked()) {         // looked at again under the locks: it may have been locked while the file was read and decrypted
+        strError = "Wallet is locked";
+        return false;
+    }
 
-    // the recovery phrase: a wallet without one takes it; one that has a different one is not touched
+    // The recovery phrase. Every address the wallet makes from now on comes from it, so a wallet takes a backup's phrase only when
+    // it is told to (adoptphrase): a file someone talked you into restoring must not be able to choose where your next deposits go.
+    // A wallet that has a phrase keeps it, and refuses a backup of another one.
     const Value& vMnemonic = find_value(obj, "hdmnemonic");
     if (vMnemonic.type() == str_type && !vMnemonic.get_str().empty()) {
-        const std::string strMnemonic = vMnemonic.get_str();
+        std::string strMnemonic = bip39::NormaliseMnemonic(vMnemonic.get_str());    // as the wallet stores it: the file's spacing is not the phrase
+        bool fOk = true;
         if (!pwallet->IsHDEnabled()) {
-            std::string strHDError;
-            if (!pwallet->SetHDSeedFromMnemonic(strMnemonic, strHDError)) {
-                strError = "Could not set the recovery phrase from the backup: " + strHDError;
-                return false;
+            if (fAdoptPhrase) {
+                std::string strHDError;
+                if (!pwallet->SetHDSeedFromMnemonic(strMnemonic, strHDError)) {
+                    strError = "Could not set the recovery phrase from the backup: " + strHDError;
+                    fOk = false;
+                } else
+                    fPhraseAdopted = true;
             }
         } else if (pwallet->GetHDMnemonic() != strMnemonic) {
             strError = "This wallet already has a different recovery phrase: restore a backup into an empty wallet, or one with the same phrase";
-            return false;
+            fOk = false;
         }
+        OPENSSL_cleanse(&strMnemonic[0], strMnemonic.size());
+        if (!fOk)
+            return false;
     }
+    const bool fHD = pwallet->IsHDEnabled();
 
-    // The next address made from the phrase must be one the old wallet had not handed out: take the index it had reached.
+    // what the file's keys say about the HD indices they hold (so the index below can be held to what is there)
+    int64 nHighestIndex = -1;
+    const Value& vKeys = find_value(obj, "keys");
+    if (vKeys.type() == array_type)
+        for (const Value& vKey : vKeys.get_array()) {
+            if (vKey.type() != obj_type)
+                continue;
+            const Object kObj = vKey.get_obj();      // find_value gives a reference into it: it must outlive the use
+            const Value& vPath = find_value(kObj, "hdkeypath");
+            if (vPath.type() == str_type)
+                nHighestIndex = std::max(nHighestIndex, HDIndexFromPath(vPath.get_str()));
+        }
+
+    // The next address made from the phrase must be one the old wallet had not handed out: take the index it had reached, but no
+    // further than the keys in the file reach plus the gap a restore from the phrase looks ahead. A higher one (a file can say any
+    // number) would put new deposits where a restore from the phrase never looks.
     const Value& vIndex = find_value(obj, "hdindex");
-    if (vIndex.type() == int_type && pwallet->IsHDEnabled()) {
-        const uint32_t nIndex = (uint32_t)std::max<int64>(0, std::min<int64>(vIndex.get_int64(), 1000000));
+    if (vIndex.type() == int_type && fHD) {
+        const int64 nGap = std::max<int64>(1, std::min<int64>(GetArg("-hdrestoregap", 1000), 100000));
+        const int64 nCap = std::max<int64>(nHighestIndex + 1, (int64)pwallet->nHDExternalIndex) + nGap;
+        const uint32_t nIndex = (uint32_t)std::max<int64>(0, std::min<int64>(vIndex.get_int64(), nCap));
         if (nIndex > pwallet->nHDExternalIndex) {
             pwallet->nHDExternalIndex = nIndex;
             if (pwallet->fFileBacked)
@@ -440,7 +553,7 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
 
     int64 nOldest = std::numeric_limits<int64>::max();
     bool fUnknownTime = false;
-    const Value& vKeys = find_value(obj, "keys");
+    bool fAddedOther = false;       // watch-only entries or redeem scripts, which also need a look at the chain
     if (vKeys.type() == array_type) {
         for (const Value& vKey : vKeys.get_array()) {
             if (vKey.type() != obj_type)
@@ -471,19 +584,20 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
                 fUnknownTime = true;
             if (pwallet->HaveKey(keyid))
                 continue;
-            if (!pwallet->AddKey(key)) {
+            CKeyMetadata meta(nTime > 0 ? nTime : 0);
+            const Value& vPath = find_value(k, "hdkeypath");
+            if (vPath.type() == str_type && HDIndexFromPath(vPath.get_str()) >= 0)
+                meta.strHDKeypath = vPath.get_str();
+            if (!pwallet->AddKeyWithMetadata(key, meta)) {
                 strError = "Error adding a key from the backup to the wallet";
                 return false;
             }
-            CKeyMetadata meta(nTime);
-            const Value& vPath = find_value(k, "hdkeypath");
-            if (vPath.type() == str_type)
-                meta.strHDKeypath = vPath.get_str();
-            pwallet->SetKeyMetadata(key.GetPubKey(), meta);
             nKeysAdded++;
         }
     }
 
+    // A label is added to an address that has none: a file cannot rename an address the wallet already knows (an attacker's
+    // address under the name of a contact you trust)
     const Value& vLabels = find_value(obj, "labels");
     if (vLabels.type() == array_type) {
         for (const Value& vLabel : vLabels.get_array()) {
@@ -495,7 +609,7 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
             if (vAddr.type() != str_type || vText.type() != str_type)
                 continue;
             CBitcoinAddress address(vAddr.get_str());
-            if (!address.IsValid())
+            if (!address.IsValid() || pwallet->mapAddressBook.count(address.Get()))
                 continue;
             pwallet->SetAddressBookName(address.Get(), vText.get_str());
             nLabels++;
@@ -508,18 +622,40 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
             if (vScript.type() != str_type || !IsHex(vScript.get_str()))
                 continue;
             std::vector<unsigned char> v = ParseHex(vScript.get_str());
-            pwallet->AddWatchOnly(CScript(v.begin(), v.end()));
+            if (pwallet->AddWatchOnly(CScript(v.begin(), v.end())))
+                fAddedOther = true;
         }
     }
 
-    // the chain is searched from when the oldest key was made (from the first block if any key's date is not known)
+    const Value& vRedeem = find_value(obj, "cscript");
+    if (vRedeem.type() == array_type) {
+        for (const Value& vScript : vRedeem.get_array()) {
+            if (vScript.type() != str_type || !IsHex(vScript.get_str()))
+                continue;
+            std::vector<unsigned char> v = ParseHex(vScript.get_str());
+            if (v.empty() || v.size() > 520)        // MAX_SCRIPT_ELEMENT_SIZE: a larger one cannot be a redeem script
+                continue;
+            const CScript script(v.begin(), v.end());
+            if (!pwallet->HaveCScript(script.GetID())) {
+                if (!pwallet->AddCScript(script)) {
+                    strError = "Error adding a redeem script from the backup to the wallet";
+                    return false;
+                }
+                fAddedOther = true;
+            }
+        }
+    }
+
+    // the balance and the cached amounts are worked out again, and the chain is searched from when the oldest key was made
+    // (from the first block if any key's date is not known, or if watch-only entries or scripts came: they have no date)
+    pwallet->MarkDirty();
     CBlockIndex* pindexStart = pindexGenesisBlock;
-    if (!fUnknownTime && nOldest != std::numeric_limits<int64>::max()) {
+    if (!fUnknownTime && !fAddedOther && nOldest != std::numeric_limits<int64>::max()) {
         pindexStart = pindexBest;
         while (pindexStart && pindexStart->pprev && pindexStart->GetBlockTime() >= nOldest - 2 * 60 * 60)
             pindexStart = pindexStart->pprev;
     }
-    if (nKeysAdded > 0 || pwallet->IsHDEnabled()) {
+    if (nKeysAdded > 0 || fAddedOther || fHD) {
         pwallet->ScanForWalletTransactions(pindexStart, true);
         pwallet->ReacceptWalletTransactions();
     }
@@ -578,8 +714,8 @@ bool ImportWalletFromFile(CWallet* pwallet, const std::filesystem::path& path, i
                 fLabel = true;
             }
         }
-        pwallet->SetKeyMetadata(key.GetPubKey(), CKeyMetadata(0));     // when the key was made is not known here: not the day of the import
-        if (!pwallet->AddKey(key)) {
+        // when the key was made is not known here: not the day of the import
+        if (!pwallet->AddKeyWithMetadata(key, CKeyMetadata(0))) {
             fGood = false;
             continue;
         }
@@ -633,14 +769,11 @@ bool ImportPrivateKey(CWallet* pwallet, const string& strSecret, const string& s
         return true;
     }
     // the key's own date, or 0 (unknown) if none was given: never the day it was imported, which a later backup would take for its birth
-    // (set before the key is added, which stamps "now" only on a key with no metadata)
-    pwallet->SetKeyMetadata(key.GetPubKey(), CKeyMetadata(nTimestamp > 0 ? nTimestamp : 0));
-    if (!pwallet->AddKey(key)) {
+    // (the key is written first and its metadata after it: a key that cannot be added leaves no metadata record)
+    if (!pwallet->AddKeyWithMetadata(key, CKeyMetadata(nTimestamp > 0 ? nTimestamp : 0))) {
         strError = "Error adding key to wallet";
         return false;
     }
-    if (nTimestamp > 0)
-        pwallet->SetKeyMetadata(key.GetPubKey(), CKeyMetadata(nTimestamp));      // the key's own date, not the day it was imported
     RescanWallet(pwallet, nTimestamp);
     return true;
 }
