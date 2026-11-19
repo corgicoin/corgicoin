@@ -120,6 +120,13 @@ void static EraseFromWallets(uint256 hash)
         pwallet->EraseFromWallet(hash);
 }
 
+// tell all wallets which transactions a replacement pushed out of the pool
+void static ReplacedInWallets(const std::set<uint256>& setReplaced)
+{
+    for (CWallet* pwallet : setpwalletRegistered)
+        pwallet->TransactionsReplaced(setReplaced);
+}
+
 // make sure all wallets know about the given transaction, in the given block
 void SyncWithWallets(const CTransaction& tx, const CBlock* pblock, bool fUpdate)
 {
@@ -548,30 +555,71 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     // refused, unless it is a replacement the rules below allow (BIP 125): the one in the pool said it can be replaced, and the
     // newcomer pays more and adds nothing unconfirmed.
     std::vector<uint256> vConflicts;
-    for (unsigned int i = 0; i < tx.vin.size(); i++)
+    std::set<uint256> setEvict;             // what a replacement would push out: the conflicts, and everything built on them
+    std::set<COutPoint> setConflictInputs;  // what the conflicting transactions spend
+    int64 nEvictedFees = 0;                 // what they paid, with any fee deltas (so it is compared with the newcomer's modified fee)
     {
-        auto itNext = mapNextTx.find(tx.vin[i].prevout);
-        if (itNext == mapNextTx.end())
-            continue;
-        const uint256 hashConflict = itNext->second.ptx->GetHash();
-        if (std::find(vConflicts.begin(), vConflicts.end(), hashConflict) == vConflicts.end())
-            vConflicts.push_back(hashConflict);
-    }
-    if (!vConflicts.empty())
-    {
-        if (!GetBoolArg("-mempoolreplacement", true))
-            return RejectTx(pcheck, "txn-mempool-conflict");
-        for (const uint256& hashConflict : vConflicts)
+        LOCK(cs);
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
         {
-            bool fSignals = false;
-            for (const CTxIn& txin : mapTx[hashConflict].vin)
-                fSignals |= txin.nSequence < 0xfffffffe;
-            if (!fSignals)
-                return RejectTx(pcheck, "txn-mempool-conflict");        // not replaceable: it did not ask to be
+            auto itNext = mapNextTx.find(tx.vin[i].prevout);
+            if (itNext == mapNextTx.end())
+                continue;
+            const uint256 hashConflict = itNext->second.ptx->GetHash();
+            if (std::find(vConflicts.begin(), vConflicts.end(), hashConflict) == vConflicts.end())
+                vConflicts.push_back(hashConflict);
+        }
+        if (!vConflicts.empty())
+        {
+            if (!GetBoolArg("-mempoolreplacement", true))
+                return RejectTx(pcheck, "txn-mempool-conflict");
+            // The fee rules below need the inputs: without them (a transaction put back after a reorganisation, the wallet's own
+            // resubmission, a client-mode node) a conflict is never a replacement, or the signalling transaction goes for nothing.
+            if (!fCheckInputs)
+                return RejectTx(pcheck, "txn-mempool-conflict");
+            for (const uint256& hashConflict : vConflicts)
+            {
+                auto itTx = mapTx.find(hashConflict);
+                auto itEntry = mapEntry.find(hashConflict);
+                if (itTx == mapTx.end() || itEntry == mapEntry.end() || !itEntry->second.fFeeKnown)
+                    return RejectTx(pcheck, "txn-mempool-conflict");    // its fee is not known, so what a replacement must pay is not either
+                bool fSignals = false;
+                for (const CTxIn& txin : itTx->second.vin)
+                {
+                    fSignals |= txin.nSequence < 0xfffffffe;
+                    setConflictInputs.insert(txin.prevout);
+                }
+                if (!fSignals)
+                    return RejectTx(pcheck, "txn-mempool-conflict");        // not replaceable: it did not ask to be
+            }
+            // What goes out if this comes in: the conflicting transactions and everything that spends them. The walk stops as
+            // soon as it is past 100, since it runs before any signature is checked.
+            std::vector<uint256> vWork(vConflicts.begin(), vConflicts.end());
+            while (!vWork.empty())
+            {
+                const uint256 h = vWork.back();
+                vWork.pop_back();
+                if (!setEvict.insert(h).second)
+                    continue;
+                if (setEvict.size() > 100)
+                    return RejectTx(pcheck, "too-many-replacements", LogError("CTxMemPool::accept() : a replacement would evict more than 100 transactions"));
+                auto itTx = mapTx.find(h);
+                auto itEntry = mapEntry.find(h);
+                if (itTx == mapTx.end() || itEntry == mapEntry.end() || !itEntry->second.fFeeKnown)
+                    return RejectTx(pcheck, "txn-mempool-conflict");
+                double dUnusedPriority = 0;
+                int64 nDelta = 0;
+                ApplyDeltas(h, dUnusedPriority, nDelta);
+                nEvictedFees += itEntry->second.nFee + nDelta;
+                for (unsigned int n = 0; n < itTx->second.vout.size(); n++)
+                {
+                    auto itSpend = mapNextTx.find(COutPoint(h, n));
+                    if (itSpend != mapNextTx.end())
+                        vWork.push_back(itSpend->second.ptx->GetHash());
+                }
+            }
         }
     }
-    std::set<uint256> setEvict;         // what a replacement would push out: the conflicts, and everything built on them
-    int64 nEvictedFees = 0;
 
     if (fCheckInputs)
     {
@@ -623,55 +671,33 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
         if (!vConflicts.empty())
         {
-            // What goes out if this comes in: the conflicting transactions and everything that spends them
+            // it may not rest on what it replaces, nor on anything unconfirmed that the replaced did not already rest on
             {
                 LOCK(cs);
-                std::vector<uint256> vWork(vConflicts.begin(), vConflicts.end());
-                while (!vWork.empty())
+                for (const CTxIn& txin : tx.vin)
                 {
-                    const uint256 h = vWork.back();
-                    vWork.pop_back();
-                    if (!setEvict.insert(h).second)
-                        continue;
-                    auto itTx = mapTx.find(h);
-                    if (itTx == mapTx.end())
-                        continue;
-                    for (unsigned int n = 0; n < itTx->second.vout.size(); n++)
-                    {
-                        auto itSpend = mapNextTx.find(COutPoint(h, n));
-                        if (itSpend != mapNextTx.end())
-                            vWork.push_back(itSpend->second.ptx->GetHash());
-                    }
+                    if (setEvict.count(txin.prevout.hash))
+                        return RejectTx(pcheck, "replacement-spends-conflict");
+                    if (mapTx.count(txin.prevout.hash) && !setConflictInputs.count(txin.prevout))
+                        return RejectTx(pcheck, "replacement-adds-unconfirmed");
                 }
-                for (const uint256& h : setEvict)
-                {
-                    auto itEntry = mapEntry.find(h);
-                    if (itEntry != mapEntry.end())
-                        nEvictedFees += itEntry->second.nFee;
-                }
-            }
-            if (setEvict.size() > 100)
-                return RejectTx(pcheck, "too-many-replacements", LogError("CTxMemPool::accept() : a replacement would evict %u transactions", (unsigned)setEvict.size()));
-            // it may not rest on what it replaces, nor on anything unconfirmed that the replaced did not already rest on
-            std::set<COutPoint> setConflictInputs;
-            for (const uint256& hashConflict : vConflicts)
-                for (const CTxIn& txin : mapTx[hashConflict].vin)
-                    setConflictInputs.insert(txin.prevout);
-            for (const CTxIn& txin : tx.vin)
-            {
-                if (setEvict.count(txin.prevout.hash))
-                    return RejectTx(pcheck, "replacement-spends-conflict");
-                if (mapTx.count(txin.prevout.hash) && !setConflictInputs.count(txin.prevout))
-                    return RejectTx(pcheck, "replacement-adds-unconfirmed");
             }
             // it pays more than all it throws out, and the relay fee for its own size on top, and at a higher rate than each of them
             if (nModifiedFees < nEvictedFees + MIN_RELAY_TX_FEE * (1 + (int64)nSize / 1000))
                 return RejectTx(pcheck, "insufficient-fee-replacement", LogError("CTxMemPool::accept() : replacement pays %s, needs more than %s", FormatMoney(nModifiedFees).c_str(), FormatMoney(nEvictedFees).c_str()));
-            for (const uint256& hashConflict : vConflicts)
             {
-                auto itEntry = mapEntry.find(hashConflict);
-                if (itEntry != mapEntry.end() && (double)nModifiedFees * itEntry->second.nSize <= (double)itEntry->second.nFee * nSize)
-                    return RejectTx(pcheck, "replacement-feerate-too-low");
+                LOCK(cs);
+                for (const uint256& hashConflict : vConflicts)
+                {
+                    auto itEntry = mapEntry.find(hashConflict);
+                    if (itEntry == mapEntry.end())
+                        continue;
+                    double dUnusedPriority = 0;
+                    int64 nDelta = 0;
+                    ApplyDeltas(hashConflict, dUnusedPriority, nDelta);
+                    if ((double)nModifiedFees * itEntry->second.nSize <= (double)(itEntry->second.nFee + nDelta) * nSize)
+                        return RejectTx(pcheck, "replacement-feerate-too-low");
+                }
             }
         }
 
@@ -729,7 +755,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     // A dry run stops here: the transaction passed every check (and it would not be the one the size limit throws out)
     if (pcheck && pcheck->fTestOnly)
     {
-        if (WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION)))
+        if (WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), setEvict.empty() ? nullptr : &setEvict))
             return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s would have the lowest fee rate", hash.ToString().substr(0,10).c_str()));
         return true;
     }
@@ -737,6 +763,9 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     // Store transaction in memory
     {
         LOCK(cs);
+        // A replacement that the size limit would throw out at once must not take its conflicts with it: ask before removing them
+        if (!setEvict.empty() && WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), &setEvict))
+            return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, replacement %s would have the lowest fee rate", hash.ToString().substr(0,10).c_str()));
         for (const uint256& hashConflict : vConflicts)
         {
             LogPrintf("CTxMemPool::accept() : %s replaces %s (and what is built on it)\n", hash.ToString().substr(0,10).c_str(), hashConflict.ToString().substr(0,10).c_str());
@@ -750,6 +779,9 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         if (!mapTx.count(hash))
             return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s had the lowest fee rate", hash.ToString().substr(0,10).c_str()));
     }
+
+    if (!setEvict.empty())
+        ReplacedInWallets(setEvict);
 
     ///// are we sure this is ok when loading transactions or restoring block txes
 
@@ -968,14 +1000,30 @@ unsigned int CTxMemPool::Trim()
     return nDropped;
 }
 
-bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize)
+bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize, const std::set<uint256>* pEvicted)
 {
     LOCK(cs);
-    if (nPoolBytes + nSize <= MaxMempoolBytes() || mapEntry.empty())
+    // a replacement frees the room of what it replaces, and those are not among the entries that could be dropped for it
+    size_t nFreed = 0;
+    if (pEvicted)
+        for (const uint256& h : *pEvicted)
+        {
+            auto itEntry = mapEntry.find(h);
+            if (itEntry != mapEntry.end())
+                nFreed += std::min<size_t>(nPoolBytes, itEntry->second.nSize);
+        }
+    if (nPoolBytes - std::min(nPoolBytes, nFreed) + nSize <= MaxMempoolBytes() || mapEntry.empty())
         return false;
-    const std::vector<std::pair<double, uint256> > vCandidates = EvictionCandidates();
-    // strictly lower than every candidate: it goes first (a tie is left to the real thing)
-    return !vCandidates.empty() && (double)nFee / std::max(1u, nSize) < vCandidates.front().first;
+    const double dRate = (double)nFee / std::max(1u, nSize);
+    for (const auto& candidate : EvictionCandidates())
+    {
+        if (pEvicted && pEvicted->count(candidate.second))
+            continue;
+        // strictly lower than every candidate: it goes first. A replacement is held to more, as it has already cost the pool
+        // what it replaced: a tie counts as dropped (the real thing breaks ties by hash)
+        return pEvicted ? dRate <= candidate.first : dRate < candidate.first;
+    }
+    return false;
 }
 
 void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)

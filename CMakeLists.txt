@@ -614,6 +614,7 @@ if(BUILD_TESTS)
         src/test/uint160_tests.cpp
         src/test/uint256_tests.cpp
         src/test/util_tests.cpp
+        src/test/mempool_replace_tests.cpp
         src/test/wallet_tests.cpp
         src/test/wallet_crypto_tests.cpp
         src/test/scrypt_tests.cpp

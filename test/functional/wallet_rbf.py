@@ -26,9 +26,23 @@ class RBFTest(CorgiTestFramework):
         assert signed["complete"]
         return signed["hex"]
 
+    def chain(self, node, parent_id, parent_amount, count):
+        """count transactions, each spending the output of the one before (the first of parent_id), each paying a fee of 1. Returns their txids."""
+        ids = []
+        amount = parent_amount
+        prev = parent_id
+        for _ in range(count):
+            amount -= Decimal(1)
+            raw = node.createrawtransaction([{"txid": prev, "vout": 0}], {node.getnewaddress(): amount})
+            signed = node.signrawtransaction(raw)
+            assert signed["complete"]
+            prev = node.sendrawtransaction(signed["hex"])
+            ids.append(prev)
+        return ids
+
     def run_test(self):
         a, b = self.nodes
-        a.generate(110)
+        a.generate(130)
         self.connect_nodes(1, 0)
         self.sync_blocks()
         dest = a.getnewaddress()
@@ -63,6 +77,75 @@ class RBFTest(CorgiTestFramework):
         a.generate(1)
         self.sync_blocks()
         assert_equal(a.getrawmempool(), [])
+        self.log("the replacement's fee rate must beat the replaced one's, not only its fee")
+        old_id = a.sendrawtransaction(self.spend(a, coins[4], dest, 2, signal=True))
+        two_in = lambda fee: a.signrawtransaction(a.createrawtransaction(
+            [{"txid": coins[4]["txid"], "vout": coins[4]["vout"]}, {"txid": coins[5]["txid"], "vout": coins[5]["vout"]}],
+            {a.getnewaddress(): coins[4]["amount"] + coins[5]["amount"] - Decimal(fee)}))["hex"]
+        assert_raises_rpc_error(-22, "replacement-feerate-too-low", a.sendrawtransaction, two_in(3))     # more fee, but a bigger transaction: a lower rate
+        assert old_id in a.getrawmempool()
+        new_id = a.sendrawtransaction(two_in(5))
+        assert old_id not in a.getrawmempool() and new_id in a.getrawmempool()
+        a.generate(1)
+
+        self.log("what is built on the replaced transaction goes with it; the other node follows")
+        root = a.sendrawtransaction(self.spend(a, coins[6], dest, 2, signal=True))
+        kids = self.chain(a, root, coins[6]["amount"] - Decimal(2), 2)
+        assert_equal(len(a.getrawmempool()), 3)
+        self.sync_mempools()
+        replacement = a.sendrawtransaction(self.spend(a, coins[6], a.getnewaddress(), 20, signal=True))
+        assert_equal(a.getrawmempool(), [replacement])
+        self.sync_mempools()
+        assert_equal(b.getrawmempool(), [replacement])
+        a.generate(1)
+        self.sync_blocks()
+
+        self.log("a replacement may push out 100 transactions, not 101 (and is refused before any signature is checked)")
+        root = a.sendrawtransaction(self.spend(a, coins[7], dest, 2, signal=True))
+        self.chain(a, root, coins[7]["amount"] - Decimal(2), 99)           # the root and 99 more: 100
+        assert_equal(len(a.getrawmempool()), 100)
+        replacement = a.sendrawtransaction(self.spend(a, coins[7], a.getnewaddress(), 150, signal=True))
+        assert_equal(a.getrawmempool(), [replacement])
+        a.generate(1)
+        root = a.sendrawtransaction(self.spend(a, coins[8], dest, 2, signal=True))
+        self.chain(a, root, coins[8]["amount"] - Decimal(2), 100)          # 101
+        assert_equal(len(a.getrawmempool()), 101)
+        assert_raises_rpc_error(-22, "too-many-replacements", a.sendrawtransaction, self.spend(a, coins[8], a.getnewaddress(), 300, signal=True))
+        assert_equal(len(a.getrawmempool()), 101)
+        a.generate(1)
+
+        self.log("bip125-replaceable: yes for one that signals, or rests on one that does; no for one that does not, and once mined")
+        sig = a.sendrawtransaction(self.spend(a, coins[9], dest, 2, signal=True))
+        assert_equal(a.gettransaction(sig)["bip125-replaceable"], "yes")
+        child = self.chain(a, sig, coins[9]["amount"] - Decimal(2), 1)[0]
+        assert_equal(a.gettransaction(child)["bip125-replaceable"], "yes")
+        fixed = a.sendrawtransaction(self.spend(a, coins[10], dest, 2, signal=False))
+        assert_equal(a.gettransaction(fixed)["bip125-replaceable"], "no")
+        listed = {t["txid"]: t["bip125-replaceable"] for t in a.listtransactions("*", 50)}
+        assert_equal(listed[sig], "yes")
+        assert_equal(listed[fixed], "no")
+        a.generate(1)
+        assert_equal(a.gettransaction(sig)["bip125-replaceable"], "no")
+
+        self.log("a replacement made by someone else: the wallet stops counting the transaction it replaced")
+        before = a.getbalance()
+        sent = a.sendtoaddress(b.getnewaddress(), 1)
+        raw = a.decoderawtransaction(a.getrawtransaction(sent))
+        total_in = Decimal(0)
+        for vin in raw["vin"]:
+            total_in += Decimal(str(a.getrawtransaction(vin["txid"], 1)["vout"][vin["vout"]]["value"]))
+        spent_fee = total_in - sum(Decimal(str(o["value"])) for o in raw["vout"])
+        outside = a.signrawtransaction(a.createrawtransaction([{"txid": v["txid"], "vout": v["vout"]} for v in raw["vin"]],
+                                                              {a.getnewaddress(): total_in - spent_fee - 20}))
+        assert outside["complete"]
+        replacement = a.sendrawtransaction(outside["hex"])
+        assert_equal(a.getrawmempool(), [replacement])
+        assert_raises_rpc_error(-5, "Invalid or non-wallet", a.gettransaction, sent)
+        # its change is no longer an output the wallet can spend (before, it stayed in the balance and its coins stayed marked spent)
+        assert all(u["txid"] != sent for u in a.listunspent(0)), "the replaced transaction's change is still counted"
+        a.generate(1)
+        self.sync_blocks()
+
 
         self.log("wallet: a send with -walletrbf signals, bumpfee replaces it and raises the fee out of the change")
         balance = a.getbalance()
