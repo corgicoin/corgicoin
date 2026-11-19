@@ -142,6 +142,14 @@ class HeadersFirstLimitsTest(CorgiTestFramework):
         wait_until(lambda: d.getblockchaininfo()["header_only_entries"] == 1, what="the near fork to be kept")
         assert "misbehaving" not in self.log_text(d)
 
+        self.log("an AuxPoW header (good proof, right chain ID) before the AuxPoW fork is refused")
+        assert c.getblockcount() < AUXPOW_FORK_REGTEST
+        held = c.getblockchaininfo()["header_only_entries"]
+        before = self.log_text(c).count("bad header from")
+        self.send_one(c, self.aux_header(c, CHAIN_ID, valid_proof=True))
+        wait_until(lambda: self.log_text(c).count("bad header from") > before, what="the early AuxPoW header to be refused")
+        assert_equal(c.getblockchaininfo()["header_only_entries"], held)
+
         self.log("a long chain of low-work headers from genesis does not shut out the honest chain")
         genesis = e.getblock(e.getblockhash(0))
         bits = int(genesis["bits"], 16)
