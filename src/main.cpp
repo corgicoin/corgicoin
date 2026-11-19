@@ -3705,10 +3705,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
-        if (locator.vHave.size() > MAX_LOCATOR_SZ)
+        if (locator.Size() > MAX_LOCATOR_SZ)
         {
             pfrom->Misbehaving(20);
-            return LogError("getblocks locator size = %u", (unsigned)locator.vHave.size());
+            return LogError("getblocks locator size = %u", (unsigned)locator.Size());
         }
 
         // Find the last block the caller has in the main chain
@@ -3744,10 +3744,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
-        if (locator.vHave.size() > MAX_LOCATOR_SZ)
+        if (locator.Size() > MAX_LOCATOR_SZ)
         {
             pfrom->Misbehaving(20);
-            return LogError("getheaders locator size = %u", (unsigned)locator.vHave.size());
+            return LogError("getheaders locator size = %u", (unsigned)locator.Size());
         }
 
         CBlockIndex* pindex = nullptr;

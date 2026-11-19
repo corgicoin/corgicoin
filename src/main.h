@@ -1416,6 +1416,11 @@ public:
         return vHave.empty();
     }
 
+    size_t Size() const
+    {
+        return vHave.size();
+    }
+
     void Set(const CBlockIndex* pindex)
     {
         vHave.clear();
