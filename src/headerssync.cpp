@@ -45,6 +45,14 @@ constexpr size_t MAX_BRANCH_HEADERS = 50000;        // headers held that are on 
 constexpr int64 HEADERS_RETRY_SECONDS = 60;         // a peer that sent a header that failed a time check is asked again after this
 constexpr int64 HEADERS_FALLBACK_SECONDS = 1800;    // after a peer let a headers request go unanswered, peers are synced the old way for this long
 
+// regtest can lower the cap for the test
+size_t MaxBranchHeaders()
+{
+    if (fRegTest && mapArgs.count("-testmaxbranchheaders"))
+        return (size_t)std::max<int64>(1, GetArg("-testmaxbranchheaders", MAX_BRANCH_HEADERS));
+    return MAX_BRANCH_HEADERS;
+}
+
 size_t nBranchHeaders = 0;                          // header-only entries that were not the best chain when they came in
 int64 nHeadersFallbackUntil = 0;
 
@@ -216,7 +224,7 @@ HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
                   pindexPrev->nHeight, MAX_HEADER_FORK_DEPTH, pindexBestHeader->nHeight);
         return HEADER_BAD;
     }
-    if (nBranchHeaders >= MAX_BRANCH_HEADERS)
+    if (nBranchHeaders >= MaxBranchHeaders())
     {
         // side branches are never worth much memory: drop them all, and the peer that filled the space is scored
         EvictBranchHeaders();
