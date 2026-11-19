@@ -3,29 +3,33 @@
 
 The limiter (-limitfreerelay) counted a free transaction before its signatures were checked, so a peer sending free
 transactions with bad signatures (nothing to pay, cheap to make) used up the allowance, and a good free transaction was then
-refused as rate-limited. It counts a transaction once it has passed.
+refused as rate-limited. It counts a transaction once it has passed. (The coins belong to node 1, not to the node under test:
+the limiter does not apply to a transaction that is from the node's own wallet.)
 """
 from mininode import P2PConnection
 from test_framework import CorgiTestFramework, assert_equal, wait_until
 
 
 class FreeRelayLimitTest(CorgiTestFramework):
-    num_nodes = 1
-    extra_args = [["-limitfreerelay=1"]]        # 1 kB per minute: about 10 kB in the window
+    num_nodes = 2
+    extra_args = [["-limitfreerelay=1"], []]        # node 0: 1 kB per minute, about 10 kB in the window
 
     def log_text(self):
         with open(self.nodes[0].debug_log, errors="replace") as f:
             return f.read()
 
     def run_test(self):
-        node = self.nodes[0]
-        node.generate(60)
-        coins = node.listunspent()
+        node, owner = self.nodes
+        owner.generate(60)
+        self.connect_nodes(0, 1)
+        self.sync_blocks()
+        self.disconnect_nodes(0, 1)
+        coins = owner.listunspent()
         assert len(coins) >= 2
 
         def free_tx(coin):
-            raw = node.createrawtransaction([{"txid": coin["txid"], "vout": coin["vout"]}], {node.getnewaddress(): coin["amount"]})
-            return node.signrawtransaction(raw)["hex"]
+            raw = owner.createrawtransaction([{"txid": coin["txid"], "vout": coin["vout"]}], {owner.getnewaddress(): coin["amount"]})
+            return owner.signrawtransaction(raw)["hex"]
 
         bad_source = bytes.fromhex(free_tx(coins[0]))
         good = bytes.fromhex(free_tx(coins[1]))
@@ -35,13 +39,13 @@ class FreeRelayLimitTest(CorgiTestFramework):
         peer = P2PConnection(node.p2p_port)
         wait_until(lambda: peer.got_verack, what="verack")
         self.log("free transactions with a bad signature, well past the allowance (about 10 kB)")
-        n_bad = 100                                  # about 190 bytes each
-        for i in range(n_bad):
+        for i in range(100):                         # about 190 bytes each
             t = bytearray(bad_source)
             t[start + (i % 40)] ^= (1 + i // 40)
             peer.send("tx", bytes(t))
         peer.send("ping", b"\x00" * 8)
         wait_until(lambda: peer.counts.get("pong", 0) >= 1, what="the bad transactions to be processed")
+        assert self.log_text().count("VerifySignature failed") >= 90, "the bad transactions did not reach the signature check"
         assert "rate limiter" not in self.log_text(), "the bad transactions were counted: the limiter filled"
         assert_equal(node.getrawmempool(), [])
 
