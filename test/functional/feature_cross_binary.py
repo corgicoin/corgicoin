@@ -103,9 +103,7 @@ class CrossBinaryTest(CorgiTestFramework):
         e1_key = e1.dumpprivkey(e1_addr)
         e1.encryptwallet(PASSPHRASE)
         self.wait_exit(e1)
-        e1.binary = alt_bin
-        e1.old_release = True     # its exit status is the release's, not under test (see TestNode.old_release)
-        e1.start()
+        self.restart_with(e1, alt_bin)       # (also notes how the main build ended, and that this node is now a release that is already out)
         e1.walletpassphrase(PASSPHRASE, 60)  # raises if the passphrase is rejected
         assert_equal(e1.dumpprivkey(e1_addr), e1_key)
 
@@ -115,9 +113,7 @@ class CrossBinaryTest(CorgiTestFramework):
         e2_key = e2.dumpprivkey(e2_addr)
         e2.encryptwallet(PASSPHRASE)
         self.wait_exit(e2)
-        e2.binary = main_bin
-        e2.old_release = False
-        e2.start()
+        self.restart_with(e2, main_bin)      # (from here it is the main build, whose exit is under test)
         e2.walletpassphrase(PASSPHRASE, 60)
         assert_equal(e2.dumpprivkey(e2_addr), e2_key)
 
