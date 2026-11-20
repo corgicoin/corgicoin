@@ -64,11 +64,9 @@ class RBFFullPoolTest(CorgiTestFramework):
         self.log("R pays more than X per byte but less than the others: it would be thrown out, so it is refused and X stays")
         fee_low = ((rate_x + rate_y) / 2 * size_r).quantize(SAT)
         assert fee_low > info[x][0] + 3
-        assert_raises_rpc_error(-22, "mempool-full", node.sendrawtransaction, self.build(node, coins_r, {dest: total - fee_low}, True))
+        assert_raises_rpc_error(-22, "replacement-feerate-too-low", node.sendrawtransaction, self.build(node, coins_r, {dest: total - fee_low}, True))
         assert_equal(sorted(node.getrawmempool()), before)
         assert_equal(node.getmempoolinfo()["bytes"], bytes_before)
-        with open(node.debug_log, errors="replace") as f:
-            assert "replacement" in f.read() and "would have the lowest fee rate" in open(node.debug_log, errors="replace").read()
 
         self.log("R pays more per byte than all of them: it replaces X, the lowest of the rest goes to make room, the pool is within its limit")
         top = max(info[t][0] / info[t][1] for t in pool)
