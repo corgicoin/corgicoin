@@ -565,6 +565,13 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
     }
     const Object& obj = root.get_obj();         // a copy of the tree (the shim's get_obj copies), with every secret in it: wiped too
     JsonObjectWiper objWiper(obj);
+    // Only the format this node writes (version 1) is read: a file of another version (a newer node's, or one that says nothing or
+    // something that is not a number) may mean things this code does not know, and is not read as if it were version 1.
+    const Value& vVersion = find_value(obj, "version");
+    if (vVersion.type() != int_type || vVersion.get_int64() != 1) {
+        strError = "This backup is of a version this node does not read (it reads version 1)";
+        return false;
+    }
     const Value& vChain = find_value(obj, "chain");
     if (vChain.type() != str_type || vChain.get_str() != BackupChainName()) {
         strError = std::string("This backup is for another network (this node is on ") + BackupChainName() + ")";
