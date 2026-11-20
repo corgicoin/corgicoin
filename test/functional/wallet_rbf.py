@@ -121,7 +121,9 @@ class RBFTest(CorgiTestFramework):
         assert_equal(a.gettransaction(child)["bip125-replaceable"], "yes")
         fixed = a.sendrawtransaction(self.spend(a, coins[10], dest, 2, signal=False))
         assert_equal(a.gettransaction(fixed)["bip125-replaceable"], "no")
-        listed = {t["txid"]: t["bip125-replaceable"] for t in a.listtransactions("*", 50)}
+        # all of them: listtransactions orders by time, and the hundreds made above within the same second come in no fixed order,
+        # so the last 50 need not hold the newest
+        listed = {t["txid"]: t["bip125-replaceable"] for t in a.listtransactions("*", 100000)}
         assert_equal(listed[sig], "yes")
         assert_equal(listed[fixed], "no")
         a.generate(1)
