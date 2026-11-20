@@ -601,7 +601,7 @@ void CoinsTxnCommit()
 void CoinsConnectTx(const CTransaction& tx, int nHeight, CBlockUndo& undo)
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
-    if (!pdb || fTxnBroken)
+    if (!pdb || fTxnBroken || fStale || fDistrust)   // (stale or distrusted: left alone until the next start mends it)
         return;
     ApplyConnectTx(tx, nHeight, undo);
 }
@@ -609,7 +609,7 @@ void CoinsConnectTx(const CTransaction& tx, int nHeight, CBlockUndo& undo)
 void CoinsEndBlock(const CBlockIndex* pindex, const CBlockUndo& undo)
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
-    if (!pdb || fTxnBroken)
+    if (!pdb || fTxnBroken || fStale || fDistrust)
         return;
     // regtest can put the set out of step at one height, to test what the node does about it
     if (fRegTest && mapArgs.count("-testcoinsbreak") && pindex->nHeight == GetArg("-testcoinsbreak", 0))
@@ -641,7 +641,7 @@ uint64 CoinsCheckFailures()
 void CoinsCheckInputs(const CTransaction& tx, const MapPrevTx& mapInputs, const CBlockIndex* pindex)
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
-    if (!pdb || fTxnBroken || tx.IsCoinBase())
+    if (!pdb || fTxnBroken || fStale || fDistrust || tx.IsCoinBase())
         return;
     for (const CTxIn& txin : tx.vin)
     {
@@ -669,6 +669,12 @@ void CoinsCheckInputs(const CTransaction& tx, const MapPrevTx& mapInputs, const 
             // a set that is wrong disagrees at every input: log the first ones and then one in a thousand, not a line per input for ever
             if (nCheckFailures <= 20 || nCheckFailures % 1000 == 0)
                 LogPrintf("COINS CHECK: %s (%s:%u, in block %d) [%" PRI64u " so far]\n", pszWhy, txin.prevout.hash.ToString().substr(0, 20).c_str(), txin.prevout.n, pindex->nHeight, nCheckFailures);
+            // the set is wrong somewhere: stop using it and rebuild it at the next start (what getinfo's warning says)
+            if (!fDistrust)
+            {
+                fDistrust = true;
+                ForgetBest();
+            }
         }
     }
 }
@@ -676,7 +682,7 @@ void CoinsCheckInputs(const CTransaction& tx, const MapPrevTx& mapInputs, const 
 void CoinsDisconnectBlock(const CBlock& block, const CBlockIndex* pindex)
 {
     std::lock_guard<std::mutex> lock(mutexCoins);
-    if (!pdb || fTxnBroken)
+    if (!pdb || fTxnBroken || fStale || fDistrust)
         return;
     const uint256 hash = pindex->GetBlockHash();
     CBlockUndo undo;
