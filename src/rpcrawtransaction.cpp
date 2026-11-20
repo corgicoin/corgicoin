@@ -733,7 +733,13 @@ Value sendrawtransaction(const Array& params, bool fHelp)
         CTxAcceptCheck check;
         bool fMissingInputs = false;
         if (!tx.AcceptToMemoryPool(txdb, true, &fMissingInputs, &check))
-            throw JSONRPCError(-22, string("TX rejected: ") + (check.strReject.empty() ? string("rejected") : check.strReject) + (fMissingInputs ? " (missing inputs)" : ""));
+        {
+            // say why: the caller otherwise has to guess between a bad signature, a spent input, a low fee, a full pool...
+            std::string strWhy = check.strReject;
+            if (strWhy.empty())
+                strWhy = fMissingInputs ? "missing-inputs" : "rejected";
+            throw JSONRPCError(-22, "TX rejected: " + strWhy);
+        }
 
         SyncWithWallets(tx, nullptr, true);
     }
