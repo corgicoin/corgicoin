@@ -162,9 +162,17 @@ jobs:
           export HOST=x86_64-w64-mingw32
           export PREFIX=/tmp/deps/install
 
+          # Each source tarball is checked against a pinned SHA256 before it is unpacked (fetch <url> <sha256> <tar flag>)
+          fetch() {
+            local f="${1##*/}"
+            curl -fsSL -o "$f" "$1"
+            echo "$2  $f" | sha256sum -c -
+            tar "x$3f" "$f"
+          }
+
           # Boost
           cd /tmp/deps
-          curl -sL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 | tar xj
+          fetch https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c68275c14c3e7949c24109454 j
           cd boost_1_84_0
           echo "using gcc : mingw : x86_64-w64-mingw32-g++ ;" > user-config.jam
           ./bootstrap.sh --without-icu
@@ -175,7 +183,7 @@ jobs:
 
           # OpenSSL
           cd /tmp/deps
-          curl -sL https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz | tar xz
+          fetch https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz 2e8a40b01979afe8be0bbfb3de5dc1c6709fedb46d6c89c10da114ab5fc3d281 z
           cd openssl-3.3.2
           ./Configure mingw64 no-shared --cross-compile-prefix=x86_64-w64-mingw32- --prefix=$PREFIX
           make -j$(nproc) 2>&1 | tail -3
@@ -183,7 +191,7 @@ jobs:
 
           # Berkeley DB 4.8 (cross-compiles cleanly with MinGW, unlike 5.3)
           cd /tmp/deps
-          curl -sL https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz | tar xz
+          fetch https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz e0491a07cdb21fb9aa82773bbbedaeb7639cbd0e7f96147ab46141e0045db72a z
           cd db-4.8.30/build_unix
           sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h 2>/dev/null || true
           ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-replication --prefix=$PREFIX
