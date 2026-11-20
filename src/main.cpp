@@ -578,7 +578,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         }
         if (!vConflicts.empty())
         {
-            if (!GetBoolArg("-mempoolreplacement", true))
+            if (!GetBoolArg("-mempoolreplacement", false))   // off by default in this release: merchants first, then the network
                 return RejectTx(pcheck, "txn-mempool-conflict");
             // The fee rules below need the inputs: without them (a transaction put back after a reorganisation, the wallet's own
             // resubmission, a client-mode node) a conflict is never a replacement, or the signalling transaction goes for nothing.
@@ -618,12 +618,10 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
                 int64 nDelta = 0;
                 ApplyDeltas(h, dUnusedPriority, nDelta);
                 nEvictedFees += itEntry->second.nFee + nDelta;
-                for (unsigned int n = 0; n < itTx->second.vout.size(); n++)
-                {
-                    auto itSpend = mapNextTx.find(COutPoint(h, n));
-                    if (itSpend != mapNextTx.end())
-                        vWork.push_back(itSpend->second.ptx->GetHash());
-                }
+                // its spenders: mapNextTx is ordered by (hash, n), so they sit together from (h, 0) on. One lookup, not one per
+                // output, which a garbage conflict could otherwise make cost up to 100 times a transaction's output count
+                for (auto itSpend = mapNextTx.lower_bound(COutPoint(h, 0)); itSpend != mapNextTx.end() && itSpend->first.hash == h; ++itSpend)
+                    vWork.push_back(itSpend->second.ptx->GetHash());
             }
         }
     }
@@ -1041,15 +1039,31 @@ bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize, const std::set<u
     if (nPoolBytes - std::min(nPoolBytes, nFreed) + nSize <= MaxMempoolBytes() || mapEntry.empty())
         return false;
     const double dRate = (double)nFee / std::max(1u, nSize);
+    if (!pEvicted)
+    {
+        // strictly lower than every candidate: it goes first
+        for (const auto& candidate : EvictionCandidates())
+            return dRate < candidate.first;
+        return false;
+    }
+    // A replacement: walk Trim's order (lowest fee rate first) and see whether enough room is made before it comes up itself.
+    // Asking only whether it is the first to go missed a large replacement over a small conflict, which Trim dropped after one
+    // cheaper entry, with its conflicts already gone. It is held to more than a newcomer, as it has already cost the pool what it
+    // replaced: a tie counts as dropped (the real thing breaks ties by hash), and so does running out of candidates.
+    int64 nNeed = (int64)(nPoolBytes - std::min(nPoolBytes, nFreed) + nSize) - (int64)MaxMempoolBytes();
     for (const auto& candidate : EvictionCandidates())
     {
-        if (pEvicted && pEvicted->count(candidate.second))
+        if (pEvicted->count(candidate.second))
             continue;
-        // strictly lower than every candidate: it goes first. A replacement is held to more, as it has already cost the pool
-        // what it replaced: a tie counts as dropped (the real thing breaks ties by hash)
-        return pEvicted ? dRate <= candidate.first : dRate < candidate.first;
+        if (dRate <= candidate.first)
+            return true;
+        auto itEntry = mapEntry.find(candidate.second);
+        if (itEntry != mapEntry.end())
+            nNeed -= itEntry->second.nSize;
+        if (nNeed <= 0)
+            return false;
     }
-    return false;
+    return true;
 }
 
 void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)
@@ -1145,7 +1159,9 @@ bool CMerkleTx::AcceptToMemoryPool()
 
 bool CWalletTx::AcceptWalletTransaction(CTxDB& txdb, bool fCheckInputs)
 {
-
+    // Called with fCheckInputs false only (ReacceptWalletTransactions). With input checks a replacement could run here, and
+    // ReplacedInWallets takes cs_wallet: that inside mempool.cs is the reverse of AbandonTransaction's order. Keep it false, or
+    // drop this lock first.
     {
         LOCK(mempool.cs);
         // Add previous supporting transactions first

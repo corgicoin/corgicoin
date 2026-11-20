@@ -42,6 +42,10 @@ Store and compare addresses in one canonical form. `getnewaddress` may return ei
 
 ### How many confirmations?
 
+**Never credit an unconfirmed (0-conf) deposit.** Nodes that run with `-mempoolreplacement` (off by default in this release) let
+a transaction that signals replaceability be replaced by one paying someone else; `gettransaction` reports `bip125-replaceable`
+(`doc/replace-by-fee.md`). A transaction that does not signal can still be replaced by a miner.
+
 There is no safe number that fits every chain, and none is promised here. Two facts should drive the choice:
 
 - Blocks come every minute, but this chain's hash rate is small compared with the biggest Scrypt chains. Anyone who can rent more

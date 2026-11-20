@@ -52,6 +52,7 @@ BOOST_AUTO_TEST_SUITE(mempool_replace_tests)
 BOOST_AUTO_TEST_CASE(no_replacement_without_input_checks)
 {
     Clear();
+    mapArgs["-mempoolreplacement"] = "1";      // (off by default: with it on, this is the fee-rules path being skipped)
     const COutPoint coin(uint256(12345), 0);
     CTransaction signalling = Spend(coin, 0xfffffffd, 1);
     Put(signalling, 1000000, true);
@@ -65,6 +66,7 @@ BOOST_AUTO_TEST_CASE(no_replacement_without_input_checks)
     BOOST_CHECK_EQUAL(check.strReject, "txn-mempool-conflict");
     BOOST_CHECK(mempool.exists(signalling.GetHash()));
     Clear();
+    mapArgs.erase("-mempoolreplacement");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -5160,7 +5160,8 @@ Value bumpfee(const Array& params, bool fHelp)
             "replaceable (-walletrbf, which sets a sequence number below 0xfffffffe on its inputs), be in this node's pool, and\n"
             "have nothing of the wallet's built on it. fee, if given, is the new total fee in coins; by default it is the old one\n"
             "plus what the pool requires of a replacement (the relay fee for its size, and a tenth more). The old transaction is\n"
-            "abandoned. Returns {txid, origfee, fee}.");
+            "abandoned. This node must accept replacements itself (-mempoolreplacement, off by default), or the pool refuses the\n"
+            "replacement. Returns {txid, origfee, fee}.");
     RPCTypeCheck(params, {str_type});
     EnsureWalletIsUnlocked();
 

@@ -10,7 +10,8 @@ A transaction in a node's pool that spends a coin another transaction spends is 
 - the pool knows the fee of everything pushed out, and the newcomer's inputs are checked (a transaction put back after a
   reorganisation, or resubmitted by the wallet, never replaces anything).
 
-`-mempoolreplacement=0` turns it off. `-walletrbf` makes the wallet's own sends signal, so `bumpfee` can raise their fee.
+It is **off by default in this release**: `-mempoolreplacement` turns it on. (A later release is expected to turn it on by default,
+once wallets and merchants have had a release in which to read `bip125-replaceable`.) `-walletrbf` makes the wallet's own sends signal, so `bumpfee` can raise their fee.
 
 ## For merchants
 
