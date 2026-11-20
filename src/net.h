@@ -468,7 +468,7 @@ public:
 
     void EndMessage()
     {
-        if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
+        if (fRegTest && mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)   // test hook, regtest only (as on receive)
         {
             LogPrintf("dropmessages DROPPING SEND MESSAGE\n");
             AbortMessage();

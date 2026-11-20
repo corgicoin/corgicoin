@@ -2,7 +2,7 @@
 """sendrawtransaction says why a transaction was refused, not only that it was.
 
 It used to answer "TX rejected" for every reason. The reason the pool gave (the one testmempoolaccept reports as
-reject-reason) is now in the message, with "(missing inputs)" when the inputs were not found.
+reject-reason) is now in the message ("missing-inputs" when the inputs were not found).
 """
 from test_framework import CorgiTestFramework, JSONRPCException, assert_equal
 
