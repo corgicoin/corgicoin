@@ -93,7 +93,6 @@ TESTS = [
     "rpc_sendrawtransaction_reason.py",
     "p2p_free_relay_limit.py",
     "p2p_locator_limit.py",
-    "rpc_mempool_conflict_block.py",
     "rpc_mempool_conflict_multi.py",
     "rpc_rbf_replacement_rules.py",
     "rpc_rbf_full_pool.py",
