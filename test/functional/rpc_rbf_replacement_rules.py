@@ -15,7 +15,7 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 
 class RBFRulesTest(CorgiTestFramework):
     num_nodes = 2
-    extra_args = [[], ["-mempoolreplacement=0"]]
+    extra_args = [["-mempoolreplacement"], ["-mempoolreplacement=0"]]
 
     def raw(self, node, coins, outputs, signal=False):
         """A signed transaction spending whole coins (dicts with txid/vout) into outputs {address: amount}; signalling replaceability or not."""

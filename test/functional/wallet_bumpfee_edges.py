@@ -13,7 +13,7 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 
 class BumpFeeEdgesTest(CorgiTestFramework):
     num_nodes = 1
-    extra_args = [["-walletrbf", "-paytxfee=0.001", "-maxtxfee=5000000"]]
+    extra_args = [["-walletrbf", "-paytxfee=0.001", "-maxtxfee=5000000", "-mempoolreplacement"]]
 
     def run_test(self):
         node = self.nodes[0]
