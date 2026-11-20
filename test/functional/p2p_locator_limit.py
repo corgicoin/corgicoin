@@ -33,9 +33,10 @@ class LocatorLimitTest(CorgiTestFramework):
             peer.send("ping", b"\x00" * 8)
             wait_until(lambda: peer.counts.get("pong", 0) >= 1, what="a pong after the 101-hash locator")
             assert "%s locator size" % command not in self.log_text()
+            mark = len(self.log_text())                  # (what is scored is judged from here: the first command's line is in the log already)
             peer.send(command, locator(102))
             wait_until(lambda: "%s locator size = 102" % command in self.log_text(), what="the long locator to be refused")
-            assert "misbehaving" in self.log_text(), "the peer was not scored"
+            assert "misbehaving" in self.log_text()[mark:], "the peer was not scored"
             peer.close()
 
 
