@@ -51,6 +51,12 @@ class CrossBinaryTest(CorgiTestFramework):
 
     def restart_with(self, node, binary):
         node.stop()
+        if binary != node.binary:
+            # judge what the old binary wrote to stderr by its own rules now, then start a fresh file: stderr.log is appended
+            # across restarts, and the release's abort at exit would otherwise be read as the new binary's at the end
+            node.check_stderr()
+            if os.path.exists(node.stderr_log):
+                os.replace(node.stderr_log, node.stderr_log + ".%d" % len(node.problems) + ".before-switch")
         node.binary = binary
         node.old_release = binary == self.options.alt_corgicoind
         node.start()
