@@ -35,6 +35,8 @@ class EncryptedBackupTest(CorgiTestFramework):
         watch = c.getnewaddress()
         a.importaddress(watch, False)
         multisig = a.addmultisigaddress(2, [a.validateaddress(labelled)["pubkey"], a.validateaddress(plain)["pubkey"]])
+        foreign = c.getnewaddress()
+        a.setaccount(foreign, "Exchange deposit")       # a label for an address the wallet neither spends nor watches
         path = os.path.join(a.datadir, "wallet.backup")
 
         info = a.exportwalletencrypted(path, PASS)
@@ -98,6 +100,7 @@ class EncryptedBackupTest(CorgiTestFramework):
         assert_equal(d.dumpprivkey(lone), lone_secret)
         assert d.validateaddress(labelled)["hdkeypath"].startswith("m/44'/99'/0'/0/")
         assert_equal(d.getaccount(labelled), "savings")
+        assert_equal(d.getaccount(foreign), "")     # a backup cannot plant a contact: only addresses the wallet spends or watches get labels
 
         self.log("the redeem script came too: the multisig address is the wallet's")
         assert_equal(d.validateaddress(multisig)["ismine"], True)
@@ -106,6 +109,8 @@ class EncryptedBackupTest(CorgiTestFramework):
         given = {labelled, plain}
         for _ in range(3):
             assert d.getnewaddress() not in given
+        # and they come from the adopted phrase, not from the random keys d's key pool held before
+        assert d.validateaddress(d.getnewaddress())["hdkeypath"].startswith("m/44'/99'/0'/0/")
 
         self.log("the same backup again adds nothing and changes nothing")
         r = d.importwalletencrypted(path, PASS)

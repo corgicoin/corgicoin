@@ -184,26 +184,29 @@ static const uintmax_t BACKUP_MAX_FILE = 8u * 1024 * 1024;      // a backup of t
 static const size_t BACKUP_MAX_PLAIN = 4u * 1024 * 1024;        // what it decrypts to, before it is parsed
 static const int BACKUP_MAX_NESTING = 8;                        // the format nests three deep (object, array, object)
 
-// Overwrites every string of a parsed JSON tree when it goes out of scope (the tree held the keys and the recovery phrase of a backup).
-// Not everything is covered: the copies json_spirit made while parsing, and std::string moves, are outside what can be reached from here.
-static void WipeJsonStrings(const Value& v)
+// Overwrites every string of a JSON tree in place (the tree held the keys and the recovery phrase of a backup). The JSON shim's accessors
+// (get_str, get_obj, get_array) return copies, so each tree that was built or copied is wiped itself; strings copied out of it one at a time
+// (a single key's text while it is imported) are not reached from here.
+static void WipeJsonStrings(const Value& v) { v.wipe_strings(); }
+static void WipeJsonStrings(const Object& o)
 {
-    if (v.type() == str_type) {
-        const std::string& s = v.get_str();
-        if (!s.empty())
-            OPENSSL_cleanse(const_cast<char*>(s.data()), s.size());
-    } else if (v.type() == array_type) {
-        for (const Value& e : v.get_array())
-            WipeJsonStrings(e);
-    } else if (v.type() == obj_type) {
-        for (const Pair& p : v.get_obj())
-            WipeJsonStrings(p.value_);
-    }
+    for (const Pair& p : o)
+        p.value_.wipe_strings();
+}
+static void WipeJsonStrings(const Array& a)
+{
+    for (const Value& v : a)
+        v.wipe_strings();
 }
 struct JsonWiper {
     const Value& v;
     explicit JsonWiper(const Value& vIn) : v(vIn) {}
     ~JsonWiper() { WipeJsonStrings(v); }
+};
+struct JsonObjectWiper {
+    const Object& o;
+    explicit JsonObjectWiper(const Object& oIn) : o(oIn) {}
+    ~JsonObjectWiper() { WipeJsonStrings(o); }
 };
 
 // Whether the JSON text nests no deeper than nMax levels of [ and { (outside strings), checked without parsing it
@@ -375,6 +378,7 @@ bool ExportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
             k.emplace_back("time", (int64_t)(itMeta != pwallet->mapKeyMetadata.end() ? itMeta->second.nCreateTime : 0));
             k.emplace_back("hdkeypath", itMeta != pwallet->mapKeyMetadata.end() ? itMeta->second.strHDKeypath : std::string());
             keys.push_back(k);
+            WipeJsonStrings(k);         // (pushed as a copy)
         }
         root.emplace_back("keys", keys);
 
@@ -400,7 +404,12 @@ bool ExportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
             cscripts.push_back(HexStr(script.begin(), script.end()));
         root.emplace_back("cscript", cscripts);
 
-        strPlain = write_string(Value(root), false);
+        // every key and the phrase are in each of these: the tree, the list it was built from, and the keys array
+        const Value vRoot(root);
+        strPlain = write_string(vRoot, false);
+        WipeJsonStrings(vRoot);
+        WipeJsonStrings(root);
+        WipeJsonStrings(keys);
     }
 
     std::vector<unsigned char> vchFile;
@@ -554,7 +563,8 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         strError = "The backup decrypts but its contents are not understood";
         return false;
     }
-    const Object& obj = root.get_obj();         // (references into the tree, not copies of it: a copy would hold secrets that are not wiped)
+    const Object& obj = root.get_obj();         // a copy of the tree (the shim's get_obj copies), with every secret in it: wiped too
+    JsonObjectWiper objWiper(obj);
     const Value& vChain = find_value(obj, "chain");
     if (vChain.type() != str_type || vChain.get_str() != BackupChainName()) {
         strError = std::string("This backup is for another network (this node is on ") + BackupChainName() + ")";
@@ -624,16 +634,25 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
     // The next address made from the phrase must be one the old wallet had not handed out: take the index it had reached, but no
     // further than the keys in the file reach plus the gap a restore from the phrase looks ahead. A higher one (a file can say any
     // number) would put new deposits where a restore from the phrase never looks.
+    // Only a backup that holds this wallet's own phrase (checked or adopted above) says anything about its indices, and only as far as
+    // its own keys reach: a restore from the phrase looks a gap past the highest key it finds paid, so the next address must not be
+    // past the highest key that exists plus one (a gap on top of that put the next deposit one key beyond what a restore reaches).
     const Value& vIndex = find_value(obj, "hdindex");
-    if (vIndex.type() == int_type && fHD) {
-        const int64 nGap = std::max<int64>(1, std::min<int64>(GetArg("-hdrestoregap", 1000), 100000));
-        const int64 nCap = std::max<int64>(nHighestIndex + 1, (int64)pwallet->nHDExternalIndex) + nGap;
+    const bool fOwnPhrase = vMnemonic.type() == str_type && !vMnemonic.get_str().empty();
+    if (vIndex.type() == int_type && fHD && fOwnPhrase) {
+        const int64 nCap = std::max<int64>(nHighestIndex + 1, (int64)pwallet->nHDExternalIndex);
         const uint32_t nIndex = (uint32_t)std::max<int64>(0, std::min<int64>(vIndex.get_int64(), nCap));
         if (nIndex > pwallet->nHDExternalIndex) {
             pwallet->nHDExternalIndex = nIndex;
             if (pwallet->fFileBacked)
                 CWalletDB(pwallet->strWalletFile).WriteHDChain(nIndex);
         }
+    }
+    // A phrase taken from the backup: the key pool still holds the wallet's old random keys, which the phrase does not cover, and the
+    // next receive and change addresses would come from them. Make it again from the phrase, from the index just settled.
+    if (fPhraseAdopted && !pwallet->NewKeyPool()) {
+        strError = "The recovery phrase was taken from the backup, but the key pool could not be made again from it";
+        return false;
     }
 
     int64 nOldest = std::numeric_limits<int64>::max();
@@ -701,26 +720,6 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         }
     }
 
-    // A label is added to an address that has none: a file cannot rename an address the wallet already knows (an attacker's
-    // address under the name of a contact you trust)
-    const Value& vLabels = find_value(obj, "labels");
-    if (vLabels.type() == array_type) {
-        for (const Value& vLabel : vLabels.get_array()) {
-            if (vLabel.type() != obj_type)
-                continue;
-            const Object& l = vLabel.get_obj();
-            const Value& vAddr = find_value(l, "address");
-            const Value& vText = find_value(l, "label");
-            if (vAddr.type() != str_type || vText.type() != str_type)
-                continue;
-            CBitcoinAddress address(vAddr.get_str());
-            if (!address.IsValid() || pwallet->mapAddressBook.count(address.Get()))
-                continue;
-            pwallet->SetAddressBookName(address.Get(), vText.get_str());
-            nLabels++;
-        }
-    }
-
     const Value& vWatch = find_value(obj, "watchonly");
     if (vWatch.type() == array_type) {
         for (const Value& vScript : vWatch.get_array()) {
@@ -749,6 +748,31 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
                 }
                 fAddedOther = true;
             }
+        }
+    }
+
+    // A label is added only to an address the wallet can spend or now watches (after the keys, watch-only entries and scripts above),
+    // and only if it has none: a file cannot rename an address the wallet knows, nor add an attacker's address as a contact you
+    // would trust ("Exchange deposit")
+    const Value& vLabels = find_value(obj, "labels");
+    if (vLabels.type() == array_type) {
+        for (const Value& vLabel : vLabels.get_array()) {
+            if (vLabel.type() != obj_type)
+                continue;
+            const Object& l = vLabel.get_obj();
+            const Value& vAddr = find_value(l, "address");
+            const Value& vText = find_value(l, "label");
+            if (vAddr.type() != str_type || vText.type() != str_type)
+                continue;
+            CBitcoinAddress address(vAddr.get_str());
+            if (!address.IsValid() || pwallet->mapAddressBook.count(address.Get()))
+                continue;
+            CTxOut txoutLabel;
+            txoutLabel.scriptPubKey.SetDestination(address.Get());
+            if (!::IsMine(*pwallet, txoutLabel.scriptPubKey) && !pwallet->IsWatchOnly(txoutLabel))
+                continue;
+            pwallet->SetAddressBookName(address.Get(), vText.get_str());
+            nLabels++;
         }
     }
 

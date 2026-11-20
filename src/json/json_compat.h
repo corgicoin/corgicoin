@@ -70,6 +70,21 @@ public:
     }
 
     std::string get_str() const { return data.get<std::string>(); }
+    // Overwrites, in place, every string this value holds (for a tree that held private keys, before it is freed). get_str, get_obj
+    // and get_array return copies, which this does not reach: wipe those copies themselves.
+    void wipe_strings() const { WipeStrings(const_cast<Json&>(data)); }
+    static void WipeStrings(Json& j)
+    {
+        if (j.is_string()) {
+            std::string& s = j.get_ref<std::string&>();
+            volatile char* p = s.empty() ? nullptr : &s[0];
+            for (size_t i = 0; i < s.size(); i++)
+                p[i] = 0;
+        } else if (j.is_array() || j.is_object()) {
+            for (auto& e : j)
+                WipeStrings(e);
+        }
+    }
     // The integer getters take JSON integers only, as json_spirit did: not true/false, not 1.9, and nothing outside
     // the range of the C++ type (a bare static_cast wraps, and from a float outside the range it is undefined)
     int get_int() const
