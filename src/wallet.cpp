@@ -1585,9 +1585,10 @@ void CWallet::ResendWalletTransactions()
         for (std::pair<const uint256, CWalletTx>& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
-            // Only what we sent: a payment to a watched address (or any payment from someone else) is not ours to broadcast, and doing
-            // so would tell the network which addresses this wallet follows.
-            if (!wtx.IsFromMe())
+            // As before for everything else (an unconfirmed payment received is announced again too); the one exception is a transaction that
+            // touches a watched address and that we did not send: announcing it would tell the network which addresses this wallet follows
+            // (one we sent is still ours to announce, whatever it pays).
+            if (!wtx.IsFromMe() && IsWatchOnlyTx(wtx))
                 continue;
             // Don't rebroadcast until it's had plenty of time that
             // it should have gotten in already by now.
