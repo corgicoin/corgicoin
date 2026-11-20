@@ -626,7 +626,7 @@ if(BUILD_SECP_DIFF)
     add_executable(secp_diff src/fuzz/secp_diff.cpp ${DIFF_DAEMON_SOURCES} ${JSON_SOURCES})
     add_dependencies(secp_diff generate_build_info)
     target_include_directories(secp_diff PRIVATE ${SECP256K1_INCLUDE_DIR})
-    target_link_libraries(secp_diff ${SECP256K1_LIBRARY} ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
+    target_link_libraries(secp_diff ${SECP256K1_LIBRARY} ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES} ${LEVELDB_LIBRARIES}
         Threads::Threads ${CMAKE_DL_LIBS})
     if(LINUX)
         target_link_libraries(secp_diff rt)

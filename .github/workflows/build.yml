@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
@@ -88,11 +88,15 @@ jobs:
       - name: Build libsecp256k1 (the pinned release, static)
         run: contrib/build-secp256k1.sh "$HOME/secp"
 
+      - name: Build LevelDB (the pinned release, static, the same on every platform)
+        run: contrib/build-leveldb.sh "$HOME/leveldb"
+
       - name: Build daemon and the differential
         run: |
           mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DUSE_LIBSECP256K1=ON -DBUILD_SECP_DIFF=ON \
-            -DSECP256K1_INCLUDE_DIR=$HOME/secp/include -DSECP256K1_LIBRARY=$HOME/secp/lib/libsecp256k1.a
+            -DSECP256K1_INCLUDE_DIR=$HOME/secp/include -DSECP256K1_LIBRARY=$HOME/secp/lib/libsecp256k1.a \
+            -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a
           make -j$(nproc)
 
       - name: Run tests
