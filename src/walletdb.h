@@ -14,6 +14,7 @@
 #include "base58.h"
 
 class CKeyPool;
+class CKeyMetadata;
 class CAccount;
 class CAccountingEntry;
 
@@ -147,6 +148,8 @@ public:
         return Write(std::make_pair(std::string("key"), vchPubKey.Raw()), vchPrivKey, false);
     }
 
+    bool WriteKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta);     // in walletdb.cpp: wallet.h defines CKeyMetadata
+
     bool WriteCryptedKey(const CPubKey& vchPubKey, const std::vector<unsigned char>& vchCryptedSecret, bool fEraseUnencryptedKey = true)
     {
         nWalletDBUpdated++;
@@ -171,6 +174,18 @@ public:
     {
         redeemScript.clear();
         return Read(std::make_pair(std::string("cscript"), hash), redeemScript);
+    }
+
+    bool WriteWatchOnly(const CScript& script)
+    {
+        nWalletDBUpdated++;
+        return Write(std::make_pair(std::string("watchs"), script), (char)1);
+    }
+
+    bool EraseWatchOnly(const CScript& script)
+    {
+        nWalletDBUpdated++;
+        return Erase(std::make_pair(std::string("watchs"), script));
     }
 
     bool WriteCScript(const uint160& hash, const CScript& redeemScript)

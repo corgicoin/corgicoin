@@ -7,6 +7,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "checkpoints.h"
+#include "coins.h"
 #include "db.h"
 #include "net.h"
 #include "init.h"
@@ -118,6 +119,13 @@ void static EraseFromWallets(uint256 hash)
 {
     for (CWallet* pwallet : setpwalletRegistered)
         pwallet->EraseFromWallet(hash);
+}
+
+// tell all wallets which transactions a replacement pushed out of the pool
+void static ReplacedInWallets(const std::set<uint256>& setReplaced)
+{
+    for (CWallet* pwallet : setpwalletRegistered)
+        pwallet->TransactionsReplaced(setReplaced);
 }
 
 // make sure all wallets know about the given transaction, in the given block
@@ -478,7 +486,7 @@ bool CTransaction::CheckTransaction() const
     for (const CTxIn& txin : vin)
     {
         if (vInOutPoints.count(txin.prevout))
-            return false;
+            return DoS(100, LogError("CTransaction::CheckTransaction() : duplicate inputs"));
         vInOutPoints.insert(txin.prevout);
     }
 
@@ -504,6 +512,12 @@ static bool RejectTx(CTxAcceptCheck* pcheck, const char* strReason, bool fResult
         pcheck->strReject = strReason;
     return fResult;
 }
+
+// the free-relay limiter (see accept): a free transaction is counted once its inputs and signatures have been checked, so that transactions
+// that fail those checks (cheap to make, nothing paid) cannot use up the allowance of the ones that would pass
+static CCriticalSection csFreeRelay;
+static double dFreeRelayCount = 0;
+static int64 nFreeRelayLast = 0;
 
 bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
                         bool* pfMissingInputs, CTxAcceptCheck* pcheck)
@@ -544,31 +558,71 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         if (txdb.ContainsTx(hash))
             return RejectTx(pcheck, "txn-already-known");
 
-    // Check for conflicts with in-memory transactions
-    CTransaction* ptxOld = nullptr;
-    for (unsigned int i = 0; i < tx.vin.size(); i++)
+    // Check for conflicts with in-memory transactions. A transaction that spends what another one in the pool spends is
+    // refused, unless it is a replacement the rules below allow (BIP 125): the one in the pool said it can be replaced, and the
+    // newcomer pays more and adds nothing unconfirmed.
+    std::vector<uint256> vConflicts;
+    std::set<uint256> setEvict;             // what a replacement would push out: the conflicts, and everything built on them
+    std::set<COutPoint> setConflictInputs;  // what the conflicting transactions spend
+    int64 nEvictedFees = 0;                 // what they paid, with any fee deltas (so it is compared with the newcomer's modified fee)
     {
-        COutPoint outpoint = tx.vin[i].prevout;
-        if (mapNextTx.count(outpoint))
+        LOCK(cs);
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
         {
-            // Disable replacement feature for now
-            return RejectTx(pcheck, "txn-mempool-conflict");
-
-            // Allow replacing with a newer version of the same transaction
-            if (i != 0)
-                return false;
-            ptxOld = mapNextTx[outpoint].ptx;
-            if (ptxOld->IsFinal())
-                return false;
-            if (!tx.IsNewerThan(*ptxOld))
-                return false;
-            for (unsigned int i = 0; i < tx.vin.size(); i++)
+            auto itNext = mapNextTx.find(tx.vin[i].prevout);
+            if (itNext == mapNextTx.end())
+                continue;
+            const uint256 hashConflict = itNext->second.ptx->GetHash();
+            if (std::find(vConflicts.begin(), vConflicts.end(), hashConflict) == vConflicts.end())
+                vConflicts.push_back(hashConflict);
+        }
+        if (!vConflicts.empty())
+        {
+            if (!GetBoolArg("-mempoolreplacement", false))   // off by default in this release: merchants first, then the network
+                return RejectTx(pcheck, "txn-mempool-conflict");
+            // The fee rules below need the inputs: without them (a transaction put back after a reorganisation, the wallet's own
+            // resubmission, a client-mode node) a conflict is never a replacement, or the signalling transaction goes for nothing.
+            if (!fCheckInputs)
+                return RejectTx(pcheck, "txn-mempool-conflict");
+            for (const uint256& hashConflict : vConflicts)
             {
-                COutPoint outpoint = tx.vin[i].prevout;
-                if (!mapNextTx.count(outpoint) || mapNextTx[outpoint].ptx != ptxOld)
-                    return false;
+                auto itTx = mapTx.find(hashConflict);
+                auto itEntry = mapEntry.find(hashConflict);
+                if (itTx == mapTx.end() || itEntry == mapEntry.end() || !itEntry->second.fFeeKnown)
+                    return RejectTx(pcheck, "txn-mempool-conflict");    // its fee is not known, so what a replacement must pay is not either
+                bool fSignals = false;
+                for (const CTxIn& txin : itTx->second.vin)
+                {
+                    fSignals |= txin.nSequence < 0xfffffffe;
+                    setConflictInputs.insert(txin.prevout);
+                }
+                if (!fSignals)
+                    return RejectTx(pcheck, "txn-mempool-conflict");        // not replaceable: it did not ask to be
             }
-            break;
+            // What goes out if this comes in: the conflicting transactions and everything that spends them. The walk stops as
+            // soon as it is past 100, since it runs before any signature is checked.
+            std::vector<uint256> vWork(vConflicts.begin(), vConflicts.end());
+            while (!vWork.empty())
+            {
+                const uint256 h = vWork.back();
+                vWork.pop_back();
+                if (!setEvict.insert(h).second)
+                    continue;
+                if (setEvict.size() > 100)
+                    return RejectTx(pcheck, "too-many-replacements", LogError("CTxMemPool::accept() : a replacement would evict more than 100 transactions"));
+                auto itTx = mapTx.find(h);
+                auto itEntry = mapEntry.find(h);
+                if (itTx == mapTx.end() || itEntry == mapEntry.end() || !itEntry->second.fFeeKnown)
+                    return RejectTx(pcheck, "txn-mempool-conflict");
+                double dUnusedPriority = 0;
+                int64 nDelta = 0;
+                ApplyDeltas(h, dUnusedPriority, nDelta);
+                nEvictedFees += itEntry->second.nFee + nDelta;
+                // its spenders: mapNextTx is ordered by (hash, n), so they sit together from (h, 0) on. One lookup, not one per
+                // output, which a garbage conflict could otherwise make cost up to 100 times a transaction's output count
+                for (auto itSpend = mapNextTx.lower_bound(COutPoint(h, 0)); itSpend != mapNextTx.end() && itSpend->first.hash == h; ++itSpend)
+                    vWork.push_back(itSpend->second.ptx->GetHash());
+            }
         }
     }
 
@@ -620,28 +674,57 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         if (nModifiedFees < tx.GetMinFee(1000, true, GetMinFee_mode::GMF_RELAY))
             return RejectTx(pcheck, "insufficient-fee", LogError("CTxMemPool::accept() : not enough fees"));
 
+        if (!vConflicts.empty())
+        {
+            // it may not rest on what it replaces, nor on anything unconfirmed that the replaced did not already rest on
+            {
+                LOCK(cs);
+                for (const CTxIn& txin : tx.vin)
+                {
+                    if (setEvict.count(txin.prevout.hash))
+                        return RejectTx(pcheck, "replacement-spends-conflict");
+                    if (mapTx.count(txin.prevout.hash) && !setConflictInputs.count(txin.prevout))
+                        return RejectTx(pcheck, "replacement-adds-unconfirmed");
+                }
+            }
+            // it pays more than all it throws out, and the relay fee for its own size on top, and at a higher rate than each of them
+            if (nModifiedFees < nEvictedFees + MIN_RELAY_TX_FEE * (1 + (int64)nSize / 1000))
+                return RejectTx(pcheck, "insufficient-fee-replacement", LogError("CTxMemPool::accept() : replacement pays %s, needs more than %s", FormatMoney(nModifiedFees).c_str(), FormatMoney(nEvictedFees).c_str()));
+            {
+                LOCK(cs);
+                for (const uint256& hashConflict : vConflicts)
+                {
+                    auto itEntry = mapEntry.find(hashConflict);
+                    if (itEntry == mapEntry.end())
+                        continue;
+                    double dUnusedPriority = 0;
+                    int64 nDelta = 0;
+                    ApplyDeltas(hashConflict, dUnusedPriority, nDelta);
+                    if ((double)nModifiedFees * itEntry->second.nSize <= (double)(itEntry->second.nFee + nDelta) * nSize)
+                        return RejectTx(pcheck, "replacement-feerate-too-low");
+                }
+            }
+        }
+
         // Continuously rate-limit free transactions
         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
         // be annoying or make other's transactions take longer to confirm.
+        bool fChargeFree = false;       // charged below, once the transaction has passed the checks that cost CPU
         if (nModifiedFees < MIN_RELAY_TX_FEE)
         {
-            static CCriticalSection cs;
-            static double dFreeCount;
-            static int64 nLastTime;
             int64 nNow = GetTime();
 
             {
-                LOCK(cs);
+                LOCK(csFreeRelay);
                 // Use an exponentially decaying ~10-minute window:
-                dFreeCount *= pow(1.0 - 1.0/600.0, static_cast<double>(nNow - nLastTime));
-                nLastTime = nNow;
+                dFreeRelayCount *= pow(1.0 - 1.0/600.0, static_cast<double>(nNow - nFreeRelayLast));
+                nFreeRelayLast = nNow;
                 // -limitfreerelay unit is thousand-bytes-per-minute
                 // At default rate it would take over a month to fill 1GB
-                if (dFreeCount > GetArg("-limitfreerelay", 15)*10*1000 && !IsFromMe(tx))
+                if (dFreeRelayCount > GetArg("-limitfreerelay", 15)*10*1000 && !IsFromMe(tx))
                     return RejectTx(pcheck, "rate-limited", LogError("CTxMemPool::accept() : free transaction rejected by rate limiter"));
-                LogDebug("Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount+nSize);
-                if (!(pcheck && pcheck->fTestOnly))
-                    dFreeCount += nSize;
+                LogDebug("Rate limit dFreeCount: %g => %g\n", dFreeRelayCount, dFreeRelayCount+nSize);
+                fChargeFree = !(pcheck && pcheck->fTestOnly);
             }
         }
 
@@ -669,12 +752,17 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             if (fStandardSigs && !VerifySignature(txPrev, tx, i, true, 0, SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S))
                 return RejectTx(pcheck, "non-canonical-signature", LogError("CTxMemPool::accept() : non-canonical signature (not strict DER or S too high) in %s", hash.ToString().substr(0,10).c_str()));
         }
+        if (fChargeFree)
+        {
+            LOCK(csFreeRelay);
+            dFreeRelayCount += nSize;
+        }
     }
 
     // A dry run stops here: the transaction passed every check (and it would not be the one the size limit throws out)
     if (pcheck && pcheck->fTestOnly)
     {
-        if (WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION)))
+        if (WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), setEvict.empty() ? nullptr : &setEvict))
             return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s would have the lowest fee rate", hash.ToString().substr(0,10).c_str()));
         return true;
     }
@@ -682,10 +770,13 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     // Store transaction in memory
     {
         LOCK(cs);
-        if (ptxOld)
+        // A replacement that the size limit would throw out at once must not take its conflicts with it: ask before removing them
+        if (!setEvict.empty() && WouldBeDropped(nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), &setEvict))
+            return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, replacement %s would have the lowest fee rate", hash.ToString().substr(0,10).c_str()));
+        for (const uint256& hashConflict : vConflicts)
         {
-            LogPrintf("CTxMemPool::accept() : replacing tx %s with new version\n", ptxOld->GetHash().ToString().c_str());
-            remove(*ptxOld);
+            LogPrintf("CTxMemPool::accept() : %s replaces %s (and what is built on it)\n", hash.ToString().substr(0,10).c_str(), hashConflict.ToString().substr(0,10).c_str());
+            RemoveRecursive(hashConflict);
         }
         addUnchecked(hash, tx);
         PoolEntry entry = { nEntryFee, ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION), GetTime(), fCheckInputs, nBestHeight };
@@ -696,10 +787,10 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             return RejectTx(pcheck, "mempool-full", LogError("CTxMemPool::accept() : mempool full, %s had the lowest fee rate", hash.ToString().substr(0,10).c_str()));
     }
 
+    if (!setEvict.empty())
+        ReplacedInWallets(setEvict);
+
     ///// are we sure this is ok when loading transactions or restoring block txes
-    // If updated, erase old tx from wallet
-    if (ptxOld)
-        EraseFromWallets(ptxOld->GetHash());
 
     LogPrintf("CTxMemPool::accept() : accepted %s (poolsz %u)\n",
            hash.ToString().substr(0,10).c_str(),
@@ -770,6 +861,23 @@ void CTxMemPool::RemoveRecursive(const uint256& hash)
         }
         CTransaction tx = it->second;
         remove(tx);
+    }
+}
+
+// The pool transactions that spend a coin tx spends, other than tx itself: tx is in a block, so they can never confirm. They go, and what is built
+// on them (it would never be mined either, and was announced to peers and counted against the pool until it expired).
+void CTxMemPool::RemoveConflicts(const CTransaction& tx)
+{
+    LOCK(cs);
+    const uint256 hashTx = tx.GetHash();
+    for (const CTxIn& txin : tx.vin)
+    {
+        auto it = mapNextTx.find(txin.prevout);
+        if (it == mapNextTx.end())
+            continue;
+        const uint256 hashConflict = it->second.ptx->GetHash();       // (a copy: the entry goes with the transaction)
+        if (hashConflict != hashTx)
+            RemoveRecursive(hashConflict);
     }
 }
 
@@ -916,14 +1024,46 @@ unsigned int CTxMemPool::Trim()
     return nDropped;
 }
 
-bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize)
+bool CTxMemPool::WouldBeDropped(int64 nFee, unsigned int nSize, const std::set<uint256>* pEvicted)
 {
     LOCK(cs);
-    if (nPoolBytes + nSize <= MaxMempoolBytes() || mapEntry.empty())
+    // a replacement frees the room of what it replaces, and those are not among the entries that could be dropped for it
+    size_t nFreed = 0;
+    if (pEvicted)
+        for (const uint256& h : *pEvicted)
+        {
+            auto itEntry = mapEntry.find(h);
+            if (itEntry != mapEntry.end())
+                nFreed += std::min<size_t>(nPoolBytes, itEntry->second.nSize);
+        }
+    if (nPoolBytes - std::min(nPoolBytes, nFreed) + nSize <= MaxMempoolBytes() || mapEntry.empty())
         return false;
-    const std::vector<std::pair<double, uint256> > vCandidates = EvictionCandidates();
-    // strictly lower than every candidate: it goes first (a tie is left to the real thing)
-    return !vCandidates.empty() && (double)nFee / std::max(1u, nSize) < vCandidates.front().first;
+    const double dRate = (double)nFee / std::max(1u, nSize);
+    if (!pEvicted)
+    {
+        // strictly lower than every candidate: it goes first
+        for (const auto& candidate : EvictionCandidates())
+            return dRate < candidate.first;
+        return false;
+    }
+    // A replacement: walk Trim's order (lowest fee rate first) and see whether enough room is made before it comes up itself.
+    // Asking only whether it is the first to go missed a large replacement over a small conflict, which Trim dropped after one
+    // cheaper entry, with its conflicts already gone. It is held to more than a newcomer, as it has already cost the pool what it
+    // replaced: a tie counts as dropped (the real thing breaks ties by hash), and so does running out of candidates.
+    int64 nNeed = (int64)(nPoolBytes - std::min(nPoolBytes, nFreed) + nSize) - (int64)MaxMempoolBytes();
+    for (const auto& candidate : EvictionCandidates())
+    {
+        if (pEvicted->count(candidate.second))
+            continue;
+        if (dRate <= candidate.first)
+            return true;
+        auto itEntry = mapEntry.find(candidate.second);
+        if (itEntry != mapEntry.end())
+            nNeed -= itEntry->second.nSize;
+        if (nNeed <= 0)
+            return false;
+    }
+    return true;
 }
 
 void CTxMemPool::PrioritiseTransaction(const uint256& hash, double dPriorityDelta, int64 nFeeDelta)
@@ -1019,7 +1159,9 @@ bool CMerkleTx::AcceptToMemoryPool()
 
 bool CWalletTx::AcceptWalletTransaction(CTxDB& txdb, bool fCheckInputs)
 {
-
+    // Called with fCheckInputs false only (ReacceptWalletTransactions). With input checks a replacement could run here, and
+    // ReplacedInWallets takes cs_wallet: that inside mempool.cs is the reverse of AbandonTransaction's order. Keep it false, or
+    // drop this lock first.
     {
         LOCK(mempool.cs);
         // Add previous supporting transactions first
@@ -1107,7 +1249,14 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions, boo
         // AuxPoW version bit set and no proof attached -- undefined behaviour
         // once serialized (see CBlock::SerializationOp). Go to disk for those.
         if (IsAuxPowVersion(pindex->nVersion))
-            return ReadFromDisk(pindex->nFile, pindex->nBlockPos, false);
+        {
+            if (!ReadFromDisk(pindex->nFile, pindex->nBlockPos, false, fCheckPoW))
+                return false;
+            // one hash: with the proof-of-work check skipped (getheaders), this is what keeps a damaged block file from being served
+            if (GetHash() != pindex->GetBlockHash())
+                return LogError("CBlock::ReadFromDisk() : GetHash() doesn't match index");
+            return true;
+        }
         *this = pindex->GetBlockHeader();
         return true;
     }
@@ -1670,7 +1819,7 @@ void CBlock::UpdateTime(const CBlockIndex* pindexPrev)
 
 
 
-bool CTransaction::DisconnectInputs(CTxDB& txdb)
+bool CTransaction::DisconnectInputs(CTxIndexCache& view)
 {
     // Relinquish previous transactions' spent pointers
     if (!IsCoinBase())
@@ -1681,7 +1830,7 @@ bool CTransaction::DisconnectInputs(CTxDB& txdb)
 
             // Get prev txindex from disk
             CTxIndex txindex;
-            if (!txdb.ReadTxIndex(prevout.hash, txindex))
+            if (!view.Read(prevout.hash, txindex))
                 return LogError("DisconnectInputs() : ReadTxIndex failed");
 
             if (prevout.n >= txindex.vSpent.size())
@@ -1691,8 +1840,7 @@ bool CTransaction::DisconnectInputs(CTxDB& txdb)
             txindex.vSpent[prevout.n].SetNull();
 
             // Write back
-            if (!txdb.UpdateTxIndex(prevout.hash, txindex))
-                return LogError("DisconnectInputs() : UpdateTxIndex failed");
+            view.Write(prevout.hash, txindex);
         }
     }
 
@@ -1700,7 +1848,7 @@ bool CTransaction::DisconnectInputs(CTxDB& txdb)
     // This can fail if a duplicate of this transaction was in a chain that got
     // reorganized away. This is only possible if this transaction was completely
     // spent, so erasing it would be a no-op anway.
-    txdb.EraseTxIndex(*this);
+    view.Erase(GetHash());
 
     return true;
 }
@@ -1961,10 +2109,13 @@ bool CTransaction::ClientConnectInputs()
 
 bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
-    // Disconnect in reverse order
+    // Disconnect in reverse order, through a cache that reaches the database once, below
+    CTxIndexCache view(txdb);
     for (int i = vtx.size()-1; i >= 0; i--)
-        if (!vtx[i].DisconnectInputs(txdb))
+        if (!vtx[i].DisconnectInputs(view))
             return false;
+    if (!view.Flush())
+        return LogError("DisconnectBlock() : UpdateTxIndex failed");
 
     // Update block index on disk without changing it in memory.
     // The memory index structure will be changed after the db commits.
@@ -1976,6 +2127,95 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
             return LogError("DisconnectBlock() : WriteBlockIndex failed");
     }
 
+    CoinsDisconnectBlock(*this, pindex);
+    return true;
+}
+
+// The inputs of tx taken from the unspent set instead of from the transactions on disk (-coinsvalidate): the same checks as
+// FetchInputs and ConnectInputs make, on the same facts (is the output there and unspent, its value and script, a coinbase's age),
+// and the same marks in the index for what the wallet and the RPC read from it. Sets the block's fees and sigops. False if the tx
+// is invalid; fSigOpsOverflow says it was the sigop limit (a fault of the block, not of the transaction).
+static bool ConnectTxFromCoins(CTransaction& tx, const CDiskTxPos& posThisTx, const CBlockIndex* pindex, CTxIndexCache& view,
+                               bool fStrictPayToScriptHash, unsigned int& nSigOps, int64& nFees, bool& fSigOpsOverflow)
+{
+    std::vector<CCoinInput> vIn;
+    unsigned int nBad = 0;
+    switch (CoinsFetchInputs(tx, vIn, nBad))
+    {
+    case COINS_FETCH_OK:
+        break;
+    case COINS_FETCH_RANGE:
+        return tx.DoS(100, LogError("ConnectInputs() : %s prevout.n out of range (input %u)", tx.GetHash().ToString().substr(0,10).c_str(), nBad));
+    case COINS_FETCH_SPENT:
+        return LogError("ConnectInputs() : %s prev tx already used (input %u)", tx.GetHash().ToString().substr(0,10).c_str(), nBad);
+    default:
+        // the set does not hold what the chain spends: the block may well be valid and the set wrong, so the block is not marked failed
+        fConnectFailureMaybeLocal = true;
+        CoinsDistrust("an input is not in the set");
+        return LogError("FetchInputs() : %s prev tx %s not in the unspent set", tx.GetHash().ToString().substr(0,10).c_str(), tx.vin[nBad].prevout.hash.ToString().substr(0,10).c_str());
+    }
+
+    // sigops of pay-to-script-hash inputs, counted before the expensive checks
+    fSigOpsOverflow = false;
+    if (fStrictPayToScriptHash)
+    {
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
+            if (vIn[i].txout.scriptPubKey.IsPayToScriptHash())
+                nSigOps += vIn[i].txout.scriptPubKey.GetSigOpCount(tx.vin[i].scriptSig);
+        if (nSigOps > MAX_BLOCK_SIGOPS)
+        {
+            fSigOpsOverflow = true;
+            return false;
+        }
+    }
+
+    int64 nValueIn = 0;
+    for (unsigned int i = 0; i < tx.vin.size(); i++)
+    {
+        // a coinbase output is spendable once it is COINBASE_MATURITY blocks deep
+        if (vIn[i].fCoinBase && pindex->nHeight - vIn[i].nHeight < COINBASE_MATURITY)
+            return LogError("ConnectInputs() : tried to spend coinbase at depth %d", pindex->nHeight - vIn[i].nHeight);
+        nValueIn += vIn[i].txout.nValue;
+        if (!MoneyRange(vIn[i].txout.nValue) || !MoneyRange(nValueIn))
+            return tx.DoS(100, LogError("ConnectInputs() : txin values out of range"));
+    }
+    nFees += nValueIn - tx.GetValueOut();
+
+    // signatures, only if all the cheap checks passed; not before the last checkpoint, as ConnectInputs does
+    if (!(nBestHeight < Checkpoints::GetTotalBlocksEstimate()))
+    {
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
+        {
+            const CScript& scriptPubKey = vIn[i].txout.scriptPubKey;
+            if (!VerifyScript(tx.vin[i].scriptSig, scriptPubKey, tx, i, fStrictPayToScriptHash, 0))
+            {
+                // only during transition phase for P2SH: do not invoke anti-DoS code for potentially old clients relaying bad P2SH transactions
+                if (fStrictPayToScriptHash && VerifyScript(tx.vin[i].scriptSig, scriptPubKey, tx, i, false, 0))
+                    return LogError("ConnectInputs() : %s P2SH VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str());
+                return tx.DoS(100, LogError("ConnectInputs() : %s VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str()));
+            }
+        }
+    }
+
+    if (nValueIn < tx.GetValueOut())
+        return tx.DoS(100, LogError("ConnectInputs() : %s value in < value out", tx.GetHash().ToString().substr(0,10).c_str()));
+    if (!MoneyRange(nValueIn - tx.GetValueOut()))
+        return tx.DoS(100, LogError("ConnectInputs() : nFees out of range"));
+
+    // the index still records what spends what (the wallet and getrawtransaction read it)
+    for (const CTxIn& txin : tx.vin)
+    {
+        CTxIndex txindex;
+        if (!view.Read(txin.prevout.hash, txindex) || txin.prevout.n >= txindex.vSpent.size() || !txindex.vSpent[txin.prevout.n].IsNull())
+        {
+            fConnectFailureMaybeLocal = true;
+            CoinsDistrust("the set and the index disagree");
+            return LogError("ConnectInputs() : %s the index and the unspent set disagree about %s:%u", tx.GetHash().ToString().substr(0,10).c_str(),
+                            txin.prevout.hash.ToString().substr(0,10).c_str(), txin.prevout.n);
+        }
+        txindex.vSpent[txin.prevout.n] = posThisTx;
+        view.Write(txin.prevout.hash, txindex);
+    }
     return true;
 }
 
@@ -2008,16 +2248,30 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     // position, so getrawtransaction failed for them and any spend of their outputs could not read the previous tx.
     unsigned int nTxPos = pindex->nBlockPos + ::GetSerializeSize(*this, SER_DISK | SER_BLOCKHEADERONLY, CLIENT_VERSION) + GetSizeOfCompactSize(vtx.size());
 
-    map<uint256, CTxIndex> mapQueuedChanges;
+    CTxIndexCache view(txdb);
+    map<uint256, CTxIndex>& mapQueuedChanges = view.Dirty();
+    CBlockUndo coinsUndo;       // what this block spends, for the unspent set beside the index
     int64 nFees = 0;
     unsigned int nSigOps = 0;
+
+    // -coinsvalidate: this block's inputs are checked against the unspent set. Only on regtest in this release (the set is not yet shown to
+    // be safe as the judge of a block), and only while the set is known to be the chain's.
+    const bool fFromCoins = fRegTest && GetBoolArg("-coinsvalidate", false) && CoinsUsable();
+    if (fFromCoins && fEnforceBIP30)
+    {
+        // BIP30 against the chain before this block: the set as it is now, before any transaction of this block is applied
+        for (const CTransaction& tx : vtx)
+            if (CoinsHaveUnspent(tx.GetHash()))
+                return false;
+    }
+
     for (CTransaction& tx : vtx)
     {
         uint256 hashTx = tx.GetHash();
 
-        if (fEnforceBIP30) {
+        if (fEnforceBIP30 && !fFromCoins) {
             CTxIndex txindexOld;
-            if (txdb.ReadTxIndex(hashTx, txindexOld)) {
+            if (view.ReadDb(hashTx, txindexOld)) {      // the database: earlier blocks, not this one
                 for (CDiskTxPos &pos : txindexOld.vSpent)
                     if (pos.IsNull())
                         return false;
@@ -2032,7 +2286,13 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
         nTxPos += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
 
         MapPrevTx mapInputs;
-        if (!tx.IsCoinBase())
+        if (!tx.IsCoinBase() && fFromCoins)
+        {
+            bool fSigOpsOverflow = false;
+            if (!ConnectTxFromCoins(tx, posThisTx, pindex, view, fStrictPayToScriptHash, nSigOps, nFees, fSigOpsOverflow))
+                return fSigOpsOverflow ? DoS(100, LogError("ConnectBlock() : too many sigops")) : false;
+        }
+        else if (!tx.IsCoinBase())
         {
             bool fInvalid;
             if (!tx.FetchInputs(txdb, mapQueuedChanges, true, false, mapInputs, fInvalid))
@@ -2055,19 +2315,18 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 
             if (!tx.ConnectInputs(mapInputs, mapQueuedChanges, posThisTx, pindex, true, false, fStrictPayToScriptHash))
                 return false;
+            CoinsCheckInputs(tx, mapInputs, pindex);
         }
 
         mapQueuedChanges[hashTx] = CTxIndex(posThisTx, tx.vout.size());
+        CoinsConnectTx(tx, pindex->nHeight, coinsUndo);
     }
 
-    // Write queued txindex changes
-    for (const auto& mi : mapQueuedChanges)
+    // Write the queued txindex changes, once (a failed write is the disk's, not the block's)
+    if (!view.Flush())
     {
-        if (!txdb.UpdateTxIndex(mi.first, mi.second))
-        {
-            fConnectFailureMaybeLocal = true;
-            return LogError("ConnectBlock() : UpdateTxIndex failed");
-        }
+        fConnectFailureMaybeLocal = true;
+        return LogError("ConnectBlock() : UpdateTxIndex failed");
     }
 
 	uint256 prevHash = 0;
@@ -2096,6 +2355,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
             return LogError("ConnectBlock() : WriteBlockIndex failed");
         }
     }
+
+    CoinsEndBlock(pindex, coinsUndo);
+    if (fFromCoins)
+        CoinsNoteBlockFromSet();
 
     // (The wallet and ZMQ are told after the database commit: see NotifyConnected.)
     return true;
@@ -2214,7 +2477,10 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
 
     // Delete redundant memory transactions that are in the connected branch
     for (CTransaction& tx : vDelete)
+    {
+        mempool.RemoveConflicts(tx);
         mempool.remove(tx);
+    }
 
     LogPrintf("REORGANIZE: done\n");
 
@@ -2262,7 +2528,10 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, CBlockIndex *pindexNew)
 
     // Delete redundant memory transactions
     for (CTransaction& tx : vtx)
+    {
+        mempool.RemoveConflicts(tx);
         mempool.remove(tx);
+    }
 
     return true;
 }
@@ -2980,6 +3249,9 @@ bool LoadBlockIndex(bool fAllowNew)
             return LogError("LoadBlockIndex() : genesis block not accepted");
     }
 
+    // the unspent-output set: opened, and rebuilt from the blocks if it is not the one for this chain (the node runs without it if it cannot be)
+    CoinsInit();
+
     return true;
 }
 
@@ -3144,6 +3416,13 @@ string GetWarnings(string strFor)
     {
         nPriority = 1000;
         strStatusBar = strMiscWarning;
+    }
+
+    // The unspent-output database disagreed with the block index (it decides nothing in this release: the index does)
+    if (nPriority < 900 && CoinsCheckFailures() > 0)
+    {
+        nPriority = 900;
+        strStatusBar = strRPC = "Warning: the unspent-output database (chainstate) disagreed with the block index, see COINS CHECK in debug.log. It will be rebuilt at the next start; nothing depends on it in this release.";
     }
 
     // Longer invalid proof-of-work chain
@@ -3322,7 +3601,12 @@ static void ProcessGetData(CNode* pfrom)
                 }
                 CBlock block;
                 // already accepted, so its proof of work was checked: do not pay for it again on every read
-                block.ReadFromDisk((*mi).second, true, false);
+                if (!block.ReadFromDisk((*mi).second, true, false))
+                {
+                    // (a corrupt or missing block file: an empty block is not what the peer asked for)
+                    LogPrintf("getdata: ReadFromDisk failed for block %s, not sent\n", inv.hash.ToString().substr(0,20).c_str());
+                    continue;
+                }
                 pfrom->PushMessage("block", block);
 
                 // Trigger them to send a getblocks request for the next batch of inventory
@@ -3359,7 +3643,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     static map<CService, CPubKey> mapReuseKey;
     RandAddSeedPerfmon();
     LogDebug("received: %s (%d bytes)\n", strCommand.c_str(), (int)vRecv.size());
-    if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
+    if (fRegTest && mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
     {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
         return true;
@@ -3669,6 +3953,11 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
+        if (locator.Size() > MAX_LOCATOR_SZ)
+        {
+            pfrom->Misbehaving(20);
+            return LogError("getblocks locator size = %u", (unsigned)locator.Size());
+        }
 
         // Find the last block the caller has in the main chain
         CBlockIndex* pindex = locator.GetBlockIndex();
@@ -3703,6 +3992,11 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
+        if (locator.Size() > MAX_LOCATOR_SZ)
+        {
+            pfrom->Misbehaving(20);
+            return LogError("getheaders locator size = %u", (unsigned)locator.Size());
+        }
 
         CBlockIndex* pindex = nullptr;
         if (locator.IsNull())
@@ -3734,7 +4028,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                 // (see CBlock::SerializationOp). CBlock::ReadFromDisk(pindex, false)
                 // knows to go to disk for this case; use it instead of the shortcut.
                 CBlock block;
-                if (!block.ReadFromDisk(pindex, false))
+                if (!block.ReadFromDisk(pindex, false, false))
                 {
                     LogPrintf("getheaders : ReadFromDisk failed for %s, stopping\n", pindex->GetBlockHash().ToString().substr(0,20).c_str());
                     break;

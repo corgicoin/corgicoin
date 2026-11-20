@@ -49,6 +49,14 @@ static bool DeriveHDChild(const CExtKey& master, uint32_t nIndex, CKey& keyOut)
     return true;
 }
 
+bool CWallet::HDKeyAtIndexIs(uint32_t nIndex, const CKeyID& keyid) const
+{
+    CKey key;
+    if (!IsHDSeedAvailable() || !DeriveHDChild(hdMasterKey, nIndex, key))
+        return false;
+    return key.GetPubKey().GetID() == keyid;
+}
+
 // IV for encrypting the HD mnemonic: derived from the (non-secret) seed
 // fingerprint, mirroring how crypted keys use the pubkey hash as IV.
 static uint256 HDSeedIV(const CKeyID& id)
@@ -204,6 +212,12 @@ CPubKey CWallet::GenerateNewKey()
         // in the wallet derives the same keys again. A key that is already there is the one asked for, not a failure.
         if (!HaveKey(key.GetPubKey().GetID()) && !AddKey(key))
             throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
+        {
+            // where it sits, for whoever has to find it again from the recovery phrase
+            CKeyMetadata meta = mapKeyMetadata[key.GetPubKey().GetID()];
+            meta.strHDKeypath = strprintf("m/44'/%u'/0'/0/%u", (unsigned)HD_COIN_TYPE, (unsigned)nHDExternalIndex);
+            SetKeyMetadata(key.GetPubKey(), meta);
+        }
         nHDExternalIndex++;
         if (fFileBacked && !CWalletDB(strWalletFile).WriteHDChain(nHDExternalIndex))
             throw std::runtime_error("CWallet::GenerateNewKey() : could not save the HD index");
@@ -224,8 +238,44 @@ CPubKey CWallet::GenerateNewKey()
     return key.GetPubKey();
 }
 
+void CWallet::SetKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta)
+{
+    LOCK(cs_wallet);
+    mapKeyMetadata[vchPubKey.GetID()] = meta;
+    if (fFileBacked)
+        CWalletDB(strWalletFile).WriteKeyMetadata(vchPubKey, meta);
+}
+
+bool CWallet::AddKeyWithMetadata(const CKey& key, const CKeyMetadata& meta)
+{
+    LOCK(cs_wallet);
+    const CPubKey pubkey = key.GetPubKey();
+    const CKeyID keyid = pubkey.GetID();
+    const bool fHad = mapKeyMetadata.count(keyid) != 0;
+    const CKeyMetadata metaBefore = fHad ? mapKeyMetadata[keyid] : CKeyMetadata();
+    mapKeyMetadata[keyid] = meta;           // in memory only: AddKey then does not stamp "now" or write it
+    if (!AddKey(key))
+    {
+        if (fHad)
+            mapKeyMetadata[keyid] = metaBefore;
+        else
+            mapKeyMetadata.erase(keyid);
+        return false;
+    }
+    if (fFileBacked)
+        CWalletDB(strWalletFile).WriteKeyMetadata(pubkey, meta);
+    return true;
+}
+
 bool CWallet::AddKey(const CKey& key)
 {
+    // A key that arrives now is new to this wallet as of now. (Keys the wallet already had when this was added have no time:
+    // it is 0, "unknown", not the day they were encrypted or the day the wallet was upgraded.)
+    {
+        LOCK(cs_wallet);
+        if (!mapKeyMetadata.count(key.GetPubKey().GetID()))
+            SetKeyMetadata(key.GetPubKey(), CKeyMetadata(GetTime()));
+    }
     if (!CCryptoKeyStore::AddKey(key))
         return false;
     if (!fFileBacked)
@@ -728,6 +778,147 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
     return true;
 }
 
+// Watch-only scripts: followed, never spent. They are kept apart from the keys so that nothing that picks coins to spend can
+// pick one of these (IsMine stays false for them).
+// Check what the wallet holds: every private key has to produce the public key it is filed under, and for an HD wallet every key
+// derived so far has to be there. Nothing is changed. A locked wallet cannot be checked: the caller says so.
+bool CWallet::VerifyKeys(int& nKeysChecked, int& nHDChecked, std::vector<std::string>& vProblems)
+{
+    LOCK2(cs_main, cs_wallet);
+    nKeysChecked = 0;
+    nHDChecked = 0;
+    if (IsLocked())
+        return false;
+
+    std::set<CKeyID> setKeys;
+    GetKeys(setKeys);
+    for (const CKeyID& keyid : setKeys)
+    {
+        CKey key;
+        CPubKey pubkey;
+        if (!GetKey(keyid, key))
+        {
+            vProblems.push_back("the private key for " + CBitcoinAddress(keyid).ToString() + " cannot be read");
+            continue;
+        }
+        if (!GetPubKey(keyid, pubkey) || !pubkey.IsValid())
+        {
+            vProblems.push_back("no public key for " + CBitcoinAddress(keyid).ToString());
+            continue;
+        }
+        if (key.GetPubKey().GetID() != keyid || key.GetPubKey() != pubkey)
+            vProblems.push_back("the private key filed under " + CBitcoinAddress(keyid).ToString() + " belongs to a different public key");
+        nKeysChecked++;
+    }
+
+    if (fHDEnabled)
+    {
+        if (!fHDMasterLoaded)
+        {
+            vProblems.push_back("the HD seed is not available, so the HD keys could not be re-derived");
+        }
+        else
+        {
+            for (uint32_t i = 0; i < nHDExternalIndex; i++)
+            {
+                if (vProblems.size() >= 100)
+                {
+                    // enough to know the wallet is not right: not a list as long as the index, and not the time it takes to make it
+                    vProblems.push_back("more problems were found; the check stopped after 100");
+                    break;
+                }
+                CKey key;
+                if (!DeriveHDChild(hdMasterKey, i, key))
+                {
+                    vProblems.push_back(strprintf("HD key %u could not be derived", (unsigned)i));
+                    continue;
+                }
+                if (!HaveKey(key.GetPubKey().GetID()))
+                    vProblems.push_back(strprintf("HD key %u (%s) is missing from the wallet", (unsigned)i, CBitcoinAddress(key.GetPubKey().GetID()).ToString().c_str()));
+                nHDChecked++;
+            }
+        }
+    }
+    return true;
+}
+
+bool CWallet::AddWatchOnly(const CScript& script)
+{
+    LOCK(cs_wallet);
+    if (::IsMine(*this, script))
+        return false;   // the wallet holds the key: it is not watch-only
+    const bool fNew = setWatchOnly.insert(script).second;
+    if (fFileBacked && !CWalletDB(strWalletFile).WriteWatchOnly(script))
+    {
+        if (fNew)
+            setWatchOnly.erase(script);     // not saved: not kept in memory either
+        return false;
+    }
+    MarkDirty();                            // what is counted changes
+    return true;
+}
+
+bool CWallet::AddWatchOnlyScripts(const std::vector<CScript>& vScripts)
+{
+    LOCK(cs_wallet);
+    for (const CScript& script : vScripts)
+        if (::IsMine(*this, script))
+            return false;
+    std::vector<CScript> vAdded;
+    for (const CScript& script : vScripts)
+    {
+        const bool fNew = setWatchOnly.insert(script).second;
+        if (fFileBacked && !CWalletDB(strWalletFile).WriteWatchOnly(script))
+        {
+            if (fNew)
+                setWatchOnly.erase(script);
+            for (const CScript& done : vAdded)
+            {
+                setWatchOnly.erase(done);
+                if (fFileBacked)
+                    CWalletDB(strWalletFile).EraseWatchOnly(done);
+            }
+            return false;
+        }
+        if (fNew)
+            vAdded.push_back(script);
+    }
+    MarkDirty();
+    return true;
+}
+
+bool CWallet::IsWatchOnlyTx(const CTransaction& tx) const
+{
+    LOCK(cs_wallet);
+    for (const CTxOut& txout : tx.vout)
+        if (IsWatchOnly(txout))
+            return true;
+    // one that spends a watch-only coin: it has to be kept to know the coin is gone
+    for (const CTxIn& txin : tx.vin)
+    {
+        auto mi = mapWallet.find(txin.prevout.hash);
+        if (mi != mapWallet.end() && txin.prevout.n < (*mi).second.vout.size() && IsWatchOnly((*mi).second.vout[txin.prevout.n]))
+            return true;
+    }
+    return false;
+}
+
+int64 CWallet::GetWatchOnlyBalance(int nMinDepth) const
+{
+    int64 nTotal = 0;
+    LOCK2(cs_main, cs_wallet);
+    for (const auto& item : mapWallet)
+    {
+        const CWalletTx& wtx = item.second;
+        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < nMinDepth)
+            continue;
+        for (unsigned int i = 0; i < wtx.vout.size(); i++)
+            if (IsWatchOnly(wtx.vout[i]) && !wtx.IsSpent(i))
+                nTotal += wtx.vout[i].nValue;
+    }
+    return nTotal;
+}
+
 void CWallet::WalletUpdateSpent(const CTransaction &tx)
 {
     // Anytime a signature is successfully verified, it's proof the outpoint is spent.
@@ -741,7 +932,7 @@ void CWallet::WalletUpdateSpent(const CTransaction &tx)
             if (mi != mapWallet.end())
             {
                 CWalletTx& wtx = (*mi).second;
-                if (!wtx.IsSpent(txin.prevout.n) && IsMine(wtx.vout[txin.prevout.n]))
+                if (!wtx.IsSpent(txin.prevout.n) && (IsMine(wtx.vout[txin.prevout.n]) || IsWatchOnly(wtx.vout[txin.prevout.n])))
                 {
                     LogPrintf("WalletUpdateSpent found spent coin %sbc %s\n", FormatMoney(wtx.GetCredit()).c_str(), wtx.GetHash().ToString().c_str());
                     wtx.MarkSpent(txin.prevout.n);
@@ -872,7 +1063,7 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
             if (fFileBacked)
                 CWalletDB(strWalletFile).EraseAbandoned(hash);
         }
-        if (fExisted || IsMine(tx) || IsFromMe(tx))
+        if (fExisted || IsMine(tx) || IsFromMe(tx) || IsWatchOnlyTx(tx))
         {
             CWalletTx wtx(this,tx);
             // Get merkle branch if transaction was found in a block
@@ -967,6 +1158,22 @@ bool CWallet::AbandonTransaction(const uint256& hashTx, std::string& strError)
         NotifyTransactionChanged(this, hash, ChangeType::CT_DELETED);
     }
     return true;
+}
+
+// The pool took these out for a replacement that pays more (another party's, or a copy of this wallet's): the wallet stops counting
+// them, as for an abandoned transaction, or their change would stay in the balance, their coins would stay spent, and they would be
+// sent again (and, put back into the pool without its fee checks, would push the replacement out). One that is in a block is left.
+void CWallet::TransactionsReplaced(const std::set<uint256>& setReplaced)
+{
+    LOCK(cs_wallet);
+    for (const uint256& hash : setReplaced)
+    {
+        if (!mapWallet.count(hash))
+            continue;
+        std::string strError;
+        if (!AbandonTransaction(hash, strError))
+            LogPrintf("CWallet::TransactionsReplaced() : %s kept: %s\n", hash.ToString().substr(0,10).c_str(), strError.c_str());
+    }
 }
 
 bool CWallet::EraseFromWallet(uint256 hash)
@@ -1378,6 +1585,11 @@ void CWallet::ResendWalletTransactions()
         for (std::pair<const uint256, CWalletTx>& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
+            // As before for everything else (an unconfirmed payment received is announced again too); the one exception is a transaction that
+            // touches a watched address and that we did not send: announcing it would tell the network which addresses this wallet follows
+            // (one we sent is still ours to announce, whatever it pays).
+            if (!wtx.IsFromMe() && IsWatchOnlyTx(wtx))
+                continue;
             // Don't rebroadcast until it's had plenty of time that
             // it should have gotten in already by now.
             if (nTimeBestReceived - static_cast<int64>(wtx.nTimeReceived) > 5 * 60)
@@ -1820,6 +2032,10 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
                 // Fill vin
                 for (const std::pair<const CWalletTx*,unsigned int>& coin : setCoins)
                     wtxNew.vin.emplace_back(coin.first->GetHash(),coin.second);
+                // -walletrbf: say that the transaction may be replaced by one that pays more (BIP 125), so bumpfee can
+                if (GetBoolArg("-walletrbf", false))
+                    for (CTxIn& txin : wtxNew.vin)
+                        txin.nSequence = 0xfffffffd;
 
                 // Sign
                 int nIn = 0;
@@ -2130,8 +2346,27 @@ bool CWallet::RestoreHDKeys(unsigned int nGap, int& nUsedRet, std::string& strEr
                 return false;
             const CKeyID keyid = key.GetPubKey().GetID();
             // a key that is already here (an earlier restore of the same phrase, or the key pool) is not an error
-            if (!HaveKey(keyid) && !AddKey(key))
-                return false;
+            const std::string strPath = strprintf("m/44'/%u'/0'/0/%u", (unsigned)HD_COIN_TYPE, (unsigned)nDerived);
+            if (!HaveKey(keyid))
+            {
+                // a restored key may already have years of history: its birth is unknown (0), not today (which would start a later
+                // backup's rescan at today and miss everything before it). It is a new key here, so its metadata is new too.
+                CKeyMetadata meta(0);
+                meta.strHDKeypath = strPath;
+                if (!AddKeyWithMetadata(key, meta))
+                    return false;
+            }
+            else
+            {
+                // a key the wallet has keeps its creation time; it only gets the path if it had none
+                auto itMeta = mapKeyMetadata.find(keyid);
+                if (itMeta != mapKeyMetadata.end() && itMeta->second.strHDKeypath.empty())
+                {
+                    CKeyMetadata meta = itMeta->second;
+                    meta.strHDKeypath = strPath;
+                    SetKeyMetadata(key.GetPubKey(), meta);
+                }
+            }
             mapIndex[keyid] = nDerived;
         }
         return true;

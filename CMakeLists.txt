@@ -238,6 +238,8 @@ set(DAEMON_SOURCES
     src/rpcnet.cpp
     src/rpcrawtransaction.cpp
     src/utxoset.cpp
+    src/txindexcache.cpp
+    src/coins.cpp
     src/bech32.cpp
     src/bip32.cpp
     src/bip39.cpp
@@ -286,6 +288,32 @@ if(USE_ZMQ)
     endif()
 endif()
 
+# Signature verification with libsecp256k1 (the library Bitcoin Core uses) instead of OpenSSL. OFF by default: whether a signature is valid is
+# consensus, so this is an option to be run and compared (src/fuzz/secp_diff.cpp checks it against OpenSSL's own ECDSA_verify, the check master
+# makes) before any release turns it on. The signature is read with the strictness OpenSSL has (see IsCanonicalDERSignature in src/key.cpp).
+# contrib/build-secp256k1.sh builds the pinned release. The library is linked through ZMQ_LIBRARIES, which every target already uses.
+option(USE_LIBSECP256K1 "Verify signatures with libsecp256k1 instead of OpenSSL" OFF)
+if(USE_LIBSECP256K1)
+    # no search of the system: a distribution's libsecp256k1 is not the pinned release, and may be a shared library
+    if(NOT SECP256K1_LIBRARY OR NOT SECP256K1_INCLUDE_DIR OR NOT EXISTS "${SECP256K1_LIBRARY}" OR NOT EXISTS "${SECP256K1_INCLUDE_DIR}/secp256k1.h")
+        message(FATAL_ERROR "Build the pinned libsecp256k1 with contrib/build-secp256k1.sh <prefix> and pass "
+                            "-DSECP256K1_INCLUDE_DIR=<prefix>/include -DSECP256K1_LIBRARY=<prefix>/lib/libsecp256k1.a, "
+                            "or leave -DUSE_LIBSECP256K1 off.")
+    endif()
+    add_definitions(-DUSE_LIBSECP256K1)
+    include_directories(${SECP256K1_INCLUDE_DIR})
+    list(APPEND ZMQ_LIBRARIES ${SECP256K1_LIBRARY})
+endif()
+# LevelDB: the unspent-output set and the undo data of each block (src/coins.cpp, 8.1). contrib/build-leveldb.sh builds the pinned release.
+find_library(LEVELDB_LIBRARY leveldb)
+find_path(LEVELDB_INCLUDE_DIR leveldb/db.h)
+if(NOT LEVELDB_LIBRARY OR NOT LEVELDB_INCLUDE_DIR)
+    message(FATAL_ERROR "LevelDB not found. Build the pinned release with contrib/build-leveldb.sh <prefix> and pass "
+                        "-DLEVELDB_INCLUDE_DIR=<prefix>/include -DLEVELDB_LIBRARY=<prefix>/lib/libleveldb.a, or install libleveldb-dev.")
+endif()
+include_directories(${LEVELDB_INCLUDE_DIR})
+set(LEVELDB_LIBRARIES ${LEVELDB_LIBRARY})
+
 # Daemon executable
 add_executable(corgicoind ${DAEMON_SOURCES} ${JSON_SOURCES})
 add_dependencies(corgicoind generate_build_info)
@@ -296,6 +324,7 @@ target_link_libraries(corgicoind
     ${BERKELEYDB_LIBRARY}
     ${Boost_LIBRARIES}
     ${ZMQ_LIBRARIES}
+    ${LEVELDB_LIBRARIES}
     Threads::Threads
     ${CMAKE_DL_LIBS}
 )
@@ -526,6 +555,7 @@ if(BUILD_QT_GUI)
 
     # Link other libraries
     target_link_libraries(corgicoin-qt
+        ${LEVELDB_LIBRARIES}
         ${OPENSSL_LIBRARIES}
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
@@ -574,13 +604,35 @@ if(BUILD_FUZZ)
         target_compile_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer-no-link)
         target_link_options(fuzz_corgicoin PRIVATE -fsanitize=fuzzer)
     endif()
-    target_link_libraries(fuzz_corgicoin ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES}
+    target_link_libraries(fuzz_corgicoin ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES} ${LEVELDB_LIBRARIES}
         Threads::Threads ${CMAKE_DL_LIBS})
     if(LINUX)
         target_link_libraries(fuzz_corgicoin rt)
     endif()
     if(USE_UPNP)
         target_link_libraries(fuzz_corgicoin ${MINIUPNPC_LIBRARY})
+    endif()
+endif()
+
+# Differential check of the node's signature verification (CKey::Verify) against OpenSSL's ECDSA_verify on the raw bytes, which is what master
+# does (src/fuzz/secp_diff.cpp). With -DUSE_LIBSECP256K1=ON it compares libsecp256k1 with OpenSSL; with it off it checks the harness itself.
+option(BUILD_SECP_DIFF "Build the signature verification differential" OFF)
+if(BUILD_SECP_DIFF)
+    if(NOT SECP256K1_LIBRARY OR NOT SECP256K1_INCLUDE_DIR OR NOT EXISTS "${SECP256K1_LIBRARY}" OR NOT EXISTS "${SECP256K1_INCLUDE_DIR}/secp256k1.h")
+        message(FATAL_ERROR "BUILD_SECP_DIFF needs the pinned libsecp256k1 (contrib/build-secp256k1.sh): pass -DSECP256K1_INCLUDE_DIR and -DSECP256K1_LIBRARY.")
+    endif()
+    set(DIFF_DAEMON_SOURCES ${DAEMON_SOURCES})
+    list(REMOVE_ITEM DIFF_DAEMON_SOURCES src/init.cpp)
+    add_executable(secp_diff src/fuzz/secp_diff.cpp ${DIFF_DAEMON_SOURCES} ${JSON_SOURCES})
+    add_dependencies(secp_diff generate_build_info)
+    target_include_directories(secp_diff PRIVATE ${SECP256K1_INCLUDE_DIR})
+    target_link_libraries(secp_diff ${SECP256K1_LIBRARY} ${OPENSSL_LIBRARIES} ${BERKELEYDB_LIBRARY} ${Boost_LIBRARIES} ${ZMQ_LIBRARIES} ${LEVELDB_LIBRARIES}
+        Threads::Threads ${CMAKE_DL_LIBS})
+    if(LINUX)
+        target_link_libraries(secp_diff rt)
+    endif()
+    if(USE_UPNP)
+        target_link_libraries(secp_diff ${MINIUPNPC_LIBRARY})
     endif()
 endif()
 
@@ -614,6 +666,7 @@ if(BUILD_TESTS)
         src/test/uint160_tests.cpp
         src/test/uint256_tests.cpp
         src/test/util_tests.cpp
+        src/test/mempool_replace_tests.cpp
         src/test/wallet_tests.cpp
         src/test/wallet_crypto_tests.cpp
         src/test/scrypt_tests.cpp
@@ -642,6 +695,7 @@ if(BUILD_TESTS)
         ${BERKELEYDB_LIBRARY}
         ${Boost_LIBRARIES}
         ${ZMQ_LIBRARIES}
+        ${LEVELDB_LIBRARIES}
         Threads::Threads
         ${CMAKE_DL_LIBS}
     )

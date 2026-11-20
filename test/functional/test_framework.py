@@ -172,6 +172,7 @@ class TestNode:
                 "-port=%d" % self.p2p_port, "-rpcport=%d" % self.rpc_port,
                 "-bind=127.0.0.1", "-listen=1", "-printtoconsole=0", "-keypool=10"]
         args += self.extra_args + list(extra_args or [])
+        args += os.environ.get("CORGI_TEST_NODE_ARGS", "").split()      # for running the whole suite with an option on, e.g. -coinsvalidate=1
         # stderr is kept (sanitizer reports and aborts go there); stdout is not used with -printtoconsole=0
         self._close_stderr()
         self.stderr_file = open(self.stderr_log, "ab")

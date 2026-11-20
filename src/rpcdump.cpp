@@ -39,10 +39,12 @@ public:
 
 Value importprivkey(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 1 || params.size() > 2)
+    if (fHelp || params.size() < 1 || params.size() > 3)
         throw runtime_error(
-            "importprivkey <corgicoinprivkey> [label]\n"
-            "Adds a private key (as returned by dumpprivkey) to your wallet.");
+            "importprivkey <corgicoinprivkey> [label] [timestamp]\n"
+            "Adds a private key (as returned by dumpprivkey) to your wallet.\n"
+            "timestamp is when the key was made (seconds since 1970): the block chain is then searched from two hours before\n"
+            "it instead of from the first block, which is much quicker. Leave it out, or give 0, when you do not know.");
 
     string strSecret = params[0].get_str();
     string strLabel = "";
@@ -55,7 +57,14 @@ Value importprivkey(const Array& params, bool fHelp)
 
     bool fAlreadyHad;
     string strError;
-    if (!ImportPrivateKey(pwalletMain.get(), strSecret, strLabel, fAlreadyHad, strError))
+    int64_t nTimestamp = 0;
+    if (params.size() > 2)
+    {
+        nTimestamp = params[2].get_int64();
+        if (nTimestamp < 0)
+            throw JSONRPCError(-8, "The timestamp cannot be negative");
+    }
+    if (!ImportPrivateKey(pwalletMain.get(), strSecret, strLabel, fAlreadyHad, strError, nTimestamp))
         throw JSONRPCError(-4, strError);
 
     return Value::null;
@@ -81,6 +90,55 @@ Value dumpprivkey(const Array& params, bool fHelp)
     if (!pwalletMain->GetSecret(keyID, vchSecret, fCompressed))
         throw JSONRPCError(-4,"Private key for address " + strAddress + " is not known");
     return CBitcoinSecret(vchSecret, fCompressed).ToString();
+}
+
+Value exportwalletencrypted(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 2)
+        throw runtime_error(
+            "exportwalletencrypted <filename> <passphrase>\n"
+            "Writes the wallet's keys, recovery phrase, labels, key dates and watch-only entries to a new file, encrypted with\n"
+            "a key made from <passphrase> (scrypt, AES-256-GCM). Unlike dumpwallet, the file is safe to keep on a USB stick or in\n"
+            "the cloud, as long as the passphrase is long and is not kept with it (at least 12 characters). Redeem scripts are\n"
+            "included, and a wallet whose recovery phrase cannot be read is refused rather than backed up without it. Restore with\n"
+            "importwalletencrypted. The wallet must be unlocked. The passphrase is an argument here, so it shows in a shell's\n"
+            "history and in the process list if you type it on a command line: call it from a script or a JSON-RPC client.");
+    EnsureWalletIsUnlocked();
+    std::filesystem::path path = std::filesystem::absolute(params[0].get_str());
+    string strError;
+    if (!ExportEncryptedBackup(pwalletMain.get(), path, params[1].get_str(), strError))
+        throw JSONRPCError(-8, strError);
+    Object result;
+    result.emplace_back("filename", path.string());
+    return result;
+}
+
+Value importwalletencrypted(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 2 || params.size() > 3)
+        throw runtime_error(
+            "importwalletencrypted <filename> <passphrase> [adoptphrase=false]\n"
+            "Adds what an encrypted backup (exportwalletencrypted) holds and this wallet does not: keys, redeem scripts, watch-only\n"
+            "entries, and labels for addresses that have none. Refuses a backup of another network, of another recovery phrase,\n"
+            "with the wrong passphrase, or that has been changed. Then searches the chain from the oldest key's date (from the\n"
+            "first block if the backup holds a recovery phrase: keys made from a phrase are dated when they were derived here,\n"
+            "not when they were first used). The wallet must be unlocked.\n"
+            "A wallet with no recovery phrase takes the backup's only with adoptphrase=true: every new address then comes from\n"
+            "that phrase, so say so only for a backup you made yourself. Without it the keys are added and the phrase is left.\n"
+            "Returns {keys_added, labels, phrase_adopted}.");
+    RPCTypeCheck(params, {str_type, str_type, bool_type});
+    EnsureWalletIsUnlocked();
+    int nKeys = 0, nLabels = 0;
+    bool fAdopted = false;
+    string strError;
+    if (!ImportEncryptedBackup(pwalletMain.get(), std::filesystem::absolute(params[0].get_str()), params[1].get_str(),
+                               params.size() > 2 && params[2].get_bool(), nKeys, nLabels, fAdopted, strError))
+        throw JSONRPCError(-8, strError);
+    Object result;
+    result.emplace_back("keys_added", nKeys);
+    result.emplace_back("labels", nLabels);
+    result.emplace_back("phrase_adopted", fAdopted);
+    return result;
 }
 
 Value dumpwallet(const Array& params, bool fHelp)

@@ -360,11 +360,20 @@ public:
 
 
 
+// The unspent-output set (coins.h) follows the index's transactions: what changes in one is applied, or dropped, with the other
+void CoinsTxnBegin();
+void CoinsTxnCommit();
+void CoinsTxnAbort();
+void CoinsSetBest(const uint256& hashBlock);
+
 /** Access to the transaction database (blkindex.dat) */
 class CTxDB : public CDB
 {
 public:
     CTxDB(const char* pszMode="r+") : CDB("blkindex.dat", pszMode) { }
+    bool TxnBegin();
+    bool TxnCommit();
+    bool TxnAbort();
 private:
     CTxDB(const CTxDB&) = delete;
     void operator=(const CTxDB&) = delete;
@@ -373,6 +382,7 @@ public:
     bool UpdateTxIndex(uint256 hash, const CTxIndex& txindex);
     bool AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeight);
     bool EraseTxIndex(const CTransaction& tx);
+    bool EraseTxIndexByHash(const uint256& hash);
     bool ContainsTx(uint256 hash);
     bool ReadDiskTx(uint256 hash, CTransaction& tx, CTxIndex& txindex);
     bool ReadDiskTx(uint256 hash, CTransaction& tx);

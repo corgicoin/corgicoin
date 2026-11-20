@@ -46,6 +46,8 @@ TESTS = [
     "p2p_resource_limits.py",
     "p2p_log_injection.py",
     "p2p_upload_target.py",
+    "feature_chainstate_catchup.py",
+    "feature_chainstate_stale.py",
     "rpc_createauxblock.py",
     "rpc_createauxblock_cache.py",
     "feature_auxpow.py",
@@ -87,6 +89,10 @@ TESTS = [
     "rpc_config_hardening.py",
     "rpc_failed_block.py",
     "rpc_mempool_cap.py",
+    "rpc_mempool_conflict_block.py",
+    "rpc_sendrawtransaction_reason.py",
+    "p2p_free_relay_limit.py",
+    "p2p_locator_limit.py",
     "wallet_maxtxfee.py",
     "wallet_notify.py",
     "tool_makeseeds.py",
@@ -98,10 +104,16 @@ TESTS = [
     "rpc_minimum_chain_work.py",
     "rpc_reorg_postponed.py",
     "rpc_big_block_locks.py",
+    "wallet_rbf.py",
     "wallet_commit_dryrun.py",
     "rpc_observability.py",
 
     "rpc_metrics.py",
+    "wallet_watchonly.py",
+    "wallet_verify.py",
+    "wallet_backup_encrypted.py",
+    "wallet_key_metadata.py",
+    "wallet_fundraw.py",
     "feature_cross_binary.py",   # skips itself unless a second build is given (--alt-corgicoind / $CORGICOIND_ALT)
 ]
 

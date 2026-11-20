@@ -1000,11 +1000,9 @@ void ThreadSocketHandler2(void* parg)
             }
             else if (nInbound >= GetMaxConnections() - MAX_OUTBOUND_CONNECTIONS)
             {
-                {
-                    LOCK(cs_setservAddNodeAddresses);
-                    if (!setservAddNodeAddresses.count(addr))
-                        closesocket(hSocket);
-                }
+                // inbound is full: this connection is not kept, an -addnode address included (no CNode is made for it below, so the socket
+                // was only leaked, one descriptor each time, until the process ran out)
+                closesocket(hSocket);
             }
             else if (CNode::IsBanned(addr))
             {

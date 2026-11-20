@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
@@ -30,10 +30,13 @@ jobs:
             libdb++-dev \
             libminiupnpc-dev
 
+      - name: Build LevelDB (the pinned release, static, the same on every platform)
+        run: contrib/build-leveldb.sh "$HOME/leveldb"
+
       - name: Build daemon
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_GUI=OFF -DBUILD_TESTS=ON -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a
           make -j$(nproc)
 
       - name: Run tests
@@ -42,7 +45,7 @@ jobs:
           ./test_corgicoin
 
       - name: Upload Linux daemon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoind-linux-x64
           path: build/corgicoind
@@ -51,11 +54,14 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
           brew install boost openssl@3 berkeley-db miniupnpc cmake
+
+      - name: Build LevelDB (the pinned release, static, the same on every platform)
+        run: contrib/build-leveldb.sh "$HOME/leveldb"
 
       - name: Build daemon
         run: |
@@ -65,6 +71,8 @@ jobs:
             -DBUILD_QT_GUI=OFF \
             -DBUILD_TESTS=ON \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+            -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include \
+            -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a \
             -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
           make -j$(sysctl -n hw.logicalcpu)
 
@@ -85,7 +93,7 @@ jobs:
           echo "loaded $(grep -c 'dist/lib/' dyld.log) bundled libraries"
 
       - name: Upload macOS daemon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoind-macos-arm64
           path: dist/
@@ -94,11 +102,14 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install dependencies
         run: |
           brew install boost openssl@3 berkeley-db miniupnpc cmake qt
+
+      - name: Build LevelDB (the pinned release, static, the same on every platform)
+        run: contrib/build-leveldb.sh "$HOME/leveldb"
 
       - name: Build Qt wallet
         run: |
@@ -108,6 +119,8 @@ jobs:
             -DBUILD_QT_GUI=ON \
             -DBUILD_TESTS=OFF \
             -DOPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
+            -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include \
+            -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a \
             -DBerkeleyDB_ROOT=$(brew --prefix berkeley-db)
           make -j$(sysctl -n hw.logicalcpu) corgicoin-qt
 
@@ -128,7 +141,7 @@ jobs:
           ls -la "$NAME.zip"
 
       - name: Upload macOS Qt wallet
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoin-qt-macos-arm64
           path: corgicoin-qt-*-macos-arm64.zip
@@ -137,7 +150,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install MinGW cross-compiler and dependencies
         run: |
@@ -162,9 +175,17 @@ jobs:
           export HOST=x86_64-w64-mingw32
           export PREFIX=/tmp/deps/install
 
+          # Each source tarball is checked against a pinned SHA256 before it is unpacked (fetch <url> <sha256> <tar flag>)
+          fetch() {
+            local f="${1##*/}"
+            curl -fsSL -o "$f" "$1"
+            echo "$2  $f" | sha256sum -c -
+            tar "x$3f" "$f"
+          }
+
           # Boost
           cd /tmp/deps
-          curl -sL https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 | tar xj
+          fetch https://archives.boost.io/release/1.84.0/source/boost_1_84_0.tar.bz2 cc4b893acf645c9d4b698e9a0f08ca8846aa5d6c68275c14c3e7949c24109454 j
           cd boost_1_84_0
           echo "using gcc : mingw : x86_64-w64-mingw32-g++ ;" > user-config.jam
           ./bootstrap.sh --without-icu
@@ -175,7 +196,7 @@ jobs:
 
           # OpenSSL
           cd /tmp/deps
-          curl -sL https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz | tar xz
+          fetch https://github.com/openssl/openssl/releases/download/openssl-3.3.2/openssl-3.3.2.tar.gz 2e8a40b01979afe8be0bbfb3de5dc1c6709fedb46d6c89c10da114ab5fc3d281 z
           cd openssl-3.3.2
           ./Configure mingw64 no-shared --cross-compile-prefix=x86_64-w64-mingw32- --prefix=$PREFIX
           make -j$(nproc) 2>&1 | tail -3
@@ -183,7 +204,7 @@ jobs:
 
           # Berkeley DB 4.8 (cross-compiles cleanly with MinGW, unlike 5.3)
           cd /tmp/deps
-          curl -sL https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz | tar xz
+          fetch https://download.oracle.com/berkeley-db/db-4.8.30.tar.gz e0491a07cdb21fb9aa82773bbbedaeb7639cbd0e7f96147ab46141e0045db72a z
           cd db-4.8.30/build_unix
           sed -i 's/WinIoCtl.h/winioctl.h/g' ../src/dbinc/win_db.h 2>/dev/null || true
           ../dist/configure --host=x86_64-w64-mingw32 --enable-cxx --enable-mingw --disable-replication --prefix=$PREFIX
@@ -196,6 +217,13 @@ jobs:
           ln -sf libdb-4.8.a $PREFIX/lib/libdb.a
           ls -la $PREFIX/include/db_cxx.h || (echo "FATAL: db_cxx.h not found!" && exit 1)
           ls -la $PREFIX/lib/libdb_cxx*.a || (echo "FATAL: libdb_cxx not found!" && exit 1)
+
+      - name: Build LevelDB for Windows (the pinned release, cross-compiled)
+        run: |
+          contrib/build-leveldb.sh /tmp/deps/install \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
 
       - name: Build CorgiCoin for Windows
         run: |
@@ -215,6 +243,8 @@ jobs:
             -DOPENSSL_ROOT_DIR=$PREFIX \
             -DBERKELEYDB_INCLUDE_DIR=$PREFIX/include \
             -DBERKELEYDB_LIBRARY=$PREFIX/lib/libdb_cxx.a \
+            -DLEVELDB_INCLUDE_DIR=$PREFIX/include \
+            -DLEVELDB_LIBRARY=$PREFIX/lib/libleveldb.a \
             -DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=$PREFIX/include \
             -DBoost_ROOT=$PREFIX \
             -DBoost_NO_SYSTEM_PATHS=ON \
@@ -222,7 +252,7 @@ jobs:
           make -j$(nproc)
 
       - name: Upload Windows daemon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoind-windows-x64
           path: build-win/corgicoind.exe
@@ -234,10 +264,10 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         with:
           msystem: MINGW64
           update: true
@@ -251,6 +281,9 @@ jobs:
             mingw-w64-x86_64-miniupnpc
             make
 
+      - name: Build LevelDB (the pinned release, static)
+        run: contrib/build-leveldb.sh "$HOME/leveldb" -G "MSYS Makefiles"
+
       - name: Build daemon and Qt wallet
         run: |
           mkdir build && cd build
@@ -259,7 +292,9 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_QT_GUI=ON \
             -DBUILD_TESTS=OFF \
-            -DUSE_UPNP=OFF
+            -DUSE_UPNP=OFF \
+            -DLEVELDB_INCLUDE_DIR=$HOME/leveldb/include \
+            -DLEVELDB_LIBRARY=$HOME/leveldb/lib/libleveldb.a
           make -j$(nproc)
 
       - name: Bundle Qt wallet with runtime DLLs
@@ -275,7 +310,7 @@ jobs:
           ls dist/
 
       - name: Upload Windows Qt wallet bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: corgicoin-qt-windows-x64
           path: dist/
@@ -285,10 +320,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
 

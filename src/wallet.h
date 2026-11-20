@@ -73,6 +73,26 @@ WalletFeature LatestWalletFeature();
 static constexpr uint32_t HD_COIN_TYPE = 99;
 
 
+/** What the wallet knows about a key besides the key: when it was made or imported, and for an HD key where it sits.
+ *  A wallet that restores from a key's birth time instead of from the first block saves a rescan of the whole chain. */
+class CKeyMetadata
+{
+public:
+    int64 nCreateTime;          // seconds since the epoch; 0 if unknown (a key from before this was recorded)
+    std::string strHDKeypath;   // "m/44'/99'/0'/0/7" for an HD key, empty otherwise
+
+    CKeyMetadata() : nCreateTime(0) {}
+    explicit CKeyMetadata(int64 nCreateTimeIn) : nCreateTime(nCreateTimeIn) {}
+
+    IMPLEMENT_SERIALIZE
+    (
+        if (!(nType & SER_GETHASH))
+            READWRITE(nVersion);
+        READWRITE(nCreateTime);
+        READWRITE(strHDKeypath);
+    )
+};
+
 /** A key pool entry */
 class CKeyPool
 {
@@ -160,6 +180,8 @@ public:
 
     bool IsHDEnabled() const { return fHDEnabled; }
     bool IsHDSeedAvailable() const { return fHDEnabled && fHDMasterLoaded; }
+    // whether the key at external-chain index nIndex of the wallet's recovery phrase is the one with this ID (false if the seed is not available)
+    bool HDKeyAtIndexIs(uint32_t nIndex, const CKeyID& keyid) const;
     std::string GetHDMnemonic() const { return strHDMnemonic; }
     CKeyID GetHDSeedId() const { return hdSeedId; }
     // Set the HD seed from a BIP39 mnemonic, persist it (encrypted if the
@@ -246,6 +268,7 @@ public:
     bool AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pblock, bool fUpdate = false, bool fFindBlock = false);
     bool EraseFromWallet(uint256 hash);
     bool AbandonTransaction(const uint256& hashTx, std::string& strError);
+    void TransactionsReplaced(const std::set<uint256>& setReplaced);
     void WalletUpdateSpent(const CTransaction& prevout);
     int ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate = false);
     int ScanForWalletTransaction(const uint256& hashTx);
@@ -270,6 +293,24 @@ public:
     bool GetKeyFromPool(CPubKey &key, bool fAllowReuse=true);
     int64 GetOldestKeyPoolTime();
     void GetAllReserveKeys(std::set<CKeyID>& setAddress);
+
+    // scripts followed but not spendable (importaddress, importpubkey): see AddWatchOnly
+    std::set<CScript> setWatchOnly;
+    // when each key was made, and where an HD key sits (see CKeyMetadata)
+    std::map<CKeyID, CKeyMetadata> mapKeyMetadata;
+    void SetKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta);
+    // Add a key and its metadata: the key is written first and the metadata after it, so a key that fails to be added leaves no
+    // metadata record behind. (AddKey on its own stamps "now" on a key with no metadata.)
+    bool AddKeyWithMetadata(const CKey& key, const CKeyMetadata& meta);
+    bool LoadKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta) { mapKeyMetadata[vchPubKey.GetID()] = meta; return true; }
+    bool AddWatchOnly(const CScript& script);
+    // all of them or none: a script that cannot be saved takes back the ones added before it
+    bool AddWatchOnlyScripts(const std::vector<CScript>& vScripts);
+    bool VerifyKeys(int& nKeysChecked, int& nHDChecked, std::vector<std::string>& vProblems);
+    bool LoadWatchOnly(const CScript& script) { setWatchOnly.insert(script); return true; }
+    bool IsWatchOnly(const CTxOut& txout) const { return setWatchOnly.count(txout.scriptPubKey) != 0 && !::IsMine(*this, txout.scriptPubKey); }
+    bool IsWatchOnlyTx(const CTransaction& tx) const;
+    int64 GetWatchOnlyBalance(int nMinDepth) const;
 
     bool IsMine(const CTxIn& txin) const;
     int64 GetDebit(const CTxIn& txin) const;

@@ -462,6 +462,12 @@ bool CTxDB::EraseTxIndex(const CTransaction& tx)
     return Erase(std::make_pair(string("tx"), hash));
 }
 
+bool CTxDB::EraseTxIndexByHash(const uint256& hash)
+{
+    assert(!fClient);
+    return Erase(std::make_pair(string("tx"), hash));
+}
+
 bool CTxDB::ContainsTx(uint256 hash)
 {
     assert(!fClient);
@@ -506,7 +512,35 @@ bool CTxDB::ReadHashBestChain(uint256& hashBestChain)
 
 bool CTxDB::WriteHashBestChain(uint256 hashBestChain)
 {
-    return Write(string("hashBestChain"), hashBestChain);
+    if (!Write(string("hashBestChain"), hashBestChain))
+        return false;
+    CoinsSetBest(hashBestChain);
+    return true;
+}
+
+bool CTxDB::TxnBegin()
+{
+    if (!CDB::TxnBegin())
+        return false;
+    CoinsTxnBegin();
+    return true;
+}
+
+bool CTxDB::TxnCommit()
+{
+    if (!CDB::TxnCommit())
+    {
+        CoinsTxnAbort();
+        return false;
+    }
+    CoinsTxnCommit();
+    return true;
+}
+
+bool CTxDB::TxnAbort()
+{
+    CoinsTxnAbort();
+    return CDB::TxnAbort();
 }
 
 bool CTxDB::ReadInvalidatedBlocks(std::vector<uint256>& vHashes)

@@ -20,6 +20,12 @@ static uint64 nAccountingEntryNumber = 0;
 // CWalletDB
 //
 
+bool CWalletDB::WriteKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& meta)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("keymeta"), vchPubKey.Raw()), meta, true);
+}
+
 bool CWalletDB::WriteName(const string& strAddress, const string& strName)
 {
     nWalletDBUpdated++;
@@ -198,6 +204,14 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 if (nNumber > nAccountingEntryNumber)
                     nAccountingEntryNumber = nNumber;
             }
+            else if (strType == "keymeta")
+            {
+                vector<unsigned char> vchPubKey;
+                ssKey >> vchPubKey;
+                CKeyMetadata meta;
+                ssValue >> meta;
+                pwallet->LoadKeyMetadata(CPubKey(vchPubKey), meta);
+            }
             else if (strType == "key" || strType == "wkey")
             {
                 vector<unsigned char> vchPubKey;
@@ -320,6 +334,15 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                 ssValue >> nFileVersion;
                 if (nFileVersion == 10300)
                     nFileVersion = 300;
+            }
+            else if (strType == "watchs")
+            {
+                CScript script;
+                ssKey >> script;
+                char fYes;
+                ssValue >> fYes;
+                if (fYes == '\x01')
+                    pwallet->LoadWatchOnly(script);
             }
             else if (strType == "cscript")
             {

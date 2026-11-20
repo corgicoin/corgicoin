@@ -42,6 +42,7 @@ constexpr unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
 // Orphan blocks (parent not yet known) are held in memory. Cap how many, and how many bytes in total.
 constexpr unsigned int MAX_ORPHAN_BLOCKS = 750;
 constexpr unsigned int MAX_ORPHAN_BLOCKS_BYTES = 32 * MAX_BLOCK_SIZE;
+constexpr unsigned int MAX_LOCATOR_SZ = 101;                    // hashes in a block locator from a peer (an honest one has about 30)
 constexpr int64 MIN_TX_FEE = 100000000;
 constexpr int64 MIN_RELAY_TX_FEE = MIN_TX_FEE;
 constexpr int64 MAX_MONEY = 10000000000 * COIN;
@@ -99,6 +100,7 @@ constexpr uint64 nMinDiskSpace = 52428800;
 class CReserveKey;
 class CTxDB;
 class CTxIndex;
+class CTxIndexCache;
 struct CTxAcceptCheck;
 
 void RegisterWallet(CWallet* pwalletIn);
@@ -679,7 +681,7 @@ public:
     bool ReadFromDisk(CTxDB& txdb, COutPoint prevout, CTxIndex& txindexRet);
     bool ReadFromDisk(CTxDB& txdb, COutPoint prevout);
     bool ReadFromDisk(COutPoint prevout);
-    bool DisconnectInputs(CTxDB& txdb);
+    bool DisconnectInputs(CTxIndexCache& view);
 
     /** Fetch from memory and/or disk. inputsRet keys are transaction hashes.
 
@@ -1415,6 +1417,11 @@ public:
         return vHave.empty();
     }
 
+    size_t Size() const
+    {
+        return vHave.size();
+    }
+
     void Set(const CBlockIndex* pindex)
     {
         vHave.clear();
@@ -1768,9 +1775,10 @@ public:
     std::vector<std::pair<double, uint256> > EvictionCandidates() const;
     /** Would a transaction of this size and fee be the first one dropped if it were added now? (No side effects: a dry
      *  run asks this, because the cap is only applied after a transaction is stored.) */
-    bool WouldBeDropped(int64 nFee, unsigned int nSize);
+    bool WouldBeDropped(int64 nFee, unsigned int nSize, const std::set<uint256>* pEvicted = nullptr);
     /** Remove a transaction and every pool transaction that spends it. */
     void RemoveRecursive(const uint256& hash);
+    void RemoveConflicts(const CTransaction& tx);       // the pool transactions that spend a coin tx (in a block) spends, and what is built on them
 
     bool accept(CTxDB& txdb, CTransaction &tx,
                 bool fCheckInputs, bool* pfMissingInputs, CTxAcceptCheck* pcheck = nullptr);
@@ -1798,5 +1806,8 @@ public:
 };
 
 extern CTxMemPool mempool;
+
+// after CTxIndex, which it holds
+#include "txindexcache.h"
 
 #endif

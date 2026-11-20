@@ -185,6 +185,13 @@ Value getrpcinfo(const Array& params, bool fHelp);
 Value logging(const Array& params, bool fHelp);
 
 Value getmetrics(const Array& params, bool fHelp);
+Value bumpfee(const Array& params, bool fHelp);
+Value fundrawtransaction(const Array& params, bool fHelp);
+Value verifywallet(const Array& params, bool fHelp);
+Value importaddress(const Array& params, bool fHelp);
+Value importpubkey(const Array& params, bool fHelp);
+Value getwatchonlybalance(const Array& params, bool fHelp);
+Value listwatchonlyunspent(const Array& params, bool fHelp);
 extern Value getnettotals(const Array& params, bool fHelp);
 extern Value setban(const Array& params, bool fHelp);
 extern Value listbanned(const Array& params, bool fHelp);
@@ -209,6 +216,8 @@ extern Value lockunspent(const Array& params, bool fHelp);
 extern Value abandontransaction(const Array& params, bool fHelp);
 extern Value listlockunspent(const Array& params, bool fHelp);
 extern Value dumpwallet(const Array& params, bool fHelp);
+extern Value exportwalletencrypted(const Array& params, bool fHelp);
+extern Value importwalletencrypted(const Array& params, bool fHelp);
 extern Value importwallet(const Array& params, bool fHelp);
 extern Value createrawtransaction(const Array& params, bool fHelp);
 extern Value decoderawtransaction(const Array& params, bool fHelp);
@@ -340,10 +349,38 @@ EnsureWalletIsUnlocked()
         throw JSONRPCError(-13, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 }
 
+// BIP 125: "yes" if the transaction, or an unconfirmed one it rests on, signals that it can be replaced; "no" if it is confirmed
+// or nothing it rests on signals; "unknown" for an unconfirmed one this node's pool does not hold
+static std::string Bip125Replaceable(const CWalletTx& wtx, int confirms)
+{
+    if (confirms > 0)
+        return "no";
+    LOCK(mempool.cs);
+    if (!mempool.exists(wtx.GetHash()))
+        return "unknown";
+    std::set<uint256> setSeen;
+    std::vector<const CTransaction*> vWork(1, static_cast<const CTransaction*>(&wtx));
+    while (!vWork.empty())
+    {
+        const CTransaction* ptx = vWork.back();
+        vWork.pop_back();
+        for (const CTxIn& txin : ptx->vin)
+        {
+            if (txin.nSequence < 0xfffffffe)
+                return "yes";
+            auto itParent = mempool.mapTx.find(txin.prevout.hash);
+            if (itParent != mempool.mapTx.end() && setSeen.insert(txin.prevout.hash).second)
+                vWork.push_back(&itParent->second);
+        }
+    }
+    return "no";
+}
+
 void WalletTxToJSON(const CWalletTx& wtx, Object& entry)
 {
     int confirms = wtx.GetDepthInMainChain();
     entry.emplace_back("confirmations", confirms);
+    entry.emplace_back("bip125-replaceable", Bip125Replaceable(wtx, confirms));
     if (confirms)
     {
         entry.emplace_back("blockhash", wtx.hashBlock.GetHex());
@@ -2338,9 +2375,26 @@ Value validateaddress(const Array& params, bool fHelp)
         ret.emplace_back("bech32", address.ToBech32());
         bool fMine = IsMine(*pwalletMain, dest);
         ret.emplace_back("ismine", fMine);
+        {
+            CScript scriptWatch;
+            scriptWatch.SetDestination(dest);
+            ret.emplace_back("iswatchonly", !fMine && pwalletMain->setWatchOnly.count(scriptWatch) != 0);
+        }
         if (fMine) {
             Object detail = std::visit(DescribeAddressVisitor(), dest);
             ret.insert(ret.end(), detail.begin(), detail.end());
+            // when the key was made and, for an HD key, where it sits (not known for keys from before this was recorded)
+            if (const CKeyID* pkeyid = std::get_if<CKeyID>(&dest))
+            {
+                auto itMeta = pwalletMain->mapKeyMetadata.find(*pkeyid);
+                if (itMeta != pwalletMain->mapKeyMetadata.end())
+                {
+                    if (itMeta->second.nCreateTime > 0)
+                        ret.emplace_back("timestamp", (int64_t)itMeta->second.nCreateTime);
+                    if (!itMeta->second.strHDKeypath.empty())
+                        ret.emplace_back("hdkeypath", itMeta->second.strHDKeypath);
+                }
+            }
         }
         if (pwalletMain->mapAddressBook.count(dest))
             ret.emplace_back("account", pwalletMain->mapAddressBook[dest]);
@@ -3765,6 +3819,13 @@ static const CRPCCommand vRPCCommands[] =
     { "logging",                &logging,                true },
 
     { "getmetrics",             &getmetrics,             true },
+    { "bumpfee",                &bumpfee,                false },
+    { "fundrawtransaction",     &fundrawtransaction,     false },
+    { "verifywallet",           &verifywallet,           false },
+    { "importaddress",          &importaddress,          false },
+    { "importpubkey",           &importpubkey,           false },
+    { "getwatchonlybalance",    &getwatchonlybalance,    false },
+    { "listwatchonlyunspent",   &listwatchonlyunspent,   false },
     { "createauxblock",         &createauxblock,         true },
     { "submitauxblock",         &submitauxblock,         true },
     { "getauxblock",            &getauxblock,            true },
@@ -3776,6 +3837,8 @@ static const CRPCCommand vRPCCommands[] =
     { "lockunspent",            &lockunspent,            false },
     { "listlockunspent",        &listlockunspent,        false },
     { "dumpwallet",             &dumpwallet,             true },
+    { "exportwalletencrypted",  &exportwalletencrypted,  false },
+    { "importwalletencrypted",  &importwalletencrypted,  false },
     { "importwallet",           &importwallet,           false },
     { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
@@ -5087,6 +5150,453 @@ Value getmetrics(const Array& params, bool fHelp)
     return s;
 }
 
+Value bumpfee(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "bumpfee <txid> [fee]\n"
+            "Replaces an unconfirmed wallet transaction with one that pays a higher fee and spends the same coins, taking the extra\n"
+            "from its change output (it never adds inputs, so there must be change enough). The transaction must have been sent\n"
+            "replaceable (-walletrbf, which sets a sequence number below 0xfffffffe on its inputs), be in this node's pool, and\n"
+            "have nothing of the wallet's built on it. fee, if given, is the new total fee in coins; by default it is the old one\n"
+            "plus what the pool requires of a replacement (the relay fee for its size, and a tenth more). The old transaction is\n"
+            "abandoned. This node must accept replacements itself (-mempoolreplacement, off by default), or the pool refuses the\n"
+            "replacement. Returns {txid, origfee, fee}.");
+    RPCTypeCheck(params, {str_type});
+    EnsureWalletIsUnlocked();
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+    auto mi = pwalletMain->mapWallet.find(hash);
+    if (mi == pwalletMain->mapWallet.end())
+        throw JSONRPCError(-5, "Invalid or non-wallet transaction id");
+    const CWalletTx& wtx = mi->second;
+    if (wtx.GetDepthInMainChain() > 0)
+        throw JSONRPCError(-8, "Transaction has been mined, cannot bump its fee");
+    {
+        LOCK(mempool.cs);
+        if (!mempool.exists(hash))
+            throw JSONRPCError(-8, "Transaction is not in this node's memory pool");
+        for (unsigned int n = 0; n < wtx.vout.size(); n++)
+            if (mempool.mapNextTx.count(COutPoint(hash, n)))
+                throw JSONRPCError(-8, "Transaction has descendants in the memory pool: bump or abandon those first");
+    }
+    bool fSignals = false;
+    for (const CTxIn& txin : wtx.vin)
+        fSignals |= txin.nSequence < 0xfffffffe;
+    if (!fSignals)
+        throw JSONRPCError(-8, "Transaction does not signal that it can be replaced (it was not sent with -walletrbf)");
+
+    // what it paid, and every input must be one this wallet can sign for
+    int64 nValueIn = 0;
+    for (const CTxIn& txin : wtx.vin)
+    {
+        auto mp = pwalletMain->mapWallet.find(txin.prevout.hash);
+        if (mp == pwalletMain->mapWallet.end() || txin.prevout.n >= mp->second.vout.size() || !pwalletMain->IsMine(mp->second.vout[txin.prevout.n]))
+            throw JSONRPCError(-8, "An input of the transaction is not spendable by this wallet");
+        nValueIn += mp->second.vout[txin.prevout.n].nValue;
+    }
+    const int64 nOldFee = nValueIn - wtx.GetValueOut();
+
+    // the one change output that gives the extra
+    int nChange = -1;
+    for (unsigned int n = 0; n < wtx.vout.size(); n++)
+        if (pwalletMain->IsChange(wtx.vout[n]))
+        {
+            if (nChange != -1)
+                throw JSONRPCError(-8, "More than one change output: cannot tell which one pays for the bump");
+            nChange = (int)n;
+        }
+    if (nChange < 0)
+        throw JSONRPCError(-8, "Transaction has no change output to take the extra fee from");
+
+    const unsigned int nSize = ::GetSerializeSize(*static_cast<const CTransaction*>(&wtx), SER_NETWORK, PROTOCOL_VERSION);
+    int64 nNewFee;
+    if (params.size() > 1)
+    {
+        nNewFee = AmountFromValue(params[1]);
+        if (nNewFee <= nOldFee)
+            throw JSONRPCError(-8, "The new fee must be more than the old one");
+    }
+    else
+        nNewFee = nOldFee + std::max<int64>(MIN_RELAY_TX_FEE * (1 + (int64)nSize / 1000), nOldFee / 10 + 1);
+    if (nNewFee > nMaxTxFee)
+        throw JSONRPCError(-4, "The new fee is over -maxtxfee");
+    const int64 nExtra = nNewFee - nOldFee;
+    if (wtx.vout[nChange].nValue - nExtra < CENT)
+        throw JSONRPCError(-6, "The change output is too small to pay for the bump (inputs are not added)");
+
+    CWalletTx wtxNew;
+    wtxNew.nVersion = wtx.nVersion;
+    wtxNew.nLockTime = wtx.nLockTime;
+    wtxNew.vout = wtx.vout;
+    wtxNew.vout[nChange].nValue -= nExtra;
+    for (const CTxIn& txin : wtx.vin)
+        wtxNew.vin.push_back(CTxIn(txin.prevout, CScript(), std::min<unsigned int>(txin.nSequence, 0xfffffffd)));
+    unsigned int nIn = 0;
+    for (const CTxIn& txin : wtx.vin)
+    {
+        const CWalletTx& prev = pwalletMain->mapWallet[txin.prevout.hash];
+        if (!SignSignature(*pwalletMain, prev, wtxNew, nIn++))
+            throw JSONRPCError(-4, "Could not sign the replacement");
+    }
+    wtxNew.fTimeReceivedIsTxTime = true;
+    wtxNew.fFromMe = true;
+    wtxNew.BindWallet(pwalletMain.get());
+
+    // Ask the pool first, as a dry run: if it would refuse the replacement, the wallet is left as it was
+    {
+        CTxDB txdb("r");
+        wtxNew.AddSupportingTransactions(txdb);        // as CreateTransaction does: the wallet needs them to see the change as confirmed
+        CTxAcceptCheck check;
+        check.fTestOnly = true;
+        bool fMissing = false;
+        if (!wtxNew.CTransaction::AcceptToMemoryPool(txdb, true, &fMissing, &check))
+            throw JSONRPCError(-26, "The pool would refuse the replacement: " + check.strReject);
+    }
+    CReserveKey reservekey(pwalletMain.get());
+    if (!pwalletMain->CommitTransaction(wtxNew, reservekey))
+        throw JSONRPCError(-4, "The replacement could not be committed");
+    // the pool told the wallet when the replacement took the old one out: abandon it here only if that did not happen
+    std::string strError;
+    if (pwalletMain->mapWallet.count(hash) && !pwalletMain->AbandonTransaction(hash, strError))
+        throw JSONRPCError(-4, "The replacement was sent but the old transaction could not be abandoned: " + strError);
+
+    Object result;
+    result.emplace_back("txid", wtxNew.GetHash().GetHex());
+    result.emplace_back("origfee", ValueFromAmount(nOldFee));
+    result.emplace_back("fee", ValueFromAmount(nNewFee));
+    return result;
+}
+
+// A script to watch, from an address or from the hex of the script itself
+static CScript WatchScriptFromParam(const std::string& str)
+{
+    CBitcoinAddress address(str);
+    CScript script;
+    if (address.IsValid())
+    {
+        script.SetDestination(address.Get());
+        return script;
+    }
+    if (IsHex(str) && !str.empty())
+    {
+        std::vector<unsigned char> v = ParseHex(str);
+        return CScript(v.begin(), v.end());
+    }
+    throw JSONRPCError(-5, "Invalid address or script");
+}
+
+static Value ImportWatchOnly(const CScript& script, bool fRescan)
+{
+    // the chain is walked by the rescan (pnext, the block files) while the net thread may connect or reorganise blocks: both locks
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+    if (!pwalletMain->AddWatchOnly(script))
+        throw JSONRPCError(-4, "This script is already spendable by the wallet, or could not be saved");
+    if (fRescan)
+    {
+        pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
+        pwalletMain->ReacceptWalletTransactions();
+    }
+    return Value::null;
+}
+
+Value importaddress(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "importaddress <address or script hex> [rescan=true]\n"
+            "Follows an address (or a script, given as hex) without holding its key: what is paid to it and what is\n"
+            "spent from it is tracked, and counted by getwatchonlybalance. It is never spent by this wallet.\n"
+            "With rescan the block chain is searched for the history, which can take a while.");
+    RPCTypeCheck(params, {str_type, bool_type});
+    return ImportWatchOnly(WatchScriptFromParam(params[0].get_str()), params.size() > 1 ? params[1].get_bool() : true);
+}
+
+Value importpubkey(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "importpubkey <public key hex> [rescan=true]\n"
+            "Follows the pay-to-public-key script and the address of a public key, without its private key (see importaddress).");
+    RPCTypeCheck(params, {str_type, bool_type});
+    if (!IsHex(params[0].get_str()))
+        throw JSONRPCError(-5, "Public key is not hex");
+    CPubKey pubkey(ParseHex(params[0].get_str()));
+    if (!pubkey.IsValid())
+        throw JSONRPCError(-5, "Invalid public key");
+    // both forms an output to this key takes: the key itself, and its address
+    CScript scriptKey;
+    scriptKey << pubkey << OP_CHECKSIG;
+    CScript scriptAddress;
+    scriptAddress.SetDestination(pubkey.GetID());
+    LOCK2(cs_main, pwalletMain->cs_wallet);         // as in ImportWatchOnly: the rescan walks the chain
+    if (!pwalletMain->AddWatchOnlyScripts({scriptKey, scriptAddress}))
+        throw JSONRPCError(-4, "This key is already spendable by the wallet, or could not be saved");
+    if (params.size() < 2 || params[1].get_bool())
+    {
+        pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
+        pwalletMain->ReacceptWalletTransactions();
+    }
+    return Value::null;
+}
+
+Value getwatchonlybalance(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+            "getwatchonlybalance [minconf=1]\n"
+            "The total of the unspent outputs paid to the addresses and scripts imported with importaddress and importpubkey.");
+    RPCTypeCheck(params, {int_type});
+    return ValueFromAmount(pwalletMain->GetWatchOnlyBalance(params.size() > 0 ? params[0].get_int() : 1));
+}
+
+Value listwatchonlyunspent(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+            "listwatchonlyunspent [minconf=1]\n"
+            "The unspent outputs paid to imported addresses and scripts: txid, vout, address, amount, confirmations.");
+    RPCTypeCheck(params, {int_type});
+    const int nMinDepth = params.size() > 0 ? params[0].get_int() : 1;
+    Array results;
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+    for (const auto& item : pwalletMain->mapWallet)
+    {
+        const CWalletTx& wtx = item.second;
+        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < nMinDepth)
+            continue;
+        for (unsigned int i = 0; i < wtx.vout.size(); i++)
+        {
+            if (!pwalletMain->IsWatchOnly(wtx.vout[i]) || wtx.IsSpent(i))
+                continue;
+            Object entry;
+            entry.emplace_back("txid", item.first.GetHex());
+            entry.emplace_back("vout", (int)i);
+            CTxDestination dest;
+            if (ExtractDestination(wtx.vout[i].scriptPubKey, dest))
+                entry.emplace_back("address", CBitcoinAddress(dest).ToString());
+            entry.emplace_back("scriptPubKey", HexStr(wtx.vout[i].scriptPubKey.begin(), wtx.vout[i].scriptPubKey.end()));
+            entry.emplace_back("amount", ValueFromAmount(wtx.vout[i].nValue));
+            entry.emplace_back("confirmations", wtx.GetDepthInMainChain());
+            results.push_back(entry);
+        }
+    }
+    return results;
+}
+
+Value verifywallet(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "verifywallet\n"
+            "Checks the keys in the wallet and changes nothing: every private key must give the public key it is filed under,\n"
+            "and for an HD wallet every key derived from the seed so far must be in the wallet.\n"
+            "An encrypted wallet has to be unlocked. Returns {ok, keys_checked, hd_keys_checked, problems}.");
+    int nKeys = 0, nHD = 0;
+    std::vector<std::string> vProblems;
+    if (!pwalletMain->VerifyKeys(nKeys, nHD, vProblems))
+        throw JSONRPCError(-13, "Error: the wallet is locked: unlock it with walletpassphrase to check its keys");
+    Array problems;
+    for (const std::string& str : vProblems)
+        problems.push_back(str);
+    Object r;
+    r.emplace_back("ok", vProblems.empty());
+    r.emplace_back("keys_checked", nKeys);
+    r.emplace_back("hd_keys_checked", nHD);
+    r.emplace_back("problems", problems);
+    return r;
+}
+
+Value fundrawtransaction(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "fundrawtransaction <hex> [options]\n"
+            "Adds inputs, and a change output if there is change, to a raw transaction that has outputs and no inputs, so that it\n"
+            "pays for itself. It does not sign: sign it where the keys are (signrawtransaction) and broadcast it with\n"
+            "sendrawtransaction. Returns {hex, fee, changepos}.\n"
+            "options: {\"changeAddress\": <address>, \"includeWatching\": <bool>}\n"
+            "  changeAddress    where the change goes (default: a new address of this wallet; required with includeWatching)\n"
+            "  includeWatching  take the inputs from the watch-only coins (importaddress) instead of the spendable ones, for a\n"
+            "                   wallet that follows an address whose key is kept offline");
+    RPCTypeCheck(params, {str_type, obj_type});
+    if (!IsHex(params[0].get_str()))
+        throw JSONRPCError(-22, "TX decode failed");
+    CTransaction tx;
+    {
+        CDataStream ssData(ParseHex(params[0].get_str()), SER_NETWORK, PROTOCOL_VERSION);
+        try {
+            ssData >> tx;
+        } catch (const std::exception&) {
+            throw JSONRPCError(-22, "TX decode failed");
+        }
+        if (!ssData.empty())
+            throw JSONRPCError(-22, "TX decode failed: trailing data");
+    }
+    if (!tx.vin.empty())
+        throw JSONRPCError(-8, "The transaction already has inputs: this adds them to one that has none");
+    if (tx.vout.empty())
+        throw JSONRPCError(-8, "The transaction has no outputs to pay for");
+
+    bool fWatching = false;
+    std::string strChange;
+    if (params.size() > 1)
+    {
+        const Object& options = params[1].get_obj();
+        const Value& vWatch = find_value(options, "includeWatching");
+        if (vWatch.type() == bool_type)
+            fWatching = vWatch.get_bool();
+        else if (vWatch.type() != null_type)
+            throw JSONRPCError(-8, "includeWatching must be true or false");
+        const Value& vChange = find_value(options, "changeAddress");
+        if (vChange.type() == str_type)
+            strChange = vChange.get_str();
+        else if (vChange.type() != null_type)
+            throw JSONRPCError(-8, "changeAddress must be an address");
+    }
+    if (fWatching && strChange.empty())
+        throw JSONRPCError(-8, "With includeWatching the change has to go to an address you name (changeAddress): this wallet cannot make one that the keys elsewhere control");
+
+    int64 nValueOut = 0;
+    for (const CTxOut& out : tx.vout)
+    {
+        if (out.nValue < 0 || !MoneyRange(out.nValue))
+            throw JSONRPCError(-8, "An output has an amount out of range");
+        nValueOut += out.nValue;
+        if (!MoneyRange(nValueOut))
+            throw JSONRPCError(-8, "The outputs add up to more than there can be");
+    }
+
+    CScript scriptChange;
+    if (!strChange.empty())
+    {
+        CBitcoinAddress addr(strChange);
+        if (!addr.IsValid())
+            throw JSONRPCError(-5, "Invalid change address");
+        scriptChange.SetDestination(addr.Get());
+    }
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+
+    // the coins that could pay, largest first
+    struct FundCoin { int64 nValue; COutPoint out; unsigned int nInputBytes; };
+    std::vector<FundCoin> vCoins;
+    // What the input that spends this output will weigh once signed: the outpoint and sequence (41 bytes), the script's length,
+    // and the signature script, which depends on the kind of output.
+    auto InputBytes = [&](const CScript& scriptPubKey) -> unsigned int {
+        txnouttype type;
+        std::vector<std::vector<unsigned char> > vSolutions;
+        if (!Solver(scriptPubKey, type, vSolutions))
+            return 41 + 3 + 148;                     // unknown: a generous guess
+        switch (type)
+        {
+        case TX_PUBKEY:
+            return 41 + 1 + 74;                      // <signature>
+        case TX_PUBKEYHASH:
+            return 41 + 1 + 74 + 34;                 // <signature> <public key>, up to 33 bytes (65 if the key is not compressed: the fee then falls short by 32 bytes, which the rate's 1000-byte steps absorb)
+        case TX_MULTISIG:
+            return 41 + 3 + 1 + 74 * (unsigned int)std::max(1, ScriptSigArgsExpected(type, vSolutions) - 1);
+        case TX_SCRIPTHASH:
+        {
+            CScript redeem;
+            if (pwalletMain->GetCScript(CScriptID(uint160(vSolutions[0])), redeem))
+            {
+                txnouttype typeInner;
+                std::vector<std::vector<unsigned char> > vInner;
+                unsigned int nSigs = 1;
+                if (Solver(redeem, typeInner, vInner) && typeInner == TX_MULTISIG)
+                    nSigs = (unsigned int)std::max(1, ScriptSigArgsExpected(typeInner, vInner) - 1);
+                return 41 + 3 + 1 + 74 * nSigs + 3 + (unsigned int)redeem.size();
+            }
+            return 41 + 3 + 400;                     // a redeem script this wallet does not have (watch-only): about a 3-of-5
+        }
+        default:
+            return 41 + 3 + 148;
+        }
+    };
+    for (const auto& item : pwalletMain->mapWallet)
+    {
+        const CWalletTx& wtx = item.second;
+        if (!wtx.IsFinal() || wtx.GetBlocksToMaturity() > 0 || wtx.GetDepthInMainChain() < 1)
+            continue;
+        for (unsigned int i = 0; i < wtx.vout.size(); i++)
+        {
+            if (wtx.IsSpent(i) || wtx.vout[i].nValue <= 0 || pwalletMain->IsLockedCoin(item.first, i))
+                continue;
+            const bool fOk = fWatching ? pwalletMain->IsWatchOnly(wtx.vout[i]) : pwalletMain->IsMine(wtx.vout[i]);
+            if (fOk)
+                vCoins.push_back({wtx.vout[i].nValue, COutPoint(item.first, i), InputBytes(wtx.vout[i].scriptPubKey)});
+        }
+    }
+    std::sort(vCoins.begin(), vCoins.end(), [](const FundCoin& a, const FundCoin& b) { return a.nValue > b.nValue; });
+
+    // The fee is for the size the signed transaction will have (each input by what spends it: see InputBytes; the change output
+    // is 34 bytes), at the same rate the wallet's own sends pay, and like them it adds one rate for every output under 1 coin
+    // (the dust rule of GetMinFee).
+    const unsigned int nBaseBytes = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+    const int64 nRate = std::max<int64>(nTransactionFee, MIN_TX_FEE);
+    int64 nDustOutputs = 0;
+    for (const CTxOut& out : tx.vout)
+        if (out.nValue < COIN)
+            nDustOutputs++;
+    auto FeeFor = [&](unsigned int nInputBytes, bool fChange) {
+        const unsigned int nBytes = nBaseBytes + nInputBytes + (fChange ? 34 : 0);
+        return nRate * (1 + (int64)nBytes / 1000) + nRate * nDustOutputs;
+    };
+
+    int64 nValueIn = 0;
+    unsigned int nInputBytes = 0;
+    size_t nUsed = 0;
+    while (nUsed < vCoins.size() && nValueIn < nValueOut + FeeFor(nInputBytes, true))
+    {
+        nValueIn += vCoins[nUsed].nValue;
+        nInputBytes += vCoins[nUsed].nInputBytes;
+        nUsed++;
+    }
+    if (nValueIn < nValueOut + FeeFor(nInputBytes, false))
+        throw JSONRPCError(-4, "Insufficient funds");
+
+    int64 nFee = FeeFor(nInputBytes, true);
+    int64 nChange = nValueIn - nValueOut - nFee;
+    int nChangePos = -1;
+    if (nChange < COIN)
+    {
+        // an output under 1 coin would cost another rate in fee under the dust rule, and is worth no more than that: it goes to the miner
+        nFee = nValueIn - nValueOut;
+        nChange = 0;
+    }
+    if (nFee > nMaxTxFee)
+        throw JSONRPCError(-8, strprintf("The fee, %s, is more than -maxtxfee (%s). Pay less in one transaction, or raise -maxtxfee.",
+                                         FormatMoney(nFee).c_str(), FormatMoney(nMaxTxFee).c_str()));
+
+    for (size_t i = 0; i < nUsed; i++)
+        tx.vin.push_back(CTxIn(vCoins[i].out));
+    if (nChange > 0)
+    {
+        if (scriptChange.empty())
+        {
+            CReserveKey reservekey(pwalletMain.get());
+            CPubKey vchPubKey = reservekey.GetReservedKey();
+            if (!vchPubKey.IsValid())
+                throw JSONRPCError(-12, "Error: Keypool ran out, please call keypoolrefill first");
+            reservekey.KeepKey();
+            scriptChange.SetDestination(vchPubKey.GetID());
+        }
+        nChangePos = (int)tx.vout.size();
+        tx.vout.push_back(CTxOut(nChange, scriptChange));
+    }
+
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+    ssTx << tx;
+    Object r;
+    r.emplace_back("hex", HexStr(ssTx.begin(), ssTx.end()));
+    r.emplace_back("fee", ValueFromAmount(nFee));
+    r.emplace_back("changepos", nChangePos);
+    return r;
+}
+
 json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_spirit::Array &params) const
 {
     ActiveRPC active(strMethod);
@@ -5212,6 +5722,13 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "estimatefee"            && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "logging"                && n > 0) ConvertTo<Array>(params[0]);
     if (strMethod == "logging"                && n > 1) ConvertTo<Array>(params[1]);
+    if (strMethod == "fundrawtransaction"     && n > 1) ConvertTo<Object>(params[1]);
+    if (strMethod == "importaddress"          && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "importpubkey"           && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "importprivkey"          && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "importwalletencrypted"  && n > 2) ConvertTo<bool>(params[2]);
+    if (strMethod == "getwatchonlybalance"    && n > 0) ConvertTo<int64_t>(params[0]);
+    if (strMethod == "listwatchonlyunspent"   && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "generate"               && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "getnodeaddresses"       && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "setban"                 && n > 2) ConvertTo<int64_t>(params[2]);
@@ -5221,6 +5738,7 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "burncoin"              && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "burnforpartner"         && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]);
+    if (strMethod == "bumpfee"                && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "setmininput"            && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "getreceivedbyaddress"   && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getreceivedbyaccount"   && n > 1) ConvertTo<int64_t>(params[1]);
