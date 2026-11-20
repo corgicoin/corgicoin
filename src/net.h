@@ -305,6 +305,16 @@ public:
     int64 nPingUsecTime;       // last measured round trip (micros)
     int64 nMinPingUsecTime;    // best round trip seen (micros); INT64_MAX if none
     int64 nMinFeeFilter;       // feefilter: this peer wants no transaction announced that pays less than this (satoshi per kB); 0: none
+    // headers-first (-headersfirst): what this peer has told us of its chain, and which blocks we are waiting for from it
+    CBlockIndex* pindexBestKnown;                   // the most-work header it has sent us (a header index entry or a block index one)
+    bool fSyncStarted;                              // we have asked it for headers
+    bool fSyncing;                                  // and it has not yet said it has no more
+    int nUnconnectingHeaders;                       // headers messages from it that did not connect
+    int64 nSyncRequestTime;                         // when the getheaders it has not yet answered was sent
+    int64 nHeadersRetryTime;                        // do not ask it for headers again before this (it sent a header that failed a time check)
+    int64 nShortAnswerTime;                         // when it last answered for headers with none although it claims a longer chain (0: it has not)
+    int nHeadersAskedFrom;                          // the height of the header the request it has not answered started from (an answer must get past it)
+    std::map<uint256, int64> mapBlocksInFlight;     // block hash -> when we asked it for the block
     bool fPingQueued;          // `ping` RPC asked for an immediate ping
 
     CNode(SOCKET hSocketIn, CAddress addrIn, std::string addrNameIn = "", bool fInboundIn=false) : vSend(SER_NETWORK, MIN_PROTO_VERSION), vRecv(SER_NETWORK, MIN_PROTO_VERSION)
@@ -343,6 +353,14 @@ public:
         nMinPingUsecTime = std::numeric_limits<int64>::max();
         fPingQueued = false;
         nMinFeeFilter = 0;
+        pindexBestKnown = nullptr;
+        fSyncStarted = false;
+        fSyncing = false;
+        nUnconnectingHeaders = 0;
+        nSyncRequestTime = 0;
+        nHeadersRetryTime = 0;
+        nShortAnswerTime = 0;
+        nHeadersAskedFrom = 0;
         setInventoryKnown.max_size(SendBufferSize() / 1000);
         setAddrKnown.max_size(5000);
 

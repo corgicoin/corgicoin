@@ -240,6 +240,7 @@ set(DAEMON_SOURCES
     src/utxoset.cpp
     src/txindexcache.cpp
     src/coins.cpp
+    src/headerssync.cpp
     src/bech32.cpp
     src/bip32.cpp
     src/bip39.cpp

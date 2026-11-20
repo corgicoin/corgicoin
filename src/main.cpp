@@ -1507,6 +1507,8 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     return bnResult.GetCompact();
 }
 
+unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock);
+static bool fQuietRetarget = false;
 unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock *pblock)
 {
     unsigned int nProofOfWorkLimit = bnProofOfWorkLimit.GetCompact();
@@ -1561,7 +1563,7 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
 
     // Limit adjustment step
     int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
-    LogPrintf("  nActualTimespan = %" PRI64d "  before bounds\n", nActualTimespan);
+    if (!fQuietRetarget) LogPrintf("  nActualTimespan = %" PRI64d "  before bounds\n", nActualTimespan);
 
 	if(pindexLast->nHeight+1 > 10000)	
 	{
@@ -1594,13 +1596,24 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     if (bnNew > bnProofOfWorkLimit)
         bnNew = bnProofOfWorkLimit;
 
-    /// debug print
-    LogPrintf("GetNextWorkRequired RETARGET\n");
-    LogPrintf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d "\n", nTargetTimespan, nActualTimespan);
-    LogPrintf("Before: %08x  %s\n", pindexLast->nBits, CBigNum().SetCompact(pindexLast->nBits).getuint256().ToString().c_str());
-    LogPrintf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString().c_str());
+    /// debug print (not for a header being checked: headers-first sync checks thousands of them, and each would write four lines)
+    if (!fQuietRetarget)
+    {
+        LogPrintf("GetNextWorkRequired RETARGET\n");
+        LogPrintf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d "\n", nTargetTimespan, nActualTimespan);
+        LogPrintf("Before: %08x  %s\n", pindexLast->nBits, CBigNum().SetCompact(pindexLast->nBits).getuint256().ToString().c_str());
+        LogPrintf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString().c_str());
+    }
 
     return bnNew.GetCompact();
+}
+
+unsigned int GetNextWorkRequiredForHeader(const CBlockIndex* pindexLast, const CBlock* pblock)
+{
+    fQuietRetarget = true;                // cs_main is held, so nothing else reads this meanwhile
+    const unsigned int nBits = GetNextWorkRequired(pindexLast, pblock);
+    fQuietRetarget = false;
+    return nBits;
 }
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits)
@@ -1772,6 +1785,7 @@ static void MarkFailedChain(CBlockIndex* pindexBad)
         if (q == pindexBad)
             p->fFailedChain = true;
     }
+    HeadersFirstChainInvalidated();
 }
 
 void static InvalidChainFound(CBlockIndex* pindexNew)
@@ -2679,6 +2693,7 @@ void UpdateFailedChainFlags()
         pindex->fFailedChain = setInvalidatedBlocks.count(pindex->GetBlockHash()) ||
                                (pindex->pprev && pindex->pprev->fFailedChain);
     }
+    HeadersFirstChainInvalidated();
 }
 
 static bool WriteInvalidatedSet()
@@ -2838,7 +2853,14 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
         return LogError("AddToBlockIndex() : %s already exists", hash.ToString().substr(0,20).c_str());
 
     // Construct new block index object
-    CBlockIndex* pindexNew = new CBlockIndex(nFile, nBlockPos, *this);
+    CBlockIndex* pindexNew = HeadersTakeIndexFor(hash);     // headers-first held its header: the same entry, now with its data
+    if (pindexNew)
+    {
+        pindexNew->nFile = nFile;
+        pindexNew->nBlockPos = nBlockPos;
+    }
+    else
+        pindexNew = new CBlockIndex(nFile, nBlockPos, *this);
     if (!pindexNew)
         return LogError("AddToBlockIndex() : new CBlockIndex failed");
     auto mi = mapBlockIndex.insert({hash, pindexNew}).first;
@@ -3014,6 +3036,11 @@ bool CBlock::AcceptBlock()
     return true;
 }
 
+bool IsOrphanBlock(const uint256& hash)
+{
+    return mapOrphanBlocks.count(hash) != 0;
+}
+
 bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 {
     // Check for duplicate
@@ -3061,8 +3088,8 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
         if (nEvicted)
             LogPrintf("ProcessBlock: evicted %u orphan block(s) to stay within the orphan limits\n", nEvicted);
 
-        // Ask this guy to fill in what we're missing
-        if (pfrom)
+        // Ask this guy to fill in what we're missing (headers-first knows what it is missing and fetches it itself)
+        if (pfrom && !(HeadersFirstWith(pfrom) && HaveHeaderFor(pblock->hashPrevBlock)))
             pfrom->PushGetBlocks(pindexBest, GetOrphanRoot(pblock2));
         return true;
     }
@@ -3769,7 +3796,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (!pfrom->fClient && !pfrom->fOneShot &&
             (pfrom->nVersion < NOBLKS_VERSION_START ||
              pfrom->nVersion >= NOBLKS_VERSION_END) &&
-             (nAskedForBlocks < 1 || vNodes.size() <= 1 || pfrom->nStartingHeight > nBestHeight))
+             (nAskedForBlocks < 1 || vNodes.size() <= 1 || pfrom->nStartingHeight > nBestHeight) &&
+             !HeadersFirstWith(pfrom))    // headers-first asks for headers instead, from SendMessages (of a peer that speaks it)
         {
             nAskedForBlocks++;
             pfrom->PushGetBlocks(pindexBest, uint256(0));
@@ -4044,6 +4072,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     }
 
 
+    else if (strCommand == "headers")
+    {
+        ProcessHeadersMessage(pfrom, vRecv);
+    }
+
+
     else if (strCommand == "tx")
     {
         vector<uint256> vWorkQueue;
@@ -4126,6 +4160,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CInv inv(static_cast<int>(MsgType::Block), block.GetHash());
         pfrom->AddInventoryKnown(inv);
 
+        HeadersFirstBlockArrived(inv.hash);
         if (ProcessBlock(pfrom, &block))
             mapAlreadyAskedFor.erase(inv);
         else if (block.fBadAuxProof)
@@ -4421,6 +4456,8 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
         // Don't send anything until we get their version message
         if (pto->nVersion == 0)
             return true;
+
+        HeadersFirstSendMessages(pto);
 
         // Ping: BIP31-capable peers get a nonce'd ping every
         // PING_INTERVAL_SECONDS (or on demand via the `ping` RPC) so we can
