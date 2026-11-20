@@ -1249,7 +1249,14 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions, boo
         // AuxPoW version bit set and no proof attached -- undefined behaviour
         // once serialized (see CBlock::SerializationOp). Go to disk for those.
         if (IsAuxPowVersion(pindex->nVersion))
-            return ReadFromDisk(pindex->nFile, pindex->nBlockPos, false, fCheckPoW);
+        {
+            if (!ReadFromDisk(pindex->nFile, pindex->nBlockPos, false, fCheckPoW))
+                return false;
+            // one hash: with the proof-of-work check skipped (getheaders), this is what keeps a damaged block file from being served
+            if (GetHash() != pindex->GetBlockHash())
+                return LogError("CBlock::ReadFromDisk() : GetHash() doesn't match index");
+            return true;
+        }
         *this = pindex->GetBlockHeader();
         return true;
     }
