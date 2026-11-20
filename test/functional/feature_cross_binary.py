@@ -104,6 +104,7 @@ class CrossBinaryTest(CorgiTestFramework):
         e1.encryptwallet(PASSPHRASE)
         self.wait_exit(e1)
         e1.binary = alt_bin
+        e1.old_release = True     # its exit status is the release's, not under test (see TestNode.old_release)
         e1.start()
         e1.walletpassphrase(PASSPHRASE, 60)  # raises if the passphrase is rejected
         assert_equal(e1.dumpprivkey(e1_addr), e1_key)
@@ -115,6 +116,7 @@ class CrossBinaryTest(CorgiTestFramework):
         e2.encryptwallet(PASSPHRASE)
         self.wait_exit(e2)
         e2.binary = main_bin
+        e2.old_release = False
         e2.start()
         e2.walletpassphrase(PASSPHRASE, 60)
         assert_equal(e2.dumpprivkey(e2_addr), e2_key)
