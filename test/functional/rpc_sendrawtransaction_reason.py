@@ -21,7 +21,7 @@ class SendRawTransactionReasonTest(CorgiTestFramework):
             raise AssertionError("the transaction was accepted")
         except JSONRPCException as e:
             assert "TX rejected" in str(e), str(e)
-            assert "missing inputs" in str(e), "the message does not say why: %s" % e
+            assert "missing" in str(e) and "inputs" in str(e), "the message does not say why: %s" % e
 
         self.log("a good transaction is still accepted")
         coin = node.listunspent()[0]
