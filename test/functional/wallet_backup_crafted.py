@@ -113,7 +113,7 @@ class CraftedBackupTest(CorgiTestFramework):
         r = b.importwalletencrypted(f, PASS)
         assert_equal(r["phrase_adopted"], False)
 
-        self.log("a label for an address the wallet has already labelled does not rename it; one for an address with no label is taken")
+        self.log("a label for an address the wallet has already labelled does not rename it; one for an address the wallet neither owns nor watches is not taken (no planted contacts)")
         mine = b.getnewaddress("mine")
         fresh = a.getnewaddress()
         b.setaccount(addrs[0], "kept")
@@ -123,16 +123,16 @@ class CraftedBackupTest(CorgiTestFramework):
         b.importwalletencrypted(f, PASS)
         assert_equal(b.getaccount(mine), "mine")
         assert_equal(b.getaccount(addrs[0]), "kept")
-        assert_equal(b.getaccount(fresh), "new label")
+        assert_equal(b.getaccount(fresh), "")          # not the wallet's own, so not a contact a file can plant
 
-        self.log("an hdindex far above the keys in the file is held to what a restore from the phrase reaches (the last key's index plus the gap)")
+        self.log("an hdindex far above the keys in the file is not taken: only a key that derives from the phrase at its path counts, and this one does not")
         path_of = lambda i: "m/44'/%s'/0'/0/%d" % (self.coin_type(b), i)
         f = self.write(c, "index.backup", craft(PASS, payload(hdmnemonic=OTHER_PHRASE, hdindex=900000000,
                                                               keys=[key(wifs[0], hdkeypath=path_of(5))])))
         r = c.importwalletencrypted(f, PASS, True)
         assert_equal(r["phrase_adopted"], True)
         index = self.next_hd_index(c)
-        assert 5 < index <= 5 + 1 + 1000 + 1, "the next address is at index %d: a restore from the phrase would not find it" % index
+        assert index <= 1, "the next address is at index %d: nothing in the file proves a key that far up, so the index must stay low" % index
         for huge in (2 ** 31, 2 ** 40, -5):
             f = self.write(c, "index2.backup", craft(PASS, payload(hdmnemonic=OTHER_PHRASE, hdindex=huge)))
             c.importwalletencrypted(f, PASS)
