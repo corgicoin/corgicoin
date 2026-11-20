@@ -49,7 +49,8 @@ class EncryptedBackupTest(CorgiTestFramework):
 
         self.log("it refuses an existing file and a short passphrase, and leaves no temporary file behind")
         assert_raises_rpc_error(-8, "already exists", a.exportwalletencrypted, path, PASS)
-        assert_raises_rpc_error(-8, "at least 8", a.exportwalletencrypted, path + ".2", "short")
+        assert_raises_rpc_error(-8, "at least 12", a.exportwalletencrypted, path + ".2", "short")
+        assert_raises_rpc_error(-8, "at least 12", a.exportwalletencrypted, path + ".2", "elevenchars")      # 11 characters: the limit is 12 (was 8: a leaked file is guessed at offline)
         assert not os.path.exists(path + ".2")
         assert [f for f in os.listdir(a.datadir) if ".tmp" in f and "backup" in f] == []
         if os.name != "nt":
@@ -63,6 +64,15 @@ class EncryptedBackupTest(CorgiTestFramework):
         open(bad, "wb").write(bytes(tampered))
         assert_raises_rpc_error(-8, "Wrong passphrase", b.importwalletencrypted, bad, PASS)
         assert_raises_rpc_error(-8, "not a CorgiCoin", b.importwalletencrypted, os.path.join(a.datadir, "corgicoin.conf"), PASS)
+        assert_equal(b.validateaddress(labelled)["ismine"], False)
+
+        self.log("a directory and a file over 8 MiB are refused before anything is read")
+        assert_raises_rpc_error(-8, "not a regular file", b.importwalletencrypted, a.datadir, PASS)
+        huge = os.path.join(a.datadir, "huge.backup")
+        with open(huge, "wb") as f:
+            f.truncate(9 * 1024 * 1024)
+        assert_raises_rpc_error(-8, "too big", b.importwalletencrypted, huge, PASS)
+        os.remove(huge)
         assert_equal(b.validateaddress(labelled)["ismine"], False)
 
         self.log("a wallet with no phrase, told nothing: the keys come in, the phrase does not, and new addresses are its own")

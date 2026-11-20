@@ -49,6 +49,14 @@ static bool DeriveHDChild(const CExtKey& master, uint32_t nIndex, CKey& keyOut)
     return true;
 }
 
+bool CWallet::HDKeyAtIndexIs(uint32_t nIndex, const CKeyID& keyid) const
+{
+    CKey key;
+    if (!IsHDSeedAvailable() || !DeriveHDChild(hdMasterKey, nIndex, key))
+        return false;
+    return key.GetPubKey().GetID() == keyid;
+}
+
 // IV for encrypting the HD mnemonic: derived from the (non-secret) seed
 // fingerprint, mirroring how crypted keys use the pubkey hash as IV.
 static uint256 HDSeedIV(const CKeyID& id)

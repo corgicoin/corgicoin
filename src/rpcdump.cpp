@@ -99,7 +99,7 @@ Value exportwalletencrypted(const Array& params, bool fHelp)
             "exportwalletencrypted <filename> <passphrase>\n"
             "Writes the wallet's keys, recovery phrase, labels, key dates and watch-only entries to a new file, encrypted with\n"
             "a key made from <passphrase> (scrypt, AES-256-GCM). Unlike dumpwallet, the file is safe to keep on a USB stick or in\n"
-            "the cloud, as long as the passphrase is long and is not kept with it (at least 8 characters). Redeem scripts are\n"
+            "the cloud, as long as the passphrase is long and is not kept with it (at least 12 characters). Redeem scripts are\n"
             "included, and a wallet whose recovery phrase cannot be read is refused rather than backed up without it. Restore with\n"
             "importwalletencrypted. The wallet must be unlocked. The passphrase is an argument here, so it shows in a shell's\n"
             "history and in the process list if you type it on a command line: call it from a script or a JSON-RPC client.");
@@ -120,8 +120,9 @@ Value importwalletencrypted(const Array& params, bool fHelp)
             "importwalletencrypted <filename> <passphrase> [adoptphrase=false]\n"
             "Adds what an encrypted backup (exportwalletencrypted) holds and this wallet does not: keys, redeem scripts, watch-only\n"
             "entries, and labels for addresses that have none. Refuses a backup of another network, of another recovery phrase,\n"
-            "with the wrong passphrase, or that has been changed. Then searches the chain from the oldest key's date. The wallet\n"
-            "must be unlocked.\n"
+            "with the wrong passphrase, or that has been changed. Then searches the chain from the oldest key's date (from the\n"
+            "first block if the backup holds a recovery phrase: keys made from a phrase are dated when they were derived here,\n"
+            "not when they were first used). The wallet must be unlocked.\n"
             "A wallet with no recovery phrase takes the backup's only with adoptphrase=true: every new address then comes from\n"
             "that phrase, so say so only for a backup you made yourself. Without it the keys are added and the phrase is left.\n"
             "Returns {keys_added, labels, phrase_adopted}.");
