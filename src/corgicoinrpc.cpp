@@ -3837,8 +3837,8 @@ static const CRPCCommand vRPCCommands[] =
     { "lockunspent",            &lockunspent,            false },
     { "listlockunspent",        &listlockunspent,        false },
     { "dumpwallet",             &dumpwallet,             true },
-    { "exportwalletencrypted",  &exportwalletencrypted,  true },
-    { "importwalletencrypted",  &importwalletencrypted,  true },
+    { "exportwalletencrypted",  &exportwalletencrypted,  false },
+    { "importwalletencrypted",  &importwalletencrypted,  false },
     { "importwallet",           &importwallet,           false },
     { "getrawchangeaddress",    &getrawchangeaddress,    true },
     { "getrawtransaction",      &getrawtransaction,      false },
@@ -5289,10 +5289,15 @@ static CScript WatchScriptFromParam(const std::string& str)
 
 static Value ImportWatchOnly(const CScript& script, bool fRescan)
 {
+    // the chain is walked by the rescan (pnext, the block files) while the net thread may connect or reorganise blocks: both locks
+    LOCK2(cs_main, pwalletMain->cs_wallet);
     if (!pwalletMain->AddWatchOnly(script))
         throw JSONRPCError(-4, "This script is already spendable by the wallet, or could not be saved");
     if (fRescan)
+    {
         pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
+        pwalletMain->ReacceptWalletTransactions();
+    }
     return Value::null;
 }
 
@@ -5325,10 +5330,14 @@ Value importpubkey(const Array& params, bool fHelp)
     scriptKey << pubkey << OP_CHECKSIG;
     CScript scriptAddress;
     scriptAddress.SetDestination(pubkey.GetID());
+    LOCK2(cs_main, pwalletMain->cs_wallet);         // as in ImportWatchOnly: the rescan walks the chain
     if (!pwalletMain->AddWatchOnlyScripts({scriptKey, scriptAddress}))
         throw JSONRPCError(-4, "This key is already spendable by the wallet, or could not be saved");
     if (params.size() < 2 || params[1].get_bool())
+    {
         pwalletMain->ScanForWalletTransactions(pindexGenesisBlock, true);
+        pwalletMain->ReacceptWalletTransactions();
+    }
     return Value::null;
 }
 

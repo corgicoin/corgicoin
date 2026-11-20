@@ -180,6 +180,8 @@ public:
 
     bool IsHDEnabled() const { return fHDEnabled; }
     bool IsHDSeedAvailable() const { return fHDEnabled && fHDMasterLoaded; }
+    // whether the key at external-chain index nIndex of the wallet's recovery phrase is the one with this ID (false if the seed is not available)
+    bool HDKeyAtIndexIs(uint32_t nIndex, const CKeyID& keyid) const;
     std::string GetHDMnemonic() const { return strHDMnemonic; }
     CKeyID GetHDSeedId() const { return hdSeedId; }
     // Set the HD seed from a BIP39 mnemonic, persist it (encrypted if the

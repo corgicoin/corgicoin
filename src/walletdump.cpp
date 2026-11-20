@@ -179,7 +179,55 @@ static const unsigned int BACKUP_LOG2N = 17;                   // 128 MiB to der
 // and the RPC runs with the wallet and the chain locked). Backups made at 2^15 by the first version still open.
 static const unsigned int BACKUP_LOG2N_MIN = 14, BACKUP_LOG2N_MAX = 18;
 static const size_t BACKUP_SALT = 16, BACKUP_NONCE = 12, BACKUP_TAG = 16, BACKUP_HEADER = 8 + 1 + BACKUP_SALT + BACKUP_NONCE;
-static const size_t BACKUP_MIN_PASSPHRASE = 8;
+static const size_t BACKUP_MIN_PASSPHRASE = 12;
+static const uintmax_t BACKUP_MAX_FILE = 8u * 1024 * 1024;      // a backup of tens of thousands of keys is a few MB
+static const size_t BACKUP_MAX_PLAIN = 4u * 1024 * 1024;        // what it decrypts to, before it is parsed
+static const int BACKUP_MAX_NESTING = 8;                        // the format nests three deep (object, array, object)
+
+// Overwrites every string of a parsed JSON tree when it goes out of scope (the tree held the keys and the recovery phrase of a backup).
+// Not everything is covered: the copies json_spirit made while parsing, and std::string moves, are outside what can be reached from here.
+static void WipeJsonStrings(const Value& v)
+{
+    if (v.type() == str_type) {
+        const std::string& s = v.get_str();
+        if (!s.empty())
+            OPENSSL_cleanse(const_cast<char*>(s.data()), s.size());
+    } else if (v.type() == array_type) {
+        for (const Value& e : v.get_array())
+            WipeJsonStrings(e);
+    } else if (v.type() == obj_type) {
+        for (const Pair& p : v.get_obj())
+            WipeJsonStrings(p.value_);
+    }
+}
+struct JsonWiper {
+    const Value& v;
+    explicit JsonWiper(const Value& vIn) : v(vIn) {}
+    ~JsonWiper() { WipeJsonStrings(v); }
+};
+
+// Whether the JSON text nests no deeper than nMax levels of [ and { (outside strings), checked without parsing it
+static bool JsonNestingOk(const std::string& str, int nMax)
+{
+    int nDepth = 0;
+    bool fInString = false;
+    for (size_t i = 0; i < str.size(); i++) {
+        const char c = str[i];
+        if (fInString) {
+            if (c == '\\')
+                i++;
+            else if (c == '"')
+                fInString = false;
+        } else if (c == '"')
+            fInString = true;
+        else if (c == '[' || c == '{') {
+            if (++nDepth > nMax)
+                return false;
+        } else if (c == ']' || c == '}')
+            nDepth--;
+    }
+    return true;
+}
 
 static bool BackupKey(const std::string& strPass, const unsigned char* pSalt, unsigned int nLog2N, unsigned char* pKeyOut)
 {
@@ -463,28 +511,50 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         strError = "Wallet is locked";
         return false;
     }
+    // The file is looked at before it is read: a pipe or a device would be read for ever, and a big file into memory. (A backup of
+    // thousands of keys is a few hundred kB.)
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec) || ec) {
+        strError = "The backup is not a regular file";
+        return false;
+    }
+    const uintmax_t nFileSize = std::filesystem::file_size(path, ec);
+    if (ec || nFileSize > BACKUP_MAX_FILE) {
+        strError = "That file is too big to be a backup";
+        return false;
+    }
     std::ifstream file(path, std::ios::in | std::ios::binary);
     if (!file.is_open()) {
         strError = "Cannot open the backup file";
         return false;
     }
-    std::vector<unsigned char> vchFile((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (vchFile.size() > 64u * 1024 * 1024) {
-        strError = "That file is too big to be a backup";
+    std::vector<unsigned char> vchFile((size_t)nFileSize);
+    if (nFileSize > 0)
+        file.read((char*)&vchFile[0], (std::streamsize)nFileSize);
+    if (file.gcount() != (std::streamsize)nFileSize) {
+        strError = "Cannot read the backup file";
         return false;
     }
     std::string strPlain;
     if (!BackupDecrypt(strPass, vchFile, strPlain, strError))
         return false;
+    // What decrypts is whatever the person who made the file chose (anyone who knows its passphrase): it is bounded before it is parsed,
+    // in size and in how deeply it nests (the parser is recursive, and a long run of "[" would use up the stack of this thread)
+    if (strPlain.size() > BACKUP_MAX_PLAIN || !JsonNestingOk(strPlain, BACKUP_MAX_NESTING)) {
+        OPENSSL_cleanse(&strPlain[0], strPlain.size());
+        strError = "The backup decrypts but its contents are not understood";
+        return false;
+    }
 
     Value root;
     const bool fParsed = read_string(strPlain, root);
     OPENSSL_cleanse(&strPlain[0], strPlain.size());
+    JsonWiper wiper(root);          // every string of the parsed tree (the keys, the phrase) is overwritten on the way out, whichever way that is
     if (!fParsed || root.type() != obj_type) {
         strError = "The backup decrypts but its contents are not understood";
         return false;
     }
-    const Object obj = root.get_obj();
+    const Object& obj = root.get_obj();         // (references into the tree, not copies of it: a copy would hold secrets that are not wiped)
     const Value& vChain = find_value(obj, "chain");
     if (vChain.type() != str_type || vChain.get_str() != BackupChainName()) {
         strError = std::string("This backup is for another network (this node is on ") + BackupChainName() + ")";
@@ -530,10 +600,25 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         for (const Value& vKey : vKeys.get_array()) {
             if (vKey.type() != obj_type)
                 continue;
-            const Object kObj = vKey.get_obj();      // find_value gives a reference into it: it must outlive the use
+            const Object& kObj = vKey.get_obj();      // a reference into the tree (the tree is wiped on the way out; a copy would not be)
             const Value& vPath = find_value(kObj, "hdkeypath");
-            if (vPath.type() == str_type)
-                nHighestIndex = std::max(nHighestIndex, HDIndexFromPath(vPath.get_str()));
+            const Value& vSecret = find_value(kObj, "secret");
+            if (vPath.type() != str_type || vSecret.type() != str_type || !fHD)
+                continue;
+            // a path is the file's word: it counts only if the key really is the one the wallet's phrase makes at that index
+            const int64 nPathIndex = HDIndexFromPath(vPath.get_str());
+            CBitcoinSecret secret;
+            if (nPathIndex < 0 || !secret.SetString(vSecret.get_str()))
+                continue;
+            bool fCompressed;
+            CKey keyPath;
+            try {
+                keyPath.SetSecret(secret.GetSecret(fCompressed), fCompressed);
+            } catch (const key_error&) {
+                continue;
+            }
+            if (pwallet->HDKeyAtIndexIs((uint32_t)nPathIndex, keyPath.GetPubKey().GetID()))
+                nHighestIndex = std::max(nHighestIndex, nPathIndex);
         }
 
     // The next address made from the phrase must be one the old wallet had not handed out: take the index it had reached, but no
@@ -554,11 +639,30 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
     int64 nOldest = std::numeric_limits<int64>::max();
     bool fUnknownTime = false;
     bool fAddedOther = false;       // watch-only entries or redeem scripts, which also need a look at the chain
+    const bool fBackupPhrase = vMnemonic.type() == str_type && !vMnemonic.get_str().empty();
+
+    // The chain is searched for what the new keys received, from when the oldest key was made: from the first block if any key's date is
+    // not known, if watch-only entries or scripts came (they have no date), or if the backup holds a recovery phrase (the keys a phrase
+    // makes are dated when this wallet derived them, which for a restored phrase is today, not when they were first used).
+    // This runs on every way out once something was added, so a failure half way through does not leave coins that are not found.
+    auto FinishAndRescan = [&]() {
+        pwallet->MarkDirty();
+        CBlockIndex* pindexStart = pindexGenesisBlock;
+        if (!fUnknownTime && !fAddedOther && !fBackupPhrase && nOldest != std::numeric_limits<int64>::max()) {
+            pindexStart = pindexBest;
+            while (pindexStart && pindexStart->pprev && pindexStart->GetBlockTime() >= nOldest - 2 * 60 * 60)
+                pindexStart = pindexStart->pprev;
+        }
+        if (nKeysAdded > 0 || fAddedOther || fHD) {
+            pwallet->ScanForWalletTransactions(pindexStart, true);
+            pwallet->ReacceptWalletTransactions();
+        }
+    };
     if (vKeys.type() == array_type) {
         for (const Value& vKey : vKeys.get_array()) {
             if (vKey.type() != obj_type)
                 continue;
-            const Object k = vKey.get_obj();
+            const Object& k = vKey.get_obj();
             const Value& vSecret = find_value(k, "secret");
             if (vSecret.type() != str_type)
                 continue;
@@ -589,7 +693,8 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
             if (vPath.type() == str_type && HDIndexFromPath(vPath.get_str()) >= 0)
                 meta.strHDKeypath = vPath.get_str();
             if (!pwallet->AddKeyWithMetadata(key, meta)) {
-                strError = "Error adding a key from the backup to the wallet";
+                strError = "Error adding a key from the backup to the wallet (the keys before it were added and the chain was searched for them: run the import again to add the rest)";
+                FinishAndRescan();
                 return false;
             }
             nKeysAdded++;
@@ -603,7 +708,7 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         for (const Value& vLabel : vLabels.get_array()) {
             if (vLabel.type() != obj_type)
                 continue;
-            const Object l = vLabel.get_obj();
+            const Object& l = vLabel.get_obj();
             const Value& vAddr = find_value(l, "address");
             const Value& vText = find_value(l, "label");
             if (vAddr.type() != str_type || vText.type() != str_type)
@@ -638,7 +743,8 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
             const CScript script(v.begin(), v.end());
             if (!pwallet->HaveCScript(script.GetID())) {
                 if (!pwallet->AddCScript(script)) {
-                    strError = "Error adding a redeem script from the backup to the wallet";
+                    strError = "Error adding a redeem script from the backup to the wallet (what came before it was added: run the import again)";
+                    FinishAndRescan();
                     return false;
                 }
                 fAddedOther = true;
@@ -646,19 +752,8 @@ bool ImportEncryptedBackup(CWallet* pwallet, const std::filesystem::path& path, 
         }
     }
 
-    // the balance and the cached amounts are worked out again, and the chain is searched from when the oldest key was made
-    // (from the first block if any key's date is not known, or if watch-only entries or scripts came: they have no date)
-    pwallet->MarkDirty();
-    CBlockIndex* pindexStart = pindexGenesisBlock;
-    if (!fUnknownTime && !fAddedOther && nOldest != std::numeric_limits<int64>::max()) {
-        pindexStart = pindexBest;
-        while (pindexStart && pindexStart->pprev && pindexStart->GetBlockTime() >= nOldest - 2 * 60 * 60)
-            pindexStart = pindexStart->pprev;
-    }
-    if (nKeysAdded > 0 || fAddedOther || fHD) {
-        pwallet->ScanForWalletTransactions(pindexStart, true);
-        pwallet->ReacceptWalletTransactions();
-    }
+    // the balance and the cached amounts are worked out again, and the chain is searched (see FinishAndRescan)
+    FinishAndRescan();
     return true;
 }
 
@@ -699,7 +794,13 @@ bool ImportWalletFromFile(CWallet* pwallet, const std::filesystem::path& path, i
         CKey key;
         bool fCompressed;
         CSecret secret = vchSecret.GetSecret(fCompressed);
-        key.SetSecret(secret, fCompressed);
+        try {
+            key.SetSecret(secret, fCompressed);
+        } catch (const key_error&) {
+            // a zero secret, or one at or above the curve order: a bad line, not a reason to leave with the earlier keys added and not searched for
+            fGood = false;
+            continue;
+        }
         CKeyID keyid = key.GetPubKey().GetID();
         if (pwallet->HaveKey(keyid))
             continue;
