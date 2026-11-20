@@ -52,7 +52,7 @@ def header_hash(h):
 class HeadersFirstLimitsTest(CorgiTestFramework):
     num_nodes = 6
     extra_args = [["-headersfirst=1"], ["-headersfirst=1"], ["-headersfirst=1", "-testmaxbranchheaders=%d" % CAP],
-                  ["-headersfirst=1", "-testmaxforkdepth=%d" % DEPTH], ["-headersfirst=1", "-testmaxforkdepth=%d" % DEPTH], []]
+                  ["-headersfirst=1", "-testmaxforkdepth=%d" % DEPTH, "-headersynctimeout=6"], ["-headersfirst=1", "-testmaxforkdepth=%d" % DEPTH], []]
 
     def log_text(self, node):
         with open(node.debug_log, errors="replace") as f:
@@ -141,6 +141,13 @@ class HeadersFirstLimitsTest(CorgiTestFramework):
         peer.send("headers", varint(1) + near)
         wait_until(lambda: d.getblockchaininfo()["header_only_entries"] == 1, what="the near fork to be kept")
         assert "misbehaving" not in self.log_text(d)
+
+        self.log("a peer whose chain forks off deeper than the depth and claims more than ours is asked for blocks the old way once the tip has not moved")
+        longer = P2PConnection(d.p2p_port, start_height=tip_height + 20)
+        wait_until(lambda: longer.got_verack, what="verack")
+        longer.send("headers", varint(1) + deep)
+        wait_until(lambda: longer.counts.get("getblocks", 0) >= 1, timeout=60, what="the getblocks fallback for a peer headers-first refused")
+        assert_equal(d.getblockchaininfo()["header_only_entries"], 1)
 
         self.log("an AuxPoW header (good proof, right chain ID) before the AuxPoW fork is refused")
         assert c.getblockcount() < AUXPOW_FORK_REGTEST

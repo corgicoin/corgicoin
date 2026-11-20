@@ -418,7 +418,14 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
             return true;
         }
         if (r == HEADER_REFUSED)
+        {
+            // Headers we will not keep (a fork deeper than we follow, no room): headers-first will not take this peer's chain, and if it claims
+            // more than we have, that is the old way's to do. Left alone, the peer would not be asked again and nothing would, so a node that
+            // is on a chain forked off further back than the depth could never move to the heavier one.
+            if (pfrom->nStartingHeight > nBestHeight)
+                pfrom->nShortAnswerTime = GetTime();
             return true;
+        }
         if (r == HEADER_BAD)
         {
             if (nDoS)
