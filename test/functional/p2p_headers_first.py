@@ -101,6 +101,18 @@ class HeadersFirstTest(CorgiTestFramework):
         wait_until(lambda: peer.counts.get("pong", 0) >= 1, what="a pong: the node carries on")
         assert_equal(c.getbestblockhash(), a.getbestblockhash())
 
+        self.log("a peer that answers every request with the same known headers is scored and not asked again (it would hold a sync slot for ever)")
+        replay = P2PConnection(c.p2p_port, start_height=BLOCKS + 500)
+        wait_until(lambda: replay.got_verack, what="verack")
+        wait_until(lambda: replay.counts.get("getheaders", 0) >= 1, what="the node to ask the replaying peer for headers")
+        asked = replay.counts.get("getheaders", 0)
+        replay.send("headers", varint(2000) + b"".join(header_bytes(a, a.getblockhash(i)) for i in range(1, 2001)))
+        wait_until(lambda: "no higher than where we asked from" in self.log_text(c), what="the replay to be noticed")
+        replay.send("ping", b"\x00" * 8)
+        wait_until(lambda: replay.counts.get("pong", 0) >= 1, what="a pong")
+        assert_equal(replay.counts.get("getheaders", 0), asked)         # not asked again
+        replay.close()
+
         self.log("a peer that gives headers but never the blocks is dropped, and the node does not wait on it for ever")
         stall = P2PConnection(d.p2p_port, start_height=60)
         wait_until(lambda: stall.counts.get("getheaders", 0) >= 1, what="the node to ask the peer for headers")

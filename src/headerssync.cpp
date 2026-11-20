@@ -372,6 +372,7 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
     // whatever this message holds, the request it answers is over; it is asked again below only if there may be more. (An empty answer, a
     // bad header or one that does not connect used to leave the flag set, and three such peers kept header sync from every other peer.)
     // This is before the check that headers-first is on for the peer: during the fallback a peer that answers must not be taken for one that did not.
+    const bool fAsked = pfrom->fSyncing;            // (this message answers a request of ours: what a peer is credited with is judged from that)
     pfrom->fSyncing = false;
     if (!HeadersFirstWith(pfrom))
         return true;
@@ -444,7 +445,19 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
     pfrom->nUnconnectingHeaders = 0;
     if (pindexLast && vHeaders.size() < MAX_HEADERS_RESULTS && pfrom->nStartingHeight > pindexLast->nHeight)
         pfrom->nShortAnswerTime = GetTime();        // an answer that ends short of the chain it claims
-    if (pindexLast &&(!pfrom->pindexBestKnown || pindexLast->bnChainWork > pfrom->pindexBestKnown->bnChainWork))
+    // A full answer that ends no higher than where the request started is not progress (the same known headers sent again, whatever the
+    // locator): such a peer would otherwise answer for ever, each reply starting the next request and the timeout over, and hold one of the
+    // few header slots. Not asked again, and scored.
+    if (fAsked && vHeaders.size() == MAX_HEADERS_RESULTS && pindexLast && pindexLast->nHeight <= pfrom->nHeadersAskedFrom)
+    {
+        pfrom->Misbehaving(20);
+        LogPrintf("headers-first: %s sent %u headers that end at %d, no higher than where we asked from (%d): not asked again\n",
+                  pfrom->addr.ToString().c_str(), (unsigned)vHeaders.size(), pindexLast->nHeight, pfrom->nHeadersAskedFrom);
+        return true;
+    }
+    // A peer is credited with a chain only for headers it sent in answer to a request: headers anyone can replay (they are public) must
+    // not earn it blocks to be asked for, which it then sits on.
+    if (fAsked && pindexLast && (!pfrom->pindexBestKnown || pindexLast->bnChainWork > pfrom->pindexBestKnown->bnChainWork))
         pfrom->pindexBestKnown = pindexLast;
     LogPrintf("headers-first: %u headers from %s, best header %d\n", (unsigned)vHeaders.size(), pfrom->addr.ToString().c_str(), pindexBestHeader ? pindexBestHeader->nHeight : -1);
 
@@ -452,6 +465,7 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
     {
         pfrom->fSyncing = true;
         pfrom->nSyncRequestTime = GetTime();
+        pfrom->nHeadersAskedFrom = pindexLast->nHeight;
         PushGetHeaders(pfrom, pindexLast);          // there may be more
     }
     return true;
@@ -561,6 +575,7 @@ void HeadersFirstSendMessages(CNode* pto)
             pto->fSyncStarted = true;
             pto->fSyncing = true;
             pto->nSyncRequestTime = nNow;
+            pto->nHeadersAskedFrom = pindexBestHeader->nHeight;
             LogPrintf("headers-first: asking %s for headers from %d (its height %d)\n", pto->addr.ToString().c_str(), pindexBestHeader->nHeight, pto->nStartingHeight);
             PushGetHeaders(pto, pindexBestHeader);
         }
@@ -573,6 +588,9 @@ void HeadersFirstSendMessages(CNode* pto)
         pindexBestHeader->nHeight > pindexBest->nHeight)
     {
         pto->fSyncStarted = true;
+        pto->fSyncing = true;                       // (the answer is credited to the peer, so it must be one to a request of ours, and it is timed)
+        pto->nSyncRequestTime = nNow;
+        pto->nHeadersAskedFrom = pindexBestHeader->pprev->nHeight;
         LogPrintf("headers-first: asking %s for its tip (its height %d)\n", pto->addr.ToString().c_str(), pto->nStartingHeight);
         PushGetHeaders(pto, pindexBestHeader->pprev);
     }
