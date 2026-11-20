@@ -17,7 +17,7 @@ SAT = Decimal("0.00000001")
 
 class RBFFullPoolTest(CorgiTestFramework):
     num_nodes = 1
-    extra_args = [["-maxmempoolkb=10"]]
+    extra_args = [["-maxmempoolkb=10", "-mempoolreplacement"]]
 
     def build(self, node, coins, outputs, signal):
         ins = [{"txid": c["txid"], "vout": c["vout"]} for c in coins]

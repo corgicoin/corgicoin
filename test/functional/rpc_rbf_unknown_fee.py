@@ -12,7 +12,7 @@ from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_e
 
 class RBFUnknownFeeTest(CorgiTestFramework):
     num_nodes = 2
-    extra_args = [["-walletrbf", "-paytxfee=0.001"], []]
+    extra_args = [["-walletrbf", "-paytxfee=0.001", "-mempoolreplacement"], ["-mempoolreplacement"]]
 
     def signal_spend(self, node, coin, dest, fee):
         raw = node.createrawtransaction([{"txid": coin["txid"], "vout": coin["vout"]}], {dest: coin["amount"] - Decimal(fee)})
