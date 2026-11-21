@@ -105,6 +105,7 @@ TESTS = [
     "feature_bootstrap_export.py",
     "rpc_minimum_chain_work.py",
     "rpc_reorg_postponed.py",
+    "feature_maxreorgdepth.py",
     "rpc_big_block_locks.py",
     "wallet_rbf.py",
     "wallet_commit_dryrun.py",

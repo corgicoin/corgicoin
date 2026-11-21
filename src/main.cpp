@@ -2823,6 +2823,29 @@ bool ReconsiderBlock(CBlockIndex* pindex, string& strError)
     return ActivateBestValidChain(strError);
 }
 
+// -maxreorgdepth=<n>: a chain with more work that would take more than n blocks off ours is not taken (0, the default: no limit).
+// How far back the new chain forks off ours is counted from our tip; walking back from the new block stops as soon as the fork is
+// known to be deeper than n, so a long branch costs no more than n steps past our tip's height.
+static bool ReorganisationTooDeep(const CBlockIndex* pindexNew)
+{
+    const int64 nMax = GetArg("-maxreorgdepth", 0);
+    if (nMax <= 0 || pindexBest == nullptr)
+        return false;
+    const CBlockIndex* p = pindexNew;
+    while (p && !(p->pnext || p == pindexBest))                 // not on our chain (our tip has no pnext, the others do)
+    {
+        if ((int64)pindexBest->nHeight - (int64)p->nHeight >= nMax)
+        {
+            LogPrintf("AddToBlockIndex() : not reorganising to %s (height %d, more work than our tip %d): it forks more than -maxreorgdepth=%d blocks back\n",
+                      pindexNew->GetBlockHash().ToString().substr(0,20).c_str(), pindexNew->nHeight, pindexBest->nHeight, (int)nMax);
+            strMiscWarning = strprintf(_("Warning: a chain with more work that forks more than %d blocks back was not taken (-maxreorgdepth). Restart without it to follow that chain."), (int)nMax);
+            return true;
+        }
+        p = p->pprev;
+    }
+    return false;
+}
+
 bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
 {
     // Check for duplicate
@@ -2853,7 +2876,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
         return false;
 
     // New best (never on a chain the operator invalidated)
-    if (pindexNew->bnChainWork > bnBestChainWork && !pindexNew->fFailedChain)
+    if (pindexNew->bnChainWork > bnBestChainWork && !pindexNew->fFailedChain && !ReorganisationTooDeep(pindexNew))
         if (!SetBestChain(txdb, pindexNew))
             return false;
 
