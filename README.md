@@ -144,7 +144,7 @@ rpcport=62555
   - The P2P protocol version is 70013 (feefilter). v4.9 and v4.10 nodes and merged-mining pools are unaffected (#164)
   - `getblocktemplate`, `getwork` and the miner fill blocks by fee rate after the priority area (#154)
   - `-maxuploadtarget` and `-maxinboundpergroup` are off unless set
-- **Not in this release:** replace-by-fee (#181, to come as its own change), headers-first sync (#184), the LevelDB unspent set and pruning (#185), the SQLite wallet (#140) and watch-only/encrypted backups (#183) need more work first. libsecp256k1 (#186) was not merged: it carries the lax DER change refused in #145
+- **Not in this release:** headers-first sync (#184), pruning (#185) and the SQLite wallet (#140) need more work first. (Replace-by-fee, watch-only and encrypted backups, the LevelDB unspent set in shadow mode and libsecp256k1 as an option are listed above.) The first libsecp256k1 change (#186) was not merged: it carried the lax DER change refused in #145
 
 ### v4.10.0.0 — Security Hardening (upgrade every node)
 - **Upgrade now.** Every earlier release can be crashed by a single peer message (`getheaders` across a merged-mined block). This release fixes that and many other robustness and security issues found in review. It also raises the Berkeley DB lock table, so upgrade every node, miners and pools first. Read *Behaviour changes* below before upgrading: an example or `#`-containing `rpcpassword` now refuses to start the node
