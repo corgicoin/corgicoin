@@ -68,6 +68,8 @@ class SignatureVariantsTest(CorgiTestFramework):
         self.connect_nodes(0, 1)
         n0.generate(70)
         self.sync_blocks()
+        n1.generate(40)                                 # the release has coins of its own to spend, mined by the release (this build takes the blocks)
+        self.sync_blocks()
 
         self.log("each signature hash type on a two-input, two-output transaction")
         for kind in ("ALL", "NONE", "SINGLE", "ALL|ANYONECANPAY", "NONE|ANYONECANPAY", "SINGLE|ANYONECANPAY"):
@@ -87,16 +89,13 @@ class SignatureVariantsTest(CorgiTestFramework):
         self.log("a P2SH 2-of-3 multisig spend")
         ms_addrs = [n0.getnewaddress() for _ in range(3)]
         pubkeys = [n0.validateaddress(a)["pubkey"] for a in ms_addrs]
-        ms = n0.createmultisig(2, pubkeys)
-        n0.addmultisigaddress(2, pubkeys)
-        funding = n0.sendtoaddress(ms["address"], 10)
+        ms_addr = n0.addmultisigaddress(2, pubkeys)
+        funding = n0.sendtoaddress(ms_addr, 10)
         self.mine_and_sync(n0)
-        vout = [o for o in n0.getrawtransaction(funding, 1)["vout"] if ms["address"] in o["scriptPubKey"].get("addresses", [])][0]
-        prev = [{"txid": funding, "vout": vout["n"], "scriptPubKey": vout["scriptPubKey"]["hex"], "redeemScript": ms["redeemScript"]}]
-        keys = [n0.dumpprivkey(a) for a in ms_addrs[:2]]
+        vout = [o for o in n0.getrawtransaction(funding, 1)["vout"] if ms_addr in o["scriptPubKey"].get("addresses", [])][0]
         dest = n0.getnewaddress()
         spend = n0.createrawtransaction([{"txid": funding, "vout": vout["n"]}], {dest: Decimal(10) - Decimal("0.01")})
-        signed = n0.signrawtransaction(spend, prev, keys)
+        signed = n0.signrawtransaction(spend)                    # (the wallet knows the script and the keys: it signs with two of the three)
         assert_equal(signed["complete"], True)
         txid = n0.sendrawtransaction(signed["hex"])
         self.sync_mempools(timeout=60)
@@ -104,12 +103,11 @@ class SignatureVariantsTest(CorgiTestFramework):
         self.mine_and_sync(n0)
 
         self.log("the same spend with one signature damaged is refused by both pools and by both chains")
-        funding2 = n0.sendtoaddress(ms["address"], 10)
+        funding2 = n0.sendtoaddress(ms_addr, 10)
         self.mine_and_sync(n0)
-        vout2 = [o for o in n0.getrawtransaction(funding2, 1)["vout"] if ms["address"] in o["scriptPubKey"].get("addresses", [])][0]
-        prev2 = [{"txid": funding2, "vout": vout2["n"], "scriptPubKey": vout2["scriptPubKey"]["hex"], "redeemScript": ms["redeemScript"]}]
+        vout2 = [o for o in n0.getrawtransaction(funding2, 1)["vout"] if ms_addr in o["scriptPubKey"].get("addresses", [])][0]
         spend2 = n0.createrawtransaction([{"txid": funding2, "vout": vout2["n"]}], {dest: Decimal(10) - Decimal("0.01")})
-        good = n0.signrawtransaction(spend2, prev2, keys)["hex"]
+        good = n0.signrawtransaction(spend2)["hex"]
         scriptsig = n0.decoderawtransaction(good)["vin"][0]["scriptSig"]["hex"]
         # OP_0, then the first signature (a length byte, then the DER): damage one byte of the number r
         pos = 2 + 2 + 2 * 8
@@ -136,7 +134,7 @@ class SignatureVariantsTest(CorgiTestFramework):
         payload = b58decode_check(n0.dumpprivkey(any_addr))
         version, secret = payload[:1], payload[1:33]
         unc_wif = b58encode_check(version + secret)                  # the secret without the "compressed" byte
-        n0.importprivkey(unc_wif, "unc", False)
+        n0.importprivkey(unc_wif, "unc")
         unc_addr = n0.getaddressesbyaccount("unc")[0]
         assert unc_addr != any_addr
         funding3 = n0.sendtoaddress(unc_addr, 5)
