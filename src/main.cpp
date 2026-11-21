@@ -114,13 +114,6 @@ bool static GetTransaction(const uint256& hashTx, CWalletTx& wtx)
     return false;
 }
 
-// erases transaction with the given hash from all wallets
-void static EraseFromWallets(uint256 hash)
-{
-    for (CWallet* pwallet : setpwalletRegistered)
-        pwallet->EraseFromWallet(hash);
-}
-
 // tell all wallets which transactions a replacement pushed out of the pool
 void static ReplacedInWallets(const std::set<uint256>& setReplaced)
 {
