@@ -20,6 +20,7 @@ TESTS = [
     "rpc_logging.py",
     "feature_zmq.py",
     "wallet_send.py",
+    "wallet_send_many_young_inputs.py",
     "wallet_listtransactions.py",
     "wallet_sendmany_total.py",
     "wallet_change_position.py",
