@@ -272,6 +272,8 @@ protected:
 
 public:
     int64 nReleaseTime;
+    double dGetHeadersTokens;     // getheaders answered for this peer: a bucket of MAX_GETHEADERS_BURST, refilled one a second (see ProcessMessage)
+    int64 nGetHeadersTokensTime;
     std::map<uint256, CRequestTracker> mapRequests;
     CCriticalSection cs_mapRequests;
     uint256 hashContinue;
@@ -335,6 +337,8 @@ public:
         nStartingHeight = -1;
         fGetAddr = false;
         nMisbehavior = 0;
+        dGetHeadersTokens = 100;
+        nGetHeadersTokensTime = 0;
         nSendBytes = 0;
         nRecvBytes = 0;
         nPingNonceSent = 0;

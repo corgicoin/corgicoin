@@ -3997,6 +3997,22 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             pfrom->Misbehaving(20);
             return LogError("getheaders locator size = %u", (unsigned)locator.Size());
         }
+        {
+            // Each answer reads up to 2000 headers (from disk for the merged-mined ones). A peer gets a burst of 100 and one more a second:
+            // an honest node that is syncing asks about once a second at the most (it waits for each answer), and a long chain is still
+            // fetched at 2000 headers a second. Beyond that the request is not answered, and not scored (a slow link is not a fault).
+            const int64 nNowHeaders = GetTime();
+            if (pfrom->nGetHeadersTokensTime == 0)
+                pfrom->nGetHeadersTokensTime = nNowHeaders;
+            pfrom->dGetHeadersTokens = std::min<double>(MAX_GETHEADERS_BURST, pfrom->dGetHeadersTokens + (double)(nNowHeaders - pfrom->nGetHeadersTokensTime));
+            pfrom->nGetHeadersTokensTime = nNowHeaders;
+            if (pfrom->dGetHeadersTokens < 1)
+            {
+                LogPrintf("getheaders from %s not answered: too many too fast\n", pfrom->addr.ToString().c_str());
+                return true;
+            }
+            pfrom->dGetHeadersTokens -= 1;
+        }
 
         CBlockIndex* pindex = nullptr;
         if (locator.IsNull())
