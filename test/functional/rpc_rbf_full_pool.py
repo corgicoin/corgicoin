@@ -9,7 +9,7 @@ The pool is held to about 10 kB. It is filled with replaceable transactions; the
 """
 from decimal import Decimal
 
-from test_framework import CorgiTestFramework, assert_equal, assert_raises_rpc_error
+from test_framework import CorgiTestFramework, JSONRPCException, assert_equal, assert_raises_rpc_error
 
 CAP = 10000
 SAT = Decimal("0.00000001")
@@ -64,7 +64,12 @@ class RBFFullPoolTest(CorgiTestFramework):
         self.log("R pays more than X per byte but less than the others: it would be thrown out, so it is refused and X stays")
         fee_low = ((rate_x + rate_y) / 2 * size_r).quantize(SAT)
         assert fee_low > info[x][0] + 3
-        assert_raises_rpc_error(-22, "replacement-feerate-too-low", node.sendrawtransaction, self.build(node, coins_r, {dest: total - fee_low}, True))
+        try:
+            node.sendrawtransaction(self.build(node, coins_r, {dest: total - fee_low}, True))
+            raise AssertionError("R was accepted: it would be the lowest in the pool")
+        except JSONRPCException as e:
+            # refused either way, for whichever rule sees it first: R pays less per byte than one it replaces, or it would be thrown out
+            assert e.error["code"] == -22 and ("replacement-feerate-too-low" in e.error["message"] or "mempool-full" in e.error["message"]), e.error
         assert_equal(sorted(node.getrawmempool()), before)
         assert_equal(node.getmempoolinfo()["bytes"], bytes_before)
 
