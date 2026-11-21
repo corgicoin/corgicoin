@@ -45,7 +45,8 @@ constexpr int MAX_HEADER_SYNC_PEERS = 3;            // peers asked for the same 
 constexpr int MAX_HEADER_FORK_DEPTH = 2000;         // a header that forks off the best header chain further back than this is refused
 constexpr size_t MAX_BRANCH_HEADERS = 50000;        // headers held that are on no branch we follow (the best header chain is not counted)
 constexpr int64 HEADERS_RETRY_SECONDS = 60;         // a peer that sent a header that failed a time check is asked again after this
-constexpr int64 HEADERS_FALLBACK_SECONDS = 1800;    // after a peer let a headers request go unanswered, peers are synced the old way for this long
+constexpr int64 HEADERS_NO_ROOM_SECONDS = 5;        // after making room for a side-branch header freed nothing, headers that need room are refused at once for this long
+constexpr int64 HEADERS_FALLBACK_SECONDS = 1800;    // a peer that a silent peer made us ask for blocks the old way is synced that way for this long
 
 // regtest can lower the cap for the test
 size_t MaxBranchHeaders()
@@ -63,7 +64,7 @@ int MaxForkDepth()
 }
 
 size_t nBranchHeaders = 0;                          // header-only entries that were not the best chain when they came in
-int64 nHeadersFallbackUntil = 0;
+
 
 int64 HeaderSyncTimeout()
 {
@@ -264,11 +265,20 @@ HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
     }
     // Side branches are held up to a cap; past it the lowest-work ones are dropped (not scored: an honest fork is one of them, and the peer
     // that sends the header that fills the space is not the one that filled it). pindexPrev is kept.
+    // Making room goes through every header held, so when it frees nothing (everything held is the branch this header extends) it is
+    // not tried again for a few seconds: each header of a 2000-header message would otherwise cost a full pass, with the main lock held.
+    static int64 nNoRoomUntil = 0;
+    const bool fFull = nBranchHeaders >= MaxBranchHeaders() || mapHeaderIndex.size() >= MAX_HEADER_INDEX;
+    if (fFull && GetTime() < nNoRoomUntil)
+        return HEADER_REFUSED;
     if (nBranchHeaders >= MaxBranchHeaders())
     {
         EvictBranchHeaders(pindexPrev, MaxBranchHeaders() * 9 / 10);
         if (nBranchHeaders >= MaxBranchHeaders())
+        {
+            nNoRoomUntil = GetTime() + HEADERS_NO_ROOM_SECONDS;
             return HEADER_REFUSED;
+        }
     }
     if (mapHeaderIndex.size() >= MAX_HEADER_INDEX)
     {
@@ -276,6 +286,7 @@ HeaderResult AcceptHeader(const CBlock& hdr, CBlockIndex** ppindex, int& nDoS)
         if (mapHeaderIndex.size() >= MAX_HEADER_INDEX)
         {
             LogPrintf("headers-first: the header index is full (%u), not keeping %s\n", (unsigned)mapHeaderIndex.size(), hash.ToString().substr(0, 20).c_str());
+            nNoRoomUntil = GetTime() + HEADERS_NO_ROOM_SECONDS;
             return HEADER_REFUSED;
         }
     }
@@ -321,7 +332,7 @@ bool HeadersFirstEnabled()
 
 bool HeadersFirstWith(const CNode* pnode)
 {
-    return pnode && HeadersFirstEnabled() && pnode->nVersion >= HEADERSFIRST_VERSION && GetTime() >= nHeadersFallbackUntil;
+    return pnode && HeadersFirstEnabled() && pnode->nVersion >= HEADERSFIRST_VERSION && GetTime() >= pnode->nHeadersFallbackUntil;
 }
 
 void HeadersFirstChainInvalidated()
@@ -483,29 +494,34 @@ void HeadersFirstSendMessages(CNode* pto)
 {
     const int64 nNow = GetTime();
 
-    // 0. a getheaders that was not answered: the peer holds one of the few slots, so it is dropped, and the others are synced the old
-    //    way (getblocks) for a while, so that peers that answer pings and nothing else cannot stop a node from syncing. (Checked for every
-    //    peer that was asked, also once the fallback is on and headers-first is off for the new ones.)
+    // 0. a getheaders that was not answered: the peer holds one of the few slots, so it is dropped, and two other taller peers are synced
+    //    the old way (getblocks) for a while, so that peers that answer pings and nothing else cannot stop a node from syncing. Only
+    //    those two leave headers-first: the rest go on with it, and a silent one among them is dropped in its turn, each at its own
+    //    timeout. Peers not yet in the fallback are chosen first, so each silent peer brings in two more honest ones.
     if (HeadersFirstEnabled() && pto->fSyncing && nNow - pto->nSyncRequestTime > HeaderSyncTimeout())
     {
-        LogPrintf("headers-first: %s did not answer getheaders in %d seconds, disconnecting; syncing the old way for %d minutes\n",
+        LogPrintf("headers-first: %s did not answer getheaders in %d seconds, disconnecting; two other peers are synced the old way for %d minutes\n",
                   pto->addr.ToString().c_str(), (int)HeaderSyncTimeout(), (int)(HEADERS_FALLBACK_SECONDS / 60));
         pto->fSyncing = false;
         pto->fDisconnect = true;
-        nHeadersFallbackUntil = nNow + HEADERS_FALLBACK_SECONDS;
         LOCK(cs_vNodes);
         int nAsked = 0;
-        for (CNode* pnode : vNodes)
-        {
-            // the others are not waited on any more (they would be dropped in their turn for an answer that is not wanted), and two taller peers are asked
-            pnode->fSyncing = false;
-            pnode->fSyncStarted = false;        // asked for headers again once the fallback is over (a silent one is then dropped in its turn)
-            if (pnode != pto && !pnode->fDisconnect && !pnode->fClient && !pnode->fOneShot && pnode->fSuccessfullyConnected && pnode->nStartingHeight > nBestHeight && nAsked < 2)
+        for (int nPass = 0; nPass < 2 && nAsked < 2; nPass++)
+            for (CNode* pnode : vNodes)
             {
+                if (nAsked >= 2)
+                    break;
+                const bool fInFallback = nNow < pnode->nHeadersFallbackUntil;
+                if (pnode == pto || pnode->fDisconnect || pnode->fClient || pnode->fOneShot || !pnode->fSuccessfullyConnected || pnode->nStartingHeight <= nBestHeight)
+                    continue;
+                if (fInFallback != (nPass == 1))
+                    continue;                   // pass 0: peers not in the fallback; pass 1: those that are (asked again)
+                pnode->fSyncing = false;        // not waited on for headers while it is asked for blocks
+                pnode->fSyncStarted = false;    // asked for headers again once its fallback is over
+                pnode->nHeadersFallbackUntil = nNow + HEADERS_FALLBACK_SECONDS;
                 pnode->PushGetBlocks(pindexBest, uint256(0));
                 nAsked++;
             }
-        }
         return;
     }
 
