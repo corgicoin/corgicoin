@@ -68,6 +68,7 @@ extern int nBestHeight;
 extern CBigNum bnBestChainWork;
 /** -minimumchainwork: a chain with less total work than this is never taken for the real, finished one (0: no floor). */
 extern CBigNum bnMinimumChainWork;
+static const char* const MAINNET_MINIMUM_CHAIN_WORK = "29990c451eb92";   // total work of mainnet block 80000 (hash b9d09330ebf52c48015511933586fa4a01e50e401f6c5219bd9cf404f67e6674), see doc/minimum-chain-work.md
 extern CBigNum bnBestInvalidWork;
 extern std::set<uint256> setInvalidatedBlocks;
 extern uint256 hashBestChain;

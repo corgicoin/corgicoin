@@ -307,7 +307,7 @@ std::string HelpMessage()
         "  -blockmaxsize=<n>      " + _("Largest block, in bytes, this node makes (default: the most it may, 500000)") + "\n" +
         "  -blockprioritysize=<n> " + _("Bytes of each block it fills with the highest-priority (old, large-valued) transactions before it goes by fee per byte (default: 27000)") + "\n" +
         "  -maxinboundpergroup=<n> " + _("Accept at most n inbound connections from one network group (the /16 of an IPv4 address); 0: no limit (default: 0)") + "\n" +
-        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
+        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: the work of mainnet block 80000; none on testnet and regtest; 0 turns it off, see doc/minimum-chain-work.md)") + "\n" +
         "  -maxuploadtarget=<MiB> " + _("Try to keep what the node sends in 24 hours under this many MiB: past 90% it stops serving blocks a week older than the tip (and lets the peers that ask go); new blocks are always sent (default: 0, no limit)") + "\n" +
         "  -feefilter=<n>         " + _("Ask peers (protocol 70013) not to announce transactions that pay less than n satoshi per kB; 0 asks nothing (default: 0)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (regtest only in this release, default: 0; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
@@ -508,6 +508,13 @@ bool AppInit2()
         if (strWork.empty() || strWork.size() > 64 || strWork.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
             return InitError(strprintf(_("Invalid -minimumchainwork=<hex>: '%s'"), strWork.c_str()));
         bnMinimumChainWork.SetHex(strWork);
+    }
+    else if (!fTestNet && !fRegTest)
+    {
+        // Mainnet: a floor a few days behind the tip when it was set (block 80000, b9d09330ebf52c48015511933586fa4a01e50e401f6c5219bd9cf404f67e6674).
+        // A node whose best chain has less work than this never counts itself synced, so a chain someone makes up cheaply cannot make a new
+        // node think it has caught up. -minimumchainwork=0 turns it off. See doc/minimum-chain-work.md for how it is set and renewed.
+        bnMinimumChainWork.SetHex(MAINNET_MINIMUM_CHAIN_WORK);
     }
 
     if (mapArgs.count("-maxuploadtarget"))
