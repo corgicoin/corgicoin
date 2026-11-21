@@ -2,12 +2,12 @@
 """-coinsvalidate=1 (regtest) refuses the same bad blocks as the index does, and a set that is wrong never marks a valid block failed.
 
 Node 0 runs with -coinsvalidate=1 (a block's inputs are checked against the unspent set), node 1 without it, and each is handed the same
-hand-made blocks (block_builder.py), each breaking one rule: an input that does not exist, a double spend inside the block, a spend of an
+hand-made blocks (block_builder.py), each breaking one rule: a spend of an
 immature coinbase, a coinbase that repeats an unspent one (BIP30), a coinbase paying more than allowed, a wrong merkle root. Both must refuse
 every one and stay on the same tip (so the set judges the way the index does); then a good block with a payment, which both take, after which
 the set is what the blocks give.
 
-Node 2 runs -coinsvalidate=1 with -testcoinsbreak=45, which puts the set out of step at block 45. It must go on following the chain past it (the
+Node 2 runs -coinsvalidate=1 with -testcoinsbreak=65, which puts the set out of step at block 65. It must go on following the chain past it (the
 set is only a witness: a wrong one must not mark a valid block failed, and must not stop the node to rebuild), and a restart without the
 option repairs it.
 
@@ -22,7 +22,7 @@ from test_framework import CorgiTestFramework, assert_equal, wait_until
 
 class CoinsValidateBlocksTest(CorgiTestFramework):
     num_nodes = 3
-    extra_args = [["-coinsvalidate=1"], [], ["-coinsvalidate=1", "-testcoinsbreak=45"]]
+    extra_args = [["-coinsvalidate=1"], [], ["-coinsvalidate=1", "-testcoinsbreak=65"]]
 
     def log_text(self, node):
         with open(node.debug_log, errors="replace") as f:
@@ -48,15 +48,15 @@ class CoinsValidateBlocksTest(CorgiTestFramework):
         n0, n1, n2 = self.nodes
         self.connect_nodes(1, 0)
         self.connect_nodes(1, 2)
-        n1.generate(40)
+        n1.generate(55)
         self.sync_blocks()
         self.disconnect_nodes(1, 0)
         self.disconnect_nodes(1, 2)
-        assert_equal(n0.getblockcount(), 40)
-        assert_equal(n2.getblockcount(), 40)
+        assert_equal(n0.getblockcount(), 55)
+        assert_equal(n2.getblockcount(), 55)
 
         coins = n1.listunspent()
-        assert len(coins) >= 3
+        assert len(coins) >= 3, "coins: %d" % len(coins)
         addr = n1.getnewaddress()
 
         def spend(coin, to, fee=Decimal("0.001")):
@@ -64,11 +64,7 @@ class CoinsValidateBlocksTest(CorgiTestFramework):
             return bytes.fromhex(n1.signrawtransaction(raw)["hex"])
 
         self.log("blocks that break one rule each")
-        ghost = bytes.fromhex(n1.createrawtransaction([{"txid": "ab" * 32, "vout": 0}], {addr: Decimal(1)}))
-        self.refused(build_block(n1, [ghost]), "an input that does not exist")
 
-        a, b = spend(coins[0], n1.getnewaddress()), spend(coins[0], n1.getnewaddress())
-        self.refused(build_block(n1, [a, b]), "a double spend inside the block")
 
         tip_cb = n1.getblock(n1.getbestblockhash())["tx"][0]
         cb = n1.getrawtransaction(tip_cb, 1)
@@ -87,7 +83,7 @@ class CoinsValidateBlocksTest(CorgiTestFramework):
         value = next_block_value(n1) + int(Decimal("0.01") * COIN)
         r, _ = self.both(build_block(n1, [good], coinbase_value=value), "the good block")
         assert_equal(r, None)
-        assert_equal(n0.getblockcount(), 41)
+        assert_equal(n0.getblockcount(), 56)
         assert_equal(n1.getbestblockhash(), n0.getbestblockhash())
         assert n0.getrawtransaction(txid_of(good)), "the payment is not in the chain"
         info = n0.gettxoutsetinfo("coins")
@@ -95,13 +91,28 @@ class CoinsValidateBlocksTest(CorgiTestFramework):
         assert_equal(info["hash_serialized"], n1.gettxoutsetinfo("blocks")["hash_serialized"])
         assert_equal(info["coins_check_failures"], 0)
 
-        self.log("a wrong set does not mark a valid block failed: node 2 goes out of step at 45 and follows the chain to the end")
+        assert "COINS: the unspent set refused an input" not in self.log_text(n0), "an earlier case marked the set wrong"
+        self.log("a double spend inside the block, and an input that does not exist: refused by both. The set cannot tell a block that is wrong from a set that is, so node 0 stops")
+        self.log("  trusting it until it has been rebuilt (reported, and rebuilt at the next start); the node itself goes on as the index decides")
+        a, b = spend(coins[2], n1.getnewaddress()), spend(coins[2], n1.getnewaddress())
+        self.refused(build_block(n1, [a, b]), "a double spend inside the block")
+        ghost = bytes.fromhex(n1.createrawtransaction([{"txid": "ab" * 32, "vout": 0}], {addr: Decimal(1)}))
+        self.refused(build_block(n1, [ghost]), "an input that does not exist")
+        assert "COINS: the unspent set refused an input" in self.log_text(n0), "the set did not report the input it could not find"
+        assert "COINS: the unspent set refused an input" not in self.log_text(n1)
+        n0.stop()
+        n0.start()
+        wait_until(lambda: "COINS: rebuilt" in self.log_text(n0), what="the set to be rebuilt at the start")
+        assert_equal(n0.getblockcount(), 56)
+        assert_equal(n0.gettxoutsetinfo("coins")["hash_serialized"], n0.gettxoutsetinfo("blocks")["hash_serialized"])
+
+        self.log("a wrong set does not mark a valid block failed: node 2 goes out of step at 65 and follows the chain to the end")
         self.connect_nodes(1, 2)
-        n1.generate(9)                                # 42 .. 50, one of them with a payment
+        n1.generate(9)                                # 57 .. 65, the set of node 2 goes out of step at 65
         n1.sendtoaddress(n1.getnewaddress(), 1)
-        n1.generate(5)
+        n1.generate(11)                               # and on to 76, one block carrying a payment
         self.sync_blocks([n1, n2], timeout=120)
-        assert_equal(n2.getblockcount(), 55)
+        assert_equal(n2.getblockcount(), 76)
         assert_equal(n2.getbestblockhash(), n1.getbestblockhash())
         assert "it will be rebuilt at the next start" in self.log_text(n2), "the set was not reported out of step"
         assert "COINS: rebuilding" not in self.log_text(n2), "the node stopped to rebuild the set inline"
@@ -110,7 +121,7 @@ class CoinsValidateBlocksTest(CorgiTestFramework):
         n2.stop()
         n2.extra_args = [a for a in n2.extra_args if not a.startswith("-testcoinsbreak")]
         n2.start()
-        assert_equal(n2.getblockcount(), 55)
+        assert_equal(n2.getblockcount(), 76)
         wait_until(lambda: "COINS: rebuilt" in self.log_text(n2), what="the rebuild at the start")
         assert_equal(n2.gettxoutsetinfo("coins")["hash_serialized"], n2.gettxoutsetinfo("blocks")["hash_serialized"])
 
