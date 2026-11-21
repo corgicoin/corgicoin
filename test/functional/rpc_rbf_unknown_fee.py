@@ -55,7 +55,7 @@ class RBFUnknownFeeTest(CorgiTestFramework):
         a.process.wait(timeout=60)
         a.start()
         wait_until(lambda: sent in a.getrawmempool(), timeout=60, what="the wallet to put its transaction back in the pool")
-        conflict = a.signrawtransaction(a.createrawtransaction(ins, {a.getnewaddress(): total - 1000}))
+        conflict = a.signrawtransaction(a.createrawtransaction(ins, {a.getnewaddress(): total - Decimal("1")}))
         assert conflict["complete"]
         assert_raises_rpc_error(-22, "txn-mempool-conflict", a.sendrawtransaction, conflict["hex"])
         assert_equal(a.getrawmempool(), [sent])
