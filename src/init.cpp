@@ -294,7 +294,8 @@ std::string HelpMessage()
 #endif
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
-        "  -norpccookie           " + _("Without -rpcuser and -rpcpassword, refuse to serve RPC instead of making a cookie file (<datadir>/.cookie) the client reads") + "\n" +
+        "  -rpcauth=<u>:<salt>$<hash> " + _("A login for JSON-RPC that holds no password: <hash> is the hex of HMAC-SHA256 of the password with <salt> as key (contrib/rpcauth.py makes the line). May be given more than once") + "\n" +
+        "  -norpccookie          " + _("Without -rpcuser and -rpcpassword, refuse to serve RPC instead of making a cookie file (<datadir>/.cookie) the client reads") + "\n" +
         "  -rpcmaxauthfailures=<n> " + _("Refuse a client address for a minute after <n> failed logins (default: 20)") + "\n" +
         "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 62555)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +

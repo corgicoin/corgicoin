@@ -20,6 +20,8 @@
 
 #include "logging.h"
 
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 #include <boost/asio.hpp>
 #include <boost/asio/ip/v6_only.hpp>
 #include <boost/bind.hpp>
@@ -49,6 +51,36 @@ using namespace json_spirit;
 void ThreadRPCServer2(void* parg);
 
 static std::string strRPCUserColonPass;
+static bool fRPCStaticLogin = false;   // -rpcuser/-rpcpassword (or the cookie) is set: strRPCUserColonPass is a login
+// -rpcauth=<user>:<salt>$<hash>: <hash> is the hex of HMAC-SHA256 with the key <salt> over the password, so the file holds no password
+struct RPCAuthEntry { std::string user, salt, hash; };
+static std::vector<RPCAuthEntry> vRPCAuth;
+
+static std::string HexOfHMACSHA256(const std::string& strKey, const std::string& strMsg)
+{
+    unsigned char out[EVP_MAX_MD_SIZE];
+    unsigned int len = 0;
+    if (!HMAC(EVP_sha256(), strKey.data(), (int)strKey.size(), (const unsigned char*)strMsg.data(), strMsg.size(), out, &len) || len != 32)
+        return "";
+    static const char* hexd = "0123456789abcdef";
+    std::string s;
+    for (unsigned int i = 0; i < len; i++) { s += hexd[out[i] >> 4]; s += hexd[out[i] & 15]; }
+    return s;
+}
+
+// "user:salt$hash" -> entry; false if it is not of that form (a salt may not be empty, the hash is 64 hex digits)
+static bool ParseRPCAuth(const std::string& str, RPCAuthEntry& e)
+{
+    size_t c = str.find(':'), d = str.find('$');
+    if (c == std::string::npos || d == std::string::npos || c == 0 || d <= c + 1 || d + 1 >= str.size())
+        return false;
+    e.user = str.substr(0, c);
+    e.salt = str.substr(c + 1, d - c - 1);
+    e.hash = str.substr(d + 1);
+    if (e.salt.find('$') != std::string::npos || e.hash.size() != 64 || e.hash.find_first_not_of("0123456789abcdef") != std::string::npos)
+        return false;
+    return true;
+}
 static std::string strRPCCookieFile;   // set while the server authenticates with a cookie
 static CCriticalSection cs_rpcCookie;   // guards strRPCCookieFile: the RPC thread sets it, the shutdown thread clears it
 
@@ -4107,7 +4139,19 @@ bool HTTPAuthorized(map<string, string>& mapHeaders)
         return false;
     string strUserPass64 = TrimString(strAuth.substr(6));
     string strUserPass = DecodeBase64(strUserPass64);
-    return TimingResistantEqual(strUserPass, strRPCUserColonPass);
+    bool fOk = fRPCStaticLogin && TimingResistantEqual(strUserPass, strRPCUserColonPass);
+    size_t nColon = strUserPass.find(':');
+    if (nColon != std::string::npos)
+    {
+        const std::string strUser = strUserPass.substr(0, nColon), strPass = strUserPass.substr(nColon + 1);
+        for (const RPCAuthEntry& e : vRPCAuth)   // every entry is tried, so the time does not say which user names exist
+        {
+            bool fUser = TimingResistantEqual(strUser, e.user);
+            bool fHash = TimingResistantEqual(HexOfHMACSHA256(e.salt, strPass), e.hash);
+            fOk |= (fUser && fHash);
+        }
+    }
+    return fOk;
 }
 
 //
@@ -4485,7 +4529,22 @@ void ThreadRPCServer2(void* parg)
     LogPrintf("ThreadRPCServer started\n");
 
     strRPCUserColonPass = mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"];
-    if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && GetBoolArg("-rpccookie", true)) // -norpccookie is -rpccookie=0
+    vRPCAuth.clear();
+    if (mapMultiArgs.count("-rpcauth"))
+        for (const std::string& strAuth : mapMultiArgs["-rpcauth"])
+        {
+            RPCAuthEntry e;
+            if (!ParseRPCAuth(strAuth, e))
+            {
+                uiInterface.ThreadSafeMessageBox(_("-rpcauth is <user>:<salt>$<hash>, the hash being 64 hex digits (contrib/rpcauth.py makes one)"),
+                    _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+                StartShutdown();
+                return;
+            }
+            vRPCAuth.push_back(e);
+        }
+    fRPCStaticLogin = mapArgs["-rpcpassword"] != "";
+    if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && vRPCAuth.empty() && GetBoolArg("-rpccookie", true)) // -norpccookie is -rpccookie=0
     {
         if (!GenerateAuthCookie(strRPCUserColonPass))
         {
@@ -4495,8 +4554,9 @@ void ThreadRPCServer2(void* parg)
             return;
         }
         LogPrintf("ThreadRPCServer: no rpcuser or rpcpassword set, authenticating with the cookie in %s\n", GetCookiePath().string().c_str());
+        fRPCStaticLogin = true;
     }
-    else if (mapArgs["-rpcpassword"] == "")
+    else if (mapArgs["-rpcpassword"] == "" && vRPCAuth.empty())
     {
         unsigned char rand_pwd[32];
         GetRandBytes(rand_pwd, 32);
