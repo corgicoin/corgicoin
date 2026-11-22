@@ -197,6 +197,4 @@ BOOST_AUTO_TEST_SUITE_END()
 
 ## See Also
 
-- [Build Instructions](build-unix.txt) - General build guide
-- [CMake Build Instructions](../BUILD.cmake.md) - Modern CMake build
-- [Modernization Guide](../MODERNIZATION.md) - C++11 modernization status
+- [Build Instructions](../BUILD.cmake.md) - General build guide
