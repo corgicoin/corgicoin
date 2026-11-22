@@ -68,6 +68,7 @@ TESTS = [
     "rpc_testmempoolaccept.py",
     "rpc_prioritisetransaction.py",
     "rpc_mempool_policy.py",
+    "rpc_argument_fuzz.py",
     "rpc_standard_signatures.py",
     "rpc_invalidateblock.py",
     "rpc_invalidateblock_deep.py",
