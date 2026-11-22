@@ -292,6 +292,7 @@ std::string HelpMessage()
 #ifdef WIN32
         "  -printtodebugger       " + _("Send trace/debug info to debugger") + "\n" +
 #endif
+        "  -anchors=<0|1>         " + _("Keep up to two outbound peers across a restart (anchors.dat) and connect to them first (default: 1, 0 on regtest)") + "\n" +
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
         "  -rpcauth=<u>:<salt>$<hash> " + _("A login for JSON-RPC that holds no password: <hash> is the hex of HMAC-SHA256 of the password with <salt> as key (contrib/rpcauth.py makes the line). May be given more than once") + "\n" +
@@ -887,6 +888,7 @@ bool AppInit2()
            addrman.size(), GetTimeMillis() - nStart);
 
     LoadBanlist();
+    LoadAnchors();
 
     // ********************************************************* Step 10: start node
 

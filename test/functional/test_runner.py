@@ -70,6 +70,7 @@ TESTS = [
     "rpc_prioritisetransaction.py",
     "rpc_mempool_policy.py",
     "rpc_rpcauth.py",
+    "p2p_anchors.py",
     "rpc_standard_signatures.py",
     "rpc_invalidateblock.py",
     "rpc_invalidateblock_deep.py",

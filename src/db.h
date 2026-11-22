@@ -427,4 +427,16 @@ public:
     bool Read(std::map<CNetAddr, int64>& banMap);
 };
 
+/** anchors.dat: the outbound peers this node had when it was last stopped, tried first at the next start */
+class CAnchorDB
+{
+private:
+    std::filesystem::path pathAnchors;
+public:
+    CAnchorDB();
+    bool Write(const std::vector<CAddress>& vAnchors);
+    bool Read(std::vector<CAddress>& vAnchors);
+    void Remove();
+};
+
 #endif // BITCOIN_DB_H
