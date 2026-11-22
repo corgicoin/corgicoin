@@ -20,6 +20,7 @@ goes through the usual checks again.
 | Headers per message | 2000 | more is refused and scored |
 | Peers asked for the same headers at once | 3 | |
 | Side-branch headers held | 50000 | past it the lowest-work branches are dropped, leaf by leaf; nobody is scored |
+| Headers held that are not blocks | 1,000,000 | about ten times this chain's length, a few hundred MB at most; past it the same eviction, and a header that still finds no room is refused |
 | Fork depth | 2000 blocks from the validated tip | a header forking off further back is not followed and not scored |
 | Blocks in flight per peer | 64 | |
 | `-headersynctimeout` | 120 s | a peer that does not answer `getheaders` in this time is dropped |
