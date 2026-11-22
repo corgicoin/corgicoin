@@ -1633,10 +1633,13 @@ void ThreadOpenConnections2(void* parg)
         {
             const CAddress addrAnchor = vAnchors.back();
             vAnchors.pop_back();
-            if (!CNode::IsBanned(addrAnchor) && !FindNode((CNetAddr)addrAnchor))
+            // (on regtest every node is 127.0.0.1: a peer is told apart by its port, as addnode does)
+            const std::string strAnchor = addrAnchor.ToStringIPPort();
+            const bool fHave = fRegTest ? FindNode(strAnchor.c_str()) != nullptr : FindNode((CNetAddr)addrAnchor) != nullptr;
+            if (!CNode::IsBanned(addrAnchor) && !fHave)
             {
-                LogPrintf("Connecting to anchor peer %s\n", addrAnchor.ToStringIPPort().c_str());
-                OpenNetworkConnection(addrAnchor, &grant);
+                LogPrintf("Connecting to anchor peer %s\n", strAnchor.c_str());
+                OpenNetworkConnection(addrAnchor, &grant, fRegTest ? strAnchor.c_str() : nullptr);
             }
             continue;
         }
