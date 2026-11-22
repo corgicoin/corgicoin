@@ -50,8 +50,7 @@ class RPCAuthTest(CorgiTestFramework):
         self.log("only -rpcauth (no -rpcuser, no -rpcpassword): both users in, wrong ones out, no cookie file")
         node.stop()
         with open(os.path.join(node.datadir, "corgicoin.conf"), "w") as f:
-            f.write("regtest=1
-")
+            f.write("regtest=1\n")
         node.start(["-rpcauth=" + line_a, "-rpcauth=" + line_b, "-rpcauth=" + line_t])
         assert_equal(login(node, "alice", pass_a), 200)
         assert_equal(login(node, "bob", "bobs password"), 200)
