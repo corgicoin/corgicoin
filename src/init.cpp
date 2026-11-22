@@ -292,6 +292,7 @@ std::string HelpMessage()
 #ifdef WIN32
         "  -printtodebugger       " + _("Send trace/debug info to debugger") + "\n" +
 #endif
+        "  -anchors=<0|1>         " + _("Keep up to two outbound peers across a restart (anchors.dat) and connect to them first (default: 1, 0 on regtest)") + "\n" +
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
         "  -norpccookie           " + _("Without -rpcuser and -rpcpassword, refuse to serve RPC instead of making a cookie file (<datadir>/.cookie) the client reads") + "\n" +
@@ -878,6 +879,7 @@ bool AppInit2()
            addrman.size(), GetTimeMillis() - nStart);
 
     LoadBanlist();
+    LoadAnchors();
 
     // ********************************************************* Step 10: start node
 

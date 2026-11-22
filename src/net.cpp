@@ -1460,6 +1460,60 @@ void LoadBanlist()
     LogPrintf("Loaded %d banned addresses from banlist.dat\n", (int)banMap.size());
 }
 
+static constexpr size_t MAX_ANCHORS = 2;
+static std::vector<CAddress> vAnchors;   // read at start (before the connection thread runs); the connection thread takes from it
+static std::vector<CAddress> vAnchorsAtStop;
+
+// The outbound peers worth keeping: handshake done, not going away, not a one-shot or banned, and the longest connected first
+static std::vector<CAddress> ChooseAnchors()
+{
+    std::vector<std::pair<int64, CAddress> > vCandidates;
+    if (!GetBoolArg("-anchors", !fRegTest))
+        return std::vector<CAddress>();
+    {
+        LOCK(cs_vNodes);
+        for (CNode* pnode : vNodes)
+        {
+            if (pnode->fInbound || pnode->fOneShot || pnode->fDisconnect || pnode->nVersion == 0 || !pnode->fSuccessfullyConnected)
+                continue;
+            if (!pnode->addr.IsValid() || !(pnode->addr.IsRoutable() || fRegTest) || CNode::IsBanned(pnode->addr))
+                continue;
+            vCandidates.push_back(std::make_pair(pnode->nTimeConnected, pnode->addr));
+        }
+    }
+    std::sort(vCandidates.begin(), vCandidates.end(),
+              [](const std::pair<int64, CAddress>& a, const std::pair<int64, CAddress>& b) { return a.first < b.first; });
+    std::vector<CAddress> v;
+    for (size_t i = 0; i < vCandidates.size() && v.size() < MAX_ANCHORS; i++)
+        v.push_back(vCandidates[i].second);
+    return v;
+}
+
+void LoadAnchors()
+{
+    vAnchors.clear();
+    CAnchorDB db;
+    std::vector<CAddress> v;
+    if (GetBoolArg("-anchors", !fRegTest) && db.Read(v))
+    {
+        for (const CAddress& a : v)
+            if (a.IsValid() && vAnchors.size() < MAX_ANCHORS)
+                vAnchors.push_back(a);
+        LogPrintf("Loaded %d anchor peers from anchors.dat\n", (int)vAnchors.size());
+    }
+    // Gone once read: a node that is stopped hard, or whose anchors turned out bad, starts the next time without them
+    db.Remove();
+}
+
+static void DumpAnchors()
+{
+    if (vAnchorsAtStop.empty())
+        return;
+    CAnchorDB db;
+    if (db.Write(vAnchorsAtStop))
+        LogPrintf("Flushed %d anchor peers to anchors.dat\n", (int)vAnchorsAtStop.size());
+}
+
 void ThreadDumpAddress2(void* parg)
 {
     vnThreadsRunning[static_cast<int>(ThreadId::DumpAddress)]++;
@@ -1573,6 +1627,19 @@ void ThreadOpenConnections2(void* parg)
         vnThreadsRunning[static_cast<int>(ThreadId::OpenConnections)]++;
         if (fShutdown)
             return;
+
+        // The peers this node had when it was last stopped come first
+        if (!vAnchors.empty())
+        {
+            const CAddress addrAnchor = vAnchors.back();
+            vAnchors.pop_back();
+            if (!CNode::IsBanned(addrAnchor) && !FindNode((CNetAddr)addrAnchor))
+            {
+                LogPrintf("Connecting to anchor peer %s\n", addrAnchor.ToStringIPPort().c_str());
+                OpenNetworkConnection(addrAnchor, &grant);
+            }
+            continue;
+        }
 
         // Add seed nodes if no addresses are known yet
         if (addrman.size()==0 && (GetTime() - nStart > 60) && !fTestNet)
@@ -2087,6 +2154,7 @@ void StartNode(void* parg)
 bool StopNode()
 {
     LogPrintf("StopNode()\n");
+    vAnchorsAtStop = ChooseAnchors();   // before the connections are closed
     fShutdown = true;
     nTransactionsUpdated++;
     RPCAbortConnections();   // idle keep-alive clients would otherwise hold their handler threads, and this, forever
@@ -2134,6 +2202,7 @@ bool StopNode()
     }
     Sleep(50);
     DumpAddresses();
+    DumpAnchors();
     return true;
 }
 
