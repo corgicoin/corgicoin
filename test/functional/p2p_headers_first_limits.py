@@ -172,6 +172,8 @@ class HeadersFirstLimitsTest(CorgiTestFramework):
         self.connect_nodes(4, 5)
         wait_until(lambda: e.getblockcount() == f.getblockcount(), timeout=120, what="the honest chain (%d) to sync past the blob" % f.getblockcount())
         assert_equal(e.getbestblockhash(), f.getbestblockhash())
+        # the honest peer was asked while the blob was the best header: it must not have been scored for it
+        assert_equal([p["banscore"] for p in e.getpeerinfo() if p["banscore"] > 0], [])
 
 
 if __name__ == "__main__":
