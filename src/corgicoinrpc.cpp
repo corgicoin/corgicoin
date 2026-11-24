@@ -81,6 +81,15 @@ static bool ParseRPCAuth(const std::string& str, RPCAuthEntry& e)
         return false;
     return true;
 }
+bool AddRPCAuth(const std::string& str)
+{
+    RPCAuthEntry e;
+    if (!ParseRPCAuth(str, e))
+        return false;
+    vRPCAuth.push_back(e);
+    return true;
+}
+void ClearRPCAuth() { vRPCAuth.clear(); }
 static std::string strRPCCookieFile;   // set while the server authenticates with a cookie
 static CCriticalSection cs_rpcCookie;   // guards strRPCCookieFile: the RPC thread sets it, the shutdown thread clears it
 
@@ -4533,15 +4542,13 @@ void ThreadRPCServer2(void* parg)
     if (mapMultiArgs.count("-rpcauth"))
         for (const std::string& strAuth : mapMultiArgs["-rpcauth"])
         {
-            RPCAuthEntry e;
-            if (!ParseRPCAuth(strAuth, e))
+            if (!AddRPCAuth(strAuth))
             {
                 uiInterface.ThreadSafeMessageBox(_("-rpcauth is <user>:<salt>$<hash>, the hash being 64 hex digits (contrib/rpcauth.py makes one)"),
                     _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
                 StartShutdown();
                 return;
             }
-            vRPCAuth.push_back(e);
         }
     fRPCStaticLogin = mapArgs["-rpcpassword"] != "";
     if (mapArgs["-rpcpassword"] == "" && mapArgs["-rpcuser"] == "" && vRPCAuth.empty() && GetBoolArg("-rpccookie", true)) // -norpccookie is -rpccookie=0

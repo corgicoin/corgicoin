@@ -1,7 +1,7 @@
 // Fuzz targets: what a peer, an RPC caller or a file can hand the node as bytes.
 //
 // One binary, the target picked by the FUZZ_TARGET environment variable:
-//   block tx auxpow script json base58 bech32 burn address
+//   block tx auxpow script json base58 bech32 burn address rpcauth
 // Each target takes arbitrary bytes and must come back (any answer is fine) without a crash, a sanitizer report, a hang or an
 // uncaught exception that the real code would not catch. Built with clang and -fsanitize=fuzzer this is a libFuzzer binary
 // (-DBUILD_FUZZ=ON); built with anything else it is a small driver that replays a corpus and mutates it at random (see
@@ -12,6 +12,7 @@
 #include "base58.h"
 #include "bech32.h"
 #include "burnpayload.h"
+#include "corgicoinrpc.h"
 #include "json/json_compat.h"
 #include "serialize.h"
 
@@ -154,6 +155,28 @@ static void FuzzBurn(const std::vector<unsigned char>& v)
     burnpayload::DecodeScript(script, partner, dest);
 }
 
+// -rpcauth lines and the Authorization header of a request: up to 8 lines of input, each a -rpcauth value, and the rest is the
+// Authorization header; the lines go to the -rpcauth parser, then the header to the login check
+static void FuzzRPCAuth(const std::vector<unsigned char>& v)
+{
+    const std::string s(v.begin(), v.end());
+    ClearRPCAuth();
+    size_t pos = 0;
+    int n = 0;
+    while (pos < s.size() && n++ < 8)
+    {
+        size_t nl = s.find('\n', pos);
+        if (nl == std::string::npos)
+            break;
+        AddRPCAuth(s.substr(pos, nl - pos));
+        pos = nl + 1;
+    }
+    std::map<std::string, std::string> headers;
+    headers["authorization"] = s.substr(pos);
+    HTTPAuthorized(headers);
+    ClearRPCAuth();
+}
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
     static const char* pszTarget = getenv("FUZZ_TARGET");
@@ -169,9 +192,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
         else if (target == "base58" || target == "address") FuzzBase58(v);
         else if (target == "bech32") FuzzBech32(v);
         else if (target == "burn") FuzzBurn(v);
+        else if (target == "rpcauth") FuzzRPCAuth(v);
         else
         {
-            fprintf(stderr, "set FUZZ_TARGET to one of: block tx auxpow script json base58 bech32 burn\n");
+            fprintf(stderr, "set FUZZ_TARGET to one of: block tx auxpow script json base58 bech32 burn rpcauth\n");
             exit(2);
         }
     }
