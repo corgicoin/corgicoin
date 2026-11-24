@@ -44,6 +44,7 @@ TESTS = [
     "p2p_bad_subver.py",
     "p2p_maxconnections.py",
     "p2p_resource_limits.py",
+    "p2p_message_fuzz.py",
     "p2p_log_injection.py",
     "p2p_upload_target.py",
     "feature_chainstate_catchup.py",
