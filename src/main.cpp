@@ -3682,6 +3682,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CAddress addrMe;
         CAddress addrFrom;
         uint64 nNonce = 1;
+        // A version message that is cut short throws part-way, with nVersion already set: the peer would then pass the "version first" check
+        // below (and skip the check on the version number) without having been through any of this. It is turned away instead.
+        try
+        {
         vRecv >> pfrom->nVersion >> pfrom->nServices >> nTime >> addrMe;
         if (pfrom->nVersion < MIN_PROTO_VERSION)
         {
@@ -3705,6 +3709,14 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         }
         if (!vRecv.empty())
             vRecv >> pfrom->nStartingHeight;
+        }
+        catch (const std::exception&)
+        {
+            LogPrintf("partner %s sent a version message that is cut short; disconnecting\n", pfrom->addr.ToString().c_str());
+            pfrom->nVersion = 0;
+            pfrom->fDisconnect = true;
+            return false;
+        }
 
         // Dogecoin nodes use the same magic bytes as this chain, so they connect, take a slot, and can never agree on a block.
         // Turn them away by what they call themselves (a different chain's node that hides its name is not caught here).
