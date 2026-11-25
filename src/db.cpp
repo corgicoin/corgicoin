@@ -1014,3 +1014,28 @@ bool CBanDB::Read(std::map<CNetAddr, int64>& banMap)
     return ReadChecksummedFile(pathBanlist, "banlist.dat", banMap);
 }
 
+//
+// CAnchorDB
+//
+
+CAnchorDB::CAnchorDB()
+{
+    pathAnchors = GetDataDir() / "anchors.dat";
+}
+
+bool CAnchorDB::Write(const std::vector<CAddress>& vAnchors)
+{
+    return WriteChecksummedFile(pathAnchors, "anchors.dat", vAnchors);
+}
+
+bool CAnchorDB::Read(std::vector<CAddress>& vAnchors)
+{
+    return ReadChecksummedFile(pathAnchors, "anchors.dat", vAnchors);
+}
+
+void CAnchorDB::Remove()
+{
+    std::error_code ec;
+    std::filesystem::remove(pathAnchors, ec);
+}
+

@@ -43,6 +43,7 @@ constexpr unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
 constexpr unsigned int MAX_ORPHAN_BLOCKS = 750;
 constexpr unsigned int MAX_ORPHAN_BLOCKS_BYTES = 32 * MAX_BLOCK_SIZE;
 constexpr unsigned int MAX_LOCATOR_SZ = 101;                    // hashes in a block locator from a peer (an honest one has about 30)
+constexpr int MAX_GETHEADERS_BURST = 100;                          // getheaders answered at once for a peer; then one a second
 constexpr int64 MIN_TX_FEE = 100000000;
 constexpr int64 MIN_RELAY_TX_FEE = MIN_TX_FEE;
 constexpr int64 MAX_MONEY = 10000000000 * COIN;
@@ -68,6 +69,7 @@ extern int nBestHeight;
 extern CBigNum bnBestChainWork;
 /** -minimumchainwork: a chain with less total work than this is never taken for the real, finished one (0: no floor). */
 extern CBigNum bnMinimumChainWork;
+static const char* const MAINNET_MINIMUM_CHAIN_WORK = "29990c451eb92";   // total work of mainnet block 80000 (hash b9d09330ebf52c48015511933586fa4a01e50e401f6c5219bd9cf404f67e6674), see doc/minimum-chain-work.md
 extern CBigNum bnBestInvalidWork;
 extern std::set<uint256> setInvalidatedBlocks;
 extern uint256 hashBestChain;

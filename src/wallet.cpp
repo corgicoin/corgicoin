@@ -1388,8 +1388,11 @@ void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
             LOCK(pwallet->cs_wallet);
             map<uint256, const CMerkleTx*> mapWalletPrev;
             set<uint256> setAlreadyDone;
-            for (const auto& hash : vWorkQueue)
+            // by index, and a copy of the hash: the queue grows below, and a push_back that reallocates it leaves a range-for iterator (and a
+            // reference to an element) pointing at freed memory
+            for (size_t iQueue = 0; iQueue < vWorkQueue.size(); iQueue++)
             {
+                const uint256 hash = vWorkQueue[iQueue];
                 if (setAlreadyDone.count(hash))
                     continue;
                 setAlreadyDone.insert(hash);

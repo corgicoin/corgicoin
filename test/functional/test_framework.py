@@ -180,7 +180,9 @@ class TestNode:
         self._exit_noted = False
         self._killed = False
         self._abnormal_exit = False
-        self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=self.stderr_file)
+        # run in the datadir: an RPC given a relative path (a test passing junk to exportwalletencrypted, say) writes there, not into the checkout
+        args[0] = os.path.abspath(args[0])
+        self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=self.stderr_file, cwd=self.datadir)
         self.wait_for_rpc()
 
     def wait_for_rpc(self, timeout=60):
