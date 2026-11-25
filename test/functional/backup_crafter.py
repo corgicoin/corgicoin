@@ -10,6 +10,8 @@ import ctypes
 import ctypes.util
 import hashlib
 import json
+import os
+import sys
 
 MAGIC = b"CORGIBK1"
 TAG_LEN = 16
@@ -20,8 +22,19 @@ def _load():
     global _lib
     if _lib is not None:
         return _lib
-    for name in (ctypes.util.find_library("crypto"), "libcrypto.so.3", "libcrypto.so.1.1", "libcrypto.3.dylib", "libcrypto.dylib"):
-        if not name:
+    # Only versioned libraries. On macOS an unversioned libcrypto.dylib (what find_library("crypto") returns there: /usr/lib's) is
+    # refused by the system with abort(), which kills the interpreter outright rather than raising OSError, so it is never tried.
+    # On macOS a Homebrew or MacPorts OpenSSL 3 is looked for by path.
+    candidates = ["libcrypto.so.3", "libcrypto.so.1.1"]
+    if sys.platform == "darwin":
+        candidates += ["/opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib", "/usr/local/opt/openssl@3/lib/libcrypto.3.dylib",
+                       "/opt/local/lib/libcrypto.3.dylib"]
+    else:
+        found = ctypes.util.find_library("crypto")
+        if found:
+            candidates.insert(0, found)
+    for name in candidates:
+        if sys.platform == "darwin" and not os.path.exists(name):
             continue
         try:
             lib = ctypes.CDLL(name)
