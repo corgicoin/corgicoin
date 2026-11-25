@@ -9,26 +9,45 @@ peer that fed the node a cheap chain first (all it needs is more work than the f
   1. A first peer gives a chain of 2100 headers; it is the best header.
   2. A second peer on another chain of 2200 gives its first 2000: the node must not score it, and must ask it for the rest (so no 'no higher
      than where we asked' line in the log); its chain, now the heavier, is asked for blocks.
+
+The chains are made of headers with their proof of work ground out here (regtest is easy), not mined blocks: mining thousands of blocks in
+seconds runs the block times ahead of the clock until the LWMA limit on the future refuses the next one.
 """
+import hashlib
+
 from mininode import P2PConnection
-from p2p_headers_first import header_bytes, varint
+from p2p_headers_first import varint
+from p2p_headers_first_limits import grind, header_hash
 from test_framework import CorgiTestFramework, assert_equal, wait_until
 
 X_LEN, Y_LEN = 2100, 2200
+CHAIN_ID = 0x00C6
+REGTEST_FORK_HEIGHT = 200          # from here every block carries the chain ID in its version
+
+
+def make_chain(tag, length, genesis):
+    bits = int(genesis["bits"], 16)
+    headers, prev, t = [], genesis["hash"], genesis["time"]
+    for i in range(1, length + 1):
+        t += 1
+        version = genesis["version"] if i < REGTEST_FORK_HEIGHT else (CHAIN_ID << 16) | 1
+        h = grind(version, prev, hashlib.sha256(("%s/%d" % (tag, i)).encode()).digest(), t, bits)
+        headers.append(h + b"\x00")
+        prev = header_hash(h)
+    return headers
 
 
 class ForkScoreTest(CorgiTestFramework):
-    num_nodes = 3
-    extra_args = [[], [], ["-headersfirst=1"]]
+    num_nodes = 1
+    extra_args = [["-headersfirst=1"]]
 
     def run_test(self):
-        a, b, node = self.nodes
-        self.log("two chains from the first block: %d and %d" % (X_LEN, Y_LEN))
-        a.generate(X_LEN)
-        b.generate(Y_LEN)
-        assert a.getblockhash(1) != b.getblockhash(1)
-        hx = [header_bytes(a, a.getblockhash(i)) for i in range(1, X_LEN + 1)]
-        hy = [header_bytes(b, b.getblockhash(i)) for i in range(1, Y_LEN + 1)]
+        node = self.nodes[0]
+        genesis = node.getblock(node.getblockhash(0))
+        self.log("two chains from the first block: %d and %d headers" % (X_LEN, Y_LEN))
+        hx = make_chain("x", X_LEN, genesis)
+        hy = make_chain("y", Y_LEN, genesis)
+        assert hx[0] != hy[0]
 
         self.log("a first peer gives its whole chain: it is the best header")
         x = P2PConnection(node.p2p_port, start_height=X_LEN)
