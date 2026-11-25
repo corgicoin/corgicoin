@@ -9,6 +9,8 @@
 # '#' in it (it starts a comment). corgicoind refuses to run with the example value below.
 rpcuser=corgirpc
 #rpcpassword=CHANGE_THIS_PASSWORD
+# or, with no password in this file: run contrib/rpcauth.py <user> and paste the rpcauth= line it prints
+#rpcauth=<user>:<salt>$<hash>
 
 # RPC port (default 62555). RPC listens on the loopback addresses only, unless rpcallowip is set, which opens
 # the port on every network interface (and serves only the allowed addresses). Add rpcbind to listen on one

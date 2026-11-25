@@ -58,6 +58,9 @@ void StartNode(void* parg);
 // banlist.dat persistence: load at startup; dump writes only if bans changed
 void LoadBanlist();
 void DumpBanlist();
+// anchors.dat: up to two outbound peers kept across a restart, tried before any other address (so a restart does not hand a
+// connection slot to whoever an attacker put into the address table). Read, and the file removed, at start; written at stop.
+void LoadAnchors();
 bool StopNode();
 
 enum class Local
@@ -272,6 +275,8 @@ protected:
 
 public:
     int64 nReleaseTime;
+    double dGetHeadersTokens;     // getheaders answered for this peer: a bucket of MAX_GETHEADERS_BURST, refilled one a second (see ProcessMessage)
+    int64 nGetHeadersTokensTime;
     std::map<uint256, CRequestTracker> mapRequests;
     CCriticalSection cs_mapRequests;
     uint256 hashContinue;
@@ -346,6 +351,8 @@ public:
         nStartingHeight = -1;
         fGetAddr = false;
         nMisbehavior = 0;
+        dGetHeadersTokens = 100;
+        nGetHeadersTokensTime = 0;
         nSendBytes = 0;
         nRecvBytes = 0;
         nPingNonceSent = 0;

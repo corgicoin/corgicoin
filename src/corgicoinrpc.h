@@ -20,6 +20,10 @@
 json_spirit::Object JSONRPCError(int code, const std::string& message);
 
 void ThreadRPCServer(void* parg);
+// -rpcauth lines (the fuzz target feeds these and HTTP Authorization headers in)
+bool AddRPCAuth(const std::string& str);
+void ClearRPCAuth();
+bool HTTPAuthorized(std::map<std::string, std::string>& mapHeaders);
 /** Wake RPC handler threads that are blocked reading an idle connection, so they notice the shutdown. */
 void RPCAbortConnections();
 // Remove the cookie file (see -rpcuser): at shutdown, and at once if the server thread has not got that far

@@ -29,4 +29,4 @@ Mac built from the README therefore does not match the shipped app, and a data d
   with an older (or equal) version to one with a newer one, never the other way, and keep a copy first.
 * Unifying the versions has to move users only to **newer** versions, or has to read each old wallet with the Berkeley DB that wrote it and move
   it to a format that does not depend on one (for example SQLite, as Bitcoin Core did), leaving Berkeley DB for the block index, which
-  `-reindex` can always rebuild.
+  can always be rebuilt by importing the blocks again (`-loadblock=<file>`, or a fresh sync).

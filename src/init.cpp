@@ -292,8 +292,10 @@ std::string HelpMessage()
 #ifdef WIN32
         "  -printtodebugger       " + _("Send trace/debug info to debugger") + "\n" +
 #endif
+        "  -anchors=<0|1>         " + _("Keep up to two outbound peers across a restart (anchors.dat) and connect to them first (default: 1, 0 on regtest)") + "\n" +
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
+        "  -rpcauth=<u>:<salt>$<hash> " + _("A login for JSON-RPC that holds no password: <hash> is the hex of HMAC-SHA256 of the password with <salt> as key (contrib/rpcauth.py makes the line). May be given more than once") + "\n" +
         "  -norpccookie           " + _("Without -rpcuser and -rpcpassword, refuse to serve RPC instead of making a cookie file (<datadir>/.cookie) the client reads") + "\n" +
         "  -rpcmaxauthfailures=<n> " + _("Refuse a client address for a minute after <n> failed logins (default: 20)") + "\n" +
         "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 62555)") + "\n" +
@@ -307,7 +309,8 @@ std::string HelpMessage()
         "  -blockmaxsize=<n>      " + _("Largest block, in bytes, this node makes (default: the most it may, 500000)") + "\n" +
         "  -blockprioritysize=<n> " + _("Bytes of each block it fills with the highest-priority (old, large-valued) transactions before it goes by fee per byte (default: 27000)") + "\n" +
         "  -maxinboundpergroup=<n> " + _("Accept at most n inbound connections from one network group (the /16 of an IPv4 address); 0: no limit (default: 0)") + "\n" +
-        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: no floor)") + "\n" +
+        "  -minimumchainwork=<hex> " + _("A chain with less total work than this (as chainwork in getblockchaininfo) is never taken for a finished sync (default: the work of mainnet block 80000; none on testnet and regtest; 0 turns it off, see doc/minimum-chain-work.md)") + "\n" +
+        "  -maxreorgdepth=<n>     " + _("Never take a chain with more work that would remove more than <n> blocks from this node's chain (default: 0, no limit). A node that sets it stays on its own chain when a longer one forks further back, which protects against a deep reorganisation by someone with rented hash power but splits it from the network if that chain is the honest one; see doc/reorg-depth.md") + "\n" +
         "  -maxuploadtarget=<MiB> " + _("Try to keep what the node sends in 24 hours under this many MiB: past 90% it stops serving blocks a week older than the tip (and lets the peers that ask go); new blocks are always sent (default: 0, no limit)") + "\n" +
         "  -feefilter=<n>         " + _("Ask peers (protocol 70013) not to announce transactions that pay less than n satoshi per kB; 0 asks nothing (default: 0)") + "\n" +
         "  -coinsvalidate         " + _("Check the inputs of a block against the unspent-output database (chainstate) instead of reading the transactions they spend from the block files (regtest only in this release, default: 0; the database is checked against the index either way, see gettxoutsetinfo)") + "\n" +
@@ -511,6 +514,13 @@ bool AppInit2()
         if (strWork.empty() || strWork.size() > 64 || strWork.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
             return InitError(strprintf(_("Invalid -minimumchainwork=<hex>: '%s'"), strWork.c_str()));
         bnMinimumChainWork.SetHex(strWork);
+    }
+    else if (!fTestNet && !fRegTest)
+    {
+        // Mainnet: a floor a few days behind the tip when it was set (block 80000, b9d09330ebf52c48015511933586fa4a01e50e401f6c5219bd9cf404f67e6674).
+        // A node whose best chain has less work than this never counts itself synced, so a chain someone makes up cheaply cannot make a new
+        // node think it has caught up. -minimumchainwork=0 turns it off. See doc/minimum-chain-work.md for how it is set and renewed.
+        bnMinimumChainWork.SetHex(MAINNET_MINIMUM_CHAIN_WORK);
     }
 
     if (mapArgs.count("-maxuploadtarget"))
@@ -881,6 +891,7 @@ bool AppInit2()
            addrman.size(), GetTimeMillis() - nStart);
 
     LoadBanlist();
+    LoadAnchors();
 
     // ********************************************************* Step 10: start node
 

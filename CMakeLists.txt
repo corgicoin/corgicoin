@@ -668,6 +668,8 @@ if(BUILD_TESTS)
         src/test/uint256_tests.cpp
         src/test/util_tests.cpp
         src/test/mempool_replace_tests.cpp
+        src/test/pool_conflict_tests.cpp
+        src/test/sigverify_tests.cpp
         src/test/wallet_tests.cpp
         src/test/wallet_crypto_tests.cpp
         src/test/scrypt_tests.cpp
