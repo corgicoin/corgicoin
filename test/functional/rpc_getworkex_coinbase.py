@@ -37,9 +37,14 @@ class GetworkexCoinbaseTest(CorgiTestFramework):
             assert_equal(node.getblockcount(), height)
 
         self.log("the template is not changed by what was refused: the same coinbase script, and the work can still be submitted")
-        final = node.getworkex()
-        assert_equal(final["merkle"], template["merkle"])
-        assert_equal(node.getworkex(final["data"], final["coinbase"]), True)     # regtest target: any hash is good enough
+        assert_equal(node.getworkex()["merkle"], template["merkle"])
+        # the regtest target takes about half of all hashes, and every template has its own extra nonce, so a few tries are enough
+        for _ in range(40):
+            work = node.getworkex()
+            if node.getworkex(work["data"], work["coinbase"]) is True:
+                break
+        else:
+            raise AssertionError("no submission of a good coinbase was accepted in 40 tries")
         assert_equal(node.getblockcount(), height + 1)
 
 
