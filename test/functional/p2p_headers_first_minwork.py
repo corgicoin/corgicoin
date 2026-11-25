@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Headers-first: no blocks are asked for from a peer whose header chain has less work than -minimumchainwork.
 
-The headers of such a chain are kept and checked as any others and nobody is scored for them, but the node does not fetch its blocks, so a
-chain made up cheaply never reaches ProcessBlock. Once a peer shows a chain with at least the floor's work, its blocks are asked for.
+The headers of such a chain are kept and checked as any others and nobody is scored for them, but headers-first does not fetch its blocks.
+(A block announced with inv, sent unasked, or asked for the old way is handled as before and is not covered.) Once a peer shows a chain
+with at least the floor's work, its blocks are asked for.
 
   1. -minimumchainwork is set to the work of block 70. A peer gives the headers of blocks 1 to 40: they are held (header_only_entries 40), no
      getdata goes to the peer, it is not scored, and the node stays at height 0.

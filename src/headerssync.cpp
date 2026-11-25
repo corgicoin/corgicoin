@@ -625,8 +625,8 @@ void HeadersFirstSendMessages(CNode* pto)
     if (!pto->pindexBestKnown || pto->pindexBestKnown->fFailedChain || pto->pindexBestKnown->bnChainWork <= pindexBest->bnChainWork)
         return;
     // 3a. no blocks for a header chain with less work than the floor (-minimumchainwork; on mainnet the work of block 80000). Its headers are kept
-    //     and more are asked for as before, nobody is scored for it, but a chain that someone made up cheaply never has its blocks fetched and never
-    //     reaches ProcessBlock. An honest initial sync takes the headers past the floor first, then the blocks. With -minimumchainwork=0 (the default
+    //     and more are asked for as before, nobody is scored for it, but headers-first does not fetch the blocks of a chain that someone made up
+    //     cheaply (blocks announced with inv, sent unasked, or asked for the old way are handled as before). An honest initial sync takes the headers past the floor first, then the blocks. With -minimumchainwork=0 (the default
     //     on testnet and regtest) every chain is eligible, as before.
     if (pto->pindexBestKnown->bnChainWork < bnMinimumChainWork)
     {
