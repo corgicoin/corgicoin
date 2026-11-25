@@ -4484,14 +4484,32 @@ static void RPCAcceptHandler(std::shared_ptr< basic_socket_acceptor<Protocol> > 
 {
     vnThreadsRunning[static_cast<int>(ThreadId::RpcListener)]++;
 
-    // Immediately start accepting new connections, except when we're canceled or our socket is closed.
+    // A failed accept is logged (at most every 10 seconds, with how many failed since). When the process or the system is
+    // out of file descriptors or memory, accepting again at once only fails again at once: wait a little first, so the
+    // listener does not spin a core while the descriptors are in use.
+    if (error && error != asio::error::operation_aborted)
+    {
+        static int64 nLastLog = 0;
+        static int nSinceLog = 0;
+        nSinceLog++;
+        if (GetTime() - nLastLog >= 10)
+        {
+            LogPrintf("RPC accept failed: %s (%d since the last message)\n", error.message().c_str(), nSinceLog);
+            nLastLog = GetTime();
+            nSinceLog = 0;
+        }
+        if (error == asio::error::no_descriptors || error == asio::error::no_buffer_space || error == asio::error::no_memory
+         || error == boost::system::errc::too_many_files_open_in_system)
+            Sleep(100);
+    }
+
+    // Start accepting new connections again, except when we're canceled or our socket is closed.
     if (error != asio::error::operation_aborted
      && acceptor->is_open())
         RPCListen(acceptor, context, fUseSSL);
 
     AcceptedConnectionImpl<ip::tcp>* tcp_conn = dynamic_cast< AcceptedConnectionImpl<ip::tcp>* >(conn);
 
-    // TODO: Actually handle errors
     if (error)
     {
         delete conn;
