@@ -11,7 +11,7 @@ import random
 
 from test_framework import CorgiTestFramework, JSONRPCException, assert_equal
 
-SKIP = {"stop", "setgenerate", "dumpwallet", "importwallet", "backupwallet", "exportbootstrap", "importbootstrap",
+SKIP = {"stop", "setgenerate", "dumpwallet", "importwallet", "backupwallet", "exportwalletencrypted", "importwalletencrypted", "exportbootstrap", "importbootstrap",
         "walletpassphrasechange", "encryptwallet", "dumpprivkey", "keypoolrefill", "rescanblockchain", "generate", "generatetoaddress", "generateblock"}
 
 POOL = [
