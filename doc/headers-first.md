@@ -37,6 +37,15 @@ A peer that does not answer a `getheaders` is dropped, and **two other peers** t
 A peer that answered with too few headers while it claims a longer chain than ours, with the tip unmoved for a timeout, is asked for blocks
 the old way now and then. So a node is never held still by peers that answer pings and nothing else.
 
+## The floor for blocks (`-minimumchainwork`)
+
+Headers are taken, checked and held whatever their work, but **no block is asked for from a peer whose best header chain has less work than
+`-minimumchainwork`** (on mainnet the work of block 80000, see `minimum-chain-work.md`). A chain someone made up cheaply keeps its headers
+(bounded as above) and never has its blocks downloaded, so it never reaches `ProcessBlock`. Nobody is scored for it, and the node goes on asking
+for headers from this peer and the others. An honest initial sync is not slowed: the headers come first, a few dozen messages, and the blocks
+are asked for once the chain they belong to has passed the floor. With `-minimumchainwork=0` (the default on testnet and regtest) every chain is
+eligible. The old `getblocks` fallback for a silent peer is not affected.
+
 ## Interaction with other options
 
 - `-testmaxbranchheaders` and `-testmaxforkdepth` lower the two caps in regtest only (for the tests).
@@ -44,6 +53,6 @@ the old way now and then. So a node is never held still by peers that answer pin
 
 ## Tests
 
-`p2p_headers_first.py` (sync from two peers, bad headers refused, replay, a peer that never sends the blocks), `p2p_headers_first_limits.py`
+`p2p_headers_first.py` (sync from two peers, bad headers refused, replay, a peer that never sends the blocks), `p2p_headers_first_minwork.py` (no blocks for a chain below `-minimumchainwork`), `p2p_headers_first_limits.py`
 (AuxPoW headers, the side-branch cap, the fork depth, a low-work chain that must not shut out the honest one), `p2p_headers_first_stalls.py`,
 `p2p_headers_first_reorg.py`, `_latepeer.py` and `_oldpeer.py`.

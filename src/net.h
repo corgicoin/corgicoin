@@ -319,6 +319,7 @@ public:
     int64 nHeadersRetryTime;                        // do not ask it for headers again before this (it sent a header that failed a time check)
     int64 nShortAnswerTime;                         // when it last answered for headers with none although it claims a longer chain (0: it has not)
     int nHeadersAskedFrom;                          // the height of the header the request it has not answered started from (an answer must get past it)
+    bool fMinWorkHeld;                              // its best known header chain has less work than -minimumchainwork: no blocks are asked for (logged once)
     int64 nHeadersFallbackUntil;                    // until then this peer is synced the old way (getblocks), because a silent peer made us ask it
     std::map<uint256, int64> mapBlocksInFlight;     // block hash -> when we asked it for the block
     bool fPingQueued;          // `ping` RPC asked for an immediate ping
@@ -369,6 +370,7 @@ public:
         nHeadersRetryTime = 0;
         nShortAnswerTime = 0;
         nHeadersAskedFrom = 0;
+        fMinWorkHeld = false;
         nHeadersFallbackUntil = 0;
         setInventoryKnown.max_size(SendBufferSize() / 1000);
         setAddrKnown.max_size(5000);

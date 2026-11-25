@@ -624,6 +624,20 @@ void HeadersFirstSendMessages(CNode* pto)
     // 3. blocks of the best header chain this peer has, a window ahead of our tip, that nobody is bringing yet
     if (!pto->pindexBestKnown || pto->pindexBestKnown->fFailedChain || pto->pindexBestKnown->bnChainWork <= pindexBest->bnChainWork)
         return;
+    // 3a. no blocks for a header chain with less work than the floor (-minimumchainwork; on mainnet the work of block 80000). Its headers are kept
+    //     and more are asked for as before, nobody is scored for it, but a chain that someone made up cheaply never has its blocks fetched and never
+    //     reaches ProcessBlock. An honest initial sync takes the headers past the floor first, then the blocks. With -minimumchainwork=0 (the default
+    //     on testnet and regtest) every chain is eligible, as before.
+    if (pto->pindexBestKnown->bnChainWork < bnMinimumChainWork)
+    {
+        if (!pto->fMinWorkHeld)
+        {
+            pto->fMinWorkHeld = true;
+            LogPrintf("headers-first: %s has headers up to %d with less work than -minimumchainwork: not asking it for blocks\n", pto->addr.ToString().c_str(), pto->pindexBestKnown->nHeight);
+        }
+        return;
+    }
+    pto->fMinWorkHeld = false;
     const int nPeerHeight = pto->pindexBestKnown->nHeight;
     if (nPeerHeight >= (int)vHeaderChain.size() || !SameBlock(vHeaderChain[nPeerHeight], pto->pindexBestKnown))
         return;                         // it is on another branch than the one we are following; the old getblocks path serves that
