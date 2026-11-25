@@ -53,6 +53,7 @@ TESTS = [
     "feature_coinsvalidate_blocks.py",
     "feature_signature_variants.py",
     "feature_chainstate_stale.py",
+    "rpc_getworkex_coinbase.py",
     "rpc_createauxblock.py",
     "rpc_createauxblock_cache.py",
     "feature_auxpow.py",
