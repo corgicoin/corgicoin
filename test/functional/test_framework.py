@@ -23,6 +23,7 @@ import tempfile
 import time
 import re
 import traceback
+import zlib
 from decimal import Decimal
 
 RPC_USER = "corgitest"
@@ -57,7 +58,9 @@ def free_port():
     a block of its own below that range, picked from its process id, and checks that it can bind each one.
     """
     if _port_window["next"] is None:
-        _port_window["next"] = 12000 + (os.getpid() % 400) * 40
+        # A window of 40 ports, picked from the process id and the time. The id alone gave only 100 different windows on Windows (ids are
+        # multiples of 4), so tests running side by side shared one now and then, and one node could not bind a port the other had taken.
+        _port_window["next"] = 12000 + (zlib.crc32(("%d/%d" % (os.getpid(), time.time_ns())).encode()) % 500) * 40
     while True:
         port = _port_window["next"]
         _port_window["next"] = port + 1 if port < 31900 else 12000
@@ -190,8 +193,14 @@ class TestNode:
         while time.time() < deadline:
             if self.process.poll() is not None:
                 self._exit_noted = True   # the test is told by the exception (some expect a refusal to start)
-                raise AssertionFailed("node%d exited during startup (code %s); see %s"
-                                      % (self.index, self.process.returncode, self.debug_log))
+                # what the node said on its way out (a port it could not bind, a refused option) goes to stderr, not to debug.log
+                try:
+                    with open(self.stderr_log, errors="replace") as f:
+                        said = f.read()[-600:].strip()
+                except OSError:
+                    said = ""
+                raise AssertionFailed("node%d exited during startup (code %s); see %s%s"
+                                      % (self.index, self.process.returncode, self.debug_log, ("; stderr: " + said) if said else "; stderr was empty"))
             try:
                 self.rpc.getblockcount()
                 return
