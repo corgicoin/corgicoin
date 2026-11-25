@@ -1636,7 +1636,9 @@ void ThreadOpenConnections2(void* parg)
             // (on regtest every node is 127.0.0.1: a peer is told apart by its port, as addnode does)
             const std::string strAnchor = addrAnchor.ToStringIPPort();
             const bool fHave = fRegTest ? FindNode(strAnchor.c_str()) != nullptr : FindNode((CNetAddr)addrAnchor) != nullptr;
-            if (!CNode::IsBanned(addrAnchor) && !fHave)
+            // an anchor is held to what -onlynet allows, like any other outbound address: one saved while the node ran on another
+            // network is dropped, not dialled
+            if (!CNode::IsBanned(addrAnchor) && !fHave && !IsLimited(addrAnchor))
             {
                 LogPrintf("Connecting to anchor peer %s\n", strAnchor.c_str());
                 OpenNetworkConnection(addrAnchor, &grant, fRegTest ? strAnchor.c_str() : nullptr);
