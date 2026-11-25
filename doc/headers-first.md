@@ -23,12 +23,14 @@ goes through the usual checks again.
 | Headers held that are not blocks | 1,000,000 | about ten times this chain's length, a few hundred MB at most; past it the same eviction, and a header that still finds no room is refused |
 | Fork depth | 2000 blocks from the validated tip | a header forking off further back is not followed and not scored |
 | Blocks in flight per peer | 64 | |
+| A block asked of one peer and not delivered | 10 s | asked of a second peer as well (never a third), so that peers sitting on their requests cannot hold the window for the whole `-blocktimeout` |
 | `-headersynctimeout` | 120 s | a peer that does not answer `getheaders` in this time is dropped |
 | `-blocktimeout` | 120 s | a peer that holds a requested block this long is dropped |
 
 A header that fails a check is scored like any bad input (a bad proof of work, a wrong difficulty, a header that does not connect). A header
 the node will not keep for a reason that is not the peer's fault (too deep a fork, no room) is refused without a score. A peer that answers a
-request with headers the node already has, over and over, is scored and not asked again.
+request with headers the node already has, over and over, is scored and not asked again. (A full answer that holds headers the node did not have is progress, even
+when it ends below where the request started: a peer on another chain answers from the fork point.)
 
 ## When a peer is silent
 
@@ -54,6 +56,6 @@ eligible. The old `getblocks` fallback for a silent peer is not affected.
 
 ## Tests
 
-`p2p_headers_first.py` (sync from two peers, bad headers refused, replay, a peer that never sends the blocks), `p2p_headers_first_minwork.py` (no blocks for a chain below `-minimumchainwork`), `p2p_headers_first_limits.py`
+`p2p_headers_first.py` (sync from two peers, bad headers refused, replay, a peer that never sends the blocks), `p2p_headers_first_minwork.py` (no blocks for a chain below `-minimumchainwork`), `p2p_headers_first_forkscore.py` (an honest peer on another chain is not scored as a replay), `p2p_headers_first_rerequest.py` (a block one peer sits on is asked of a second), `p2p_headers_first_limits.py`
 (AuxPoW headers, the side-branch cap, the fork depth, a low-work chain that must not shut out the honest one), `p2p_headers_first_stalls.py`,
 `p2p_headers_first_reorg.py`, `_latepeer.py` and `_oldpeer.py`.

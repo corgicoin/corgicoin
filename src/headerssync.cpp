@@ -313,6 +313,28 @@ void PushGetHeaders(CNode* pto, CBlockIndex* pindexFrom)
 }
 
 // every block asked of any peer and not yet received
+// A block asked of one peer and not delivered in this time is asked of a second peer as well (not of a third), so that peers that take
+// slots of the window and sit on them cannot hold sync still for the whole of -blocktimeout: with them gone after that, they would come back.
+constexpr int64 BLOCK_REREQUEST_SECONDS = 10;
+
+// how many peers have this block in flight, and since when the longest-waiting of them has been asked
+int BlockRequestedFrom(const uint256& hash, int64& nOldest)
+{
+    LOCK(cs_vNodes);
+    int n = 0;
+    nOldest = 0;
+    for (CNode* pnode : vNodes)
+    {
+        auto it = pnode->mapBlocksInFlight.find(hash);
+        if (it == pnode->mapBlocksInFlight.end())
+            continue;
+        if (n == 0 || it->second < nOldest)
+            nOldest = it->second;
+        n++;
+    }
+    return n;
+}
+
 std::set<uint256> BlocksInFlight()
 {
     std::set<uint256> setInFlight;
@@ -414,11 +436,15 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
     }
 
     CBlockIndex* pindexLast = nullptr;
+    unsigned int nNewHeaders = 0;                   // headers in this message that we did not hold before
     for (const CBlock& hdr : vHeaders)
     {
         CBlockIndex* pindex = nullptr;
         int nDoS = 0;
+        const bool fHeld = LookupAnyIndex(hdr.GetHash()) != nullptr;
         const HeaderResult r = AcceptHeader(hdr, &pindex, nDoS);
+        if (r == HEADER_OK && !fHeld)
+            nNewHeaders++;
         if (r == HEADER_UNCONNECTED)
         {
             // what we were sent starts somewhere we do not know: answer with where we are, and count it
@@ -456,10 +482,12 @@ bool ProcessHeadersMessage(CNode* pfrom, CDataStream& vRecv)
     pfrom->nUnconnectingHeaders = 0;
     if (pindexLast && vHeaders.size() < MAX_HEADERS_RESULTS && pfrom->nStartingHeight > pindexLast->nHeight)
         pfrom->nShortAnswerTime = GetTime();        // an answer that ends short of the chain it claims
-    // A full answer that ends no higher than where the request started is not progress (the same known headers sent again, whatever the
-    // locator): such a peer would otherwise answer for ever, each reply starting the next request and the timeout over, and hold one of the
-    // few header slots. Not asked again, and scored.
-    if (fAsked && vHeaders.size() == MAX_HEADERS_RESULTS && pindexLast && pindexLast->nHeight <= pfrom->nHeadersAskedFrom)
+    // A full answer that holds nothing we did not have and ends no higher than where the request started is not progress (the same known
+    // headers sent again, whatever the locator): such a peer would otherwise answer for ever, each reply starting the next request and the
+    // timeout over, and hold one of the few header slots. Not asked again, and scored. An answer with headers that are new to us is progress
+    // even when it ends lower: a peer on another chain, forked off further back than our best header is high, answers from the fork
+    // point, and ends below where we asked from (a cheap chain that is our best header must not make an honest peer look like a replay).
+    if (fAsked && vHeaders.size() == MAX_HEADERS_RESULTS && pindexLast && pindexLast->nHeight <= pfrom->nHeadersAskedFrom && nNewHeaders == 0)
     {
         pfrom->Misbehaving(20);
         LogPrintf("headers-first: %s sent %u headers that end at %d, no higher than where we asked from (%d): not asked again\n",
@@ -654,14 +682,26 @@ void HeadersFirstSendMessages(CNode* pto)
 
     const std::set<uint256> setInFlight = BlocksInFlight();
     std::vector<CInv> vGetData;
+    unsigned int nAgain = 0;                        // of those, blocks that another peer was asked for long ago
     for (int h = nFirst; h < nEnd && pto->mapBlocksInFlight.size() + vGetData.size() < MAX_BLOCKS_IN_FLIGHT_PER_PEER; h++)
     {
         const uint256 hash = *vHeaderChain[h]->phashBlock;
-        if (mapBlockIndex.count(hash) || IsOrphanBlock(hash) || setInFlight.count(hash))
+        if (mapBlockIndex.count(hash) || IsOrphanBlock(hash))
             continue;
+        if (setInFlight.count(hash))
+        {
+            // asked of one other peer, a while ago, and not delivered: this peer may hold it up as well, so that a peer that sits on its requests
+            // (and may hold many of the window's slots) cannot stop the others from taking the blocks in order
+            int64 nOldest = 0;
+            if (pto->mapBlocksInFlight.count(hash) || BlockRequestedFrom(hash, nOldest) != 1 || nNow - nOldest <= BLOCK_REREQUEST_SECONDS)
+                continue;
+            nAgain++;
+        }
         vGetData.push_back(CInv(static_cast<int>(MsgType::Block), hash));
         pto->mapBlocksInFlight[hash] = nNow;
     }
+    if (nAgain)
+        LogPrintf("headers-first: %u of the blocks asked of %s were asked of another peer more than %d seconds ago\n", nAgain, pto->addr.ToString().c_str(), (int)BLOCK_REREQUEST_SECONDS);
     if (!vGetData.empty())
     {
         LogPrintf("headers-first: asking %s for %u blocks from height %d\n", pto->addr.ToString().c_str(), (unsigned)vGetData.size(),
