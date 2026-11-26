@@ -24,7 +24,9 @@ class BigBlockLocksTest(CorgiTestFramework):
         node.generate(101)
 
         self.log("a chain of %d transactions, each spending the one before" % CHAIN)
-        coin = [u for u in node.listunspent() if u["amount"] > 1000][0]
+        # each transaction gives up 1, so the coin must outlast the chain: the largest one (rewards vary, and the first big one may be only a few thousand)
+        coin = max(node.listunspent(), key=lambda u: u["amount"])
+        assert coin["amount"] > CHAIN + 100, coin["amount"]
         prev = {"txid": coin["txid"], "vout": coin["vout"]}
         amount = coin["amount"]
         dest = node.getnewaddress()
