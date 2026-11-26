@@ -43,6 +43,7 @@ TESTS = [
     "p2p_getheaders_auxpow.py",
     "p2p_auxpow_refetch.py",
     "p2p_bad_subver.py",
+    "p2p_truncated_version.py",
     "p2p_maxconnections.py",
     "p2p_resource_limits.py",
     "p2p_log_injection.py",
