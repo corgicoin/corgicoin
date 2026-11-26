@@ -78,6 +78,10 @@ class RPCAuthTest(CorgiTestFramework):
         with open(node.stderr_log, errors="replace") as f:
             text = f.read()
         assert "-rpcauth is <user>:<salt>$<hash>" in text, text[-300:]
+        # the same words are in debug.log: a node that stops at start-up must say why where the log is read (it used to say it on stderr only)
+        with open(node.debug_log, errors="replace") as f:
+            log = f.read()
+        assert "-rpcauth is <user>:<salt>$<hash>" in log[log.rfind("CorgiCoin version"):], "the reason is not in debug.log"
 
 
 if __name__ == "__main__":

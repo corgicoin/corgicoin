@@ -14,7 +14,11 @@
 
 static int noui_ThreadSafeMessageBox(const std::string& message, const std::string& caption, int style)
 {
-    printf("%s: %s\n", caption.c_str(), message.c_str());
+    // also in debug.log: what a daemon has to say when it cannot start (a port it could not bind, an option it refuses) went only to
+    // stdout and stderr, which a service manager or a test run may not keep, and the log said the node had simply shut down
+    LogPrintf("%s: %s\n", caption.c_str(), message.c_str());
+    if (!fPrintToConsole)       // (with -printtoconsole the log line above is already on stdout)
+        printf("%s: %s\n", caption.c_str(), message.c_str());
     fprintf(stderr, "%s: %s\n", caption.c_str(), message.c_str());
     return 4;
 }
