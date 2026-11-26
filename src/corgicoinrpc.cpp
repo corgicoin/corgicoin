@@ -2558,23 +2558,38 @@ Value getworkex(const Array& params, bool fHelp)
         // Get saved block
         if (!mapNewBlock.count(pdata->hashMerkleRoot))
             return false;
-        CBlock* pblock = mapNewBlock[pdata->hashMerkleRoot].first;
+        CBlock* pstored = mapNewBlock[pdata->hashMerkleRoot].first;
 
-        pblock->nTime = pdata->nTime;
-        pblock->nNonce = pdata->nNonce;
+        // The submission is tried on a copy: a stored template is shared by every caller of getworkex until the tip moves, and what one
+        // caller sends must not change it (a coinbase with no inputs here used to be written into it, and the next getworkex wrote through
+        // its empty input list).
+        CBlock block = *pstored;
+        block.nTime = pdata->nTime;
+        block.nNonce = pdata->nNonce;
 
         if(coinbase.size() == 0)
-            pblock->vtx[0].vin[0].scriptSig = mapNewBlock[pdata->hashMerkleRoot].second;
+            block.vtx[0].vin[0].scriptSig = mapNewBlock[pdata->hashMerkleRoot].second;
         else
         {
-            // Deserialize the coinbase transaction from the submitted data
-            CDataStream ssCoinbase(coinbase, SER_NETWORK, PROTOCOL_VERSION);
-            ssCoinbase >> pblock->vtx[0];
+            // Deserialize the coinbase transaction from the submitted data: it must be one (a single null input) and pay something
+            CTransaction txCoinbase;
+            try
+            {
+                CDataStream ssCoinbase(coinbase, SER_NETWORK, PROTOCOL_VERSION);
+                ssCoinbase >> txCoinbase;
+            }
+            catch (const std::exception&)
+            {
+                throw JSONRPCError(-22, "coinbase decode failed");
+            }
+            if (!txCoinbase.IsCoinBase() || txCoinbase.vout.empty())
+                throw JSONRPCError(-8, "Invalid parameter: coinbase is not a coinbase transaction with an output");
+            block.vtx[0] = txCoinbase;
         }
 
-        pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+        block.hashMerkleRoot = block.BuildMerkleTree();
 
-        return CheckWork(pblock, *pwalletMain, reservekey);
+        return CheckWork(&block, *pwalletMain, reservekey);
     }
 }
 
