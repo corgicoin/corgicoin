@@ -90,6 +90,7 @@ TESTS = [
     "wallet_hdseed_index.py",
     "wallet_hdseed_atomic.py",
     "rpc_http_auth.py",
+    "rpc_http_refused_body.py",
     "rpc_http_limits.py",
     "rpc_shutdown_keepalive.py",
     "feature_shutdown_exit.py",

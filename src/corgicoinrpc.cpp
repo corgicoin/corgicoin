@@ -4901,16 +4901,28 @@ void ThreadRPCServer3(void* parg)
                 mapHeaders["connection"] = nProto >= 1 ? "keep-alive" : "close";
         }
 
+        // A refusal sent before the body was read, and the socket then closed, leaves unread data behind: closing such a socket resets the
+        // connection, and on Windows the reset discards the reply the client has not read yet (a wrong password showed as "connection reset",
+        // not as 401). So the reply goes first, then a body of a sane size is read and dropped (under the same read timeout as the rest).
+        auto Refuse = [&](int nStatus) {
+            conn->stream() << HTTPReply(nStatus, "", false) << std::flush;
+            if (nLen > 0 && nLen <= 65536)
+            {
+                vector<char> vDrop(static_cast<size_t>(nLen));
+                conn->stream().read(&vDrop[0], nLen);
+            }
+        };
+
         // Check authorization
         if (mapHeaders.count("authorization") == 0)
         {
-            conn->stream() << HTTPReply(401, "", false) << std::flush;
+            Refuse(401);
             break;
         }
         if (RPCAuthLockedOut(conn->peer_address_to_string()))
         {
             LogPrintf("ThreadRPCServer too many failed logins from %s, refused\n", conn->peer_address_to_string().c_str());
-            conn->stream() << HTTPReply(401, "", false) << std::flush;
+            Refuse(401);
             break;
         }
         if (!HTTPAuthorized(mapHeaders))
@@ -4923,7 +4935,7 @@ void ThreadRPCServer3(void* parg)
             if (mapArgs["-rpcpassword"].size() < 20)
                 Sleep(250);
 
-            conn->stream() << HTTPReply(401, "", false) << std::flush;
+            Refuse(401);
             break;
         }
         if (mapHeaders["connection"] == "close")
