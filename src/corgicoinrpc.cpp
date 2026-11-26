@@ -3423,6 +3423,7 @@ Value getblockchaininfo(const Array& params, bool fHelp)
     }
     obj.emplace_back("initialblockdownload", IsInitialBlockDownload());
     obj.emplace_back("minimumchainwork", bnMinimumChainWork.GetHex());
+    obj.emplace_back("header_only_entries", (int64_t)HeaderOnlyCount());   // headers held that are not blocks yet (headers-first)
 
     Object softforks;
     softforks.emplace_back("lwma", SoftForkStatus(GetLwmaForkHeight()));

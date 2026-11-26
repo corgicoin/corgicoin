@@ -36,8 +36,11 @@ extern const std::string CLIENT_DATE;
 
 // 70013 adds `feefilter` (BIP 133): a peer at this version or above tells us the lowest fee rate it wants announced. A peer below
 // it is unaffected: both sides speak the lower of the two versions.
-constexpr int PROTOCOL_VERSION = 70013;
 constexpr int FEEFILTER_VERSION = 70013;
+// 70014: a peer that says this has the getheaders fix and speaks headers-first. We ask for headers only from such a peer: older nodes
+// (every release before this one) crash on a getheaders whose range holds a merged-mined block, and the chain has had them since block 50000.
+constexpr int PROTOCOL_VERSION = 70014;
+constexpr int HEADERSFIRST_VERSION = 70014;
 
 // earlier versions not supported as of Feb 2012, and are disconnected
 constexpr int MIN_PROTO_VERSION = 209;
