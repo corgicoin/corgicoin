@@ -37,10 +37,12 @@ class RBFFullPoolTest(CorgiTestFramework):
         utxos = [c for c in node.listunspent() if c["amount"] > 100]
         dest = node.getnewaddress()
 
-        self.log("fill the pool with replaceable transactions that pay 5 coins and a bit, each a little more than the one before")
+        self.log("fill the pool with replaceable transactions that pay 5 coins and a bit, each a quarter coin more than the one before")
+        # A quarter coin a step puts several percent between the rates. R is built twice (to measure it, then with its fee) and its size differs
+        # by a byte or two between builds (signature lengths), so the rate put between X and Y has to lie well inside that gap.
         info = {}                                              # txid -> (fee, size, coin)
         for i, c in enumerate(utxos[:80]):
-            fee = Decimal(5) + Decimal(i) / 100
+            fee = Decimal(5) + Decimal(i) / 4
             hexs = self.build(node, [c], {dest: c["amount"] - fee}, True)
             txid = node.sendrawtransaction(hexs)
             info[txid] = (fee, len(hexs) // 2, c)
@@ -50,7 +52,7 @@ class RBFFullPoolTest(CorgiTestFramework):
         by_rate = sorted(pool, key=lambda t: info[t][0] / info[t][1])
         x, y = by_rate[0], by_rate[1]
         rate_x, rate_y = info[x][0] / info[x][1], info[y][0] / info[y][1]
-        assert rate_y > rate_x * Decimal("1.0001"), "the two lowest rates are too close to put one between them"
+        assert rate_y > rate_x * Decimal("1.02"), "the two lowest rates are too close to put one between them"
         before = sorted(pool)
         bytes_before = node.getmempoolinfo()["bytes"]
 
